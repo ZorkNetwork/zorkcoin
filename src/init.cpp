@@ -86,7 +86,7 @@
 #endif
 
 #ifdef USE_SSE2
-#include <crypto/scrypt.h>
+#include <crypto/heavyhash.h>
 #endif
 
 static bool fFeeEstimatesInitialized = false;

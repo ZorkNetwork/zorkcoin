@@ -10,6 +10,7 @@
 #include <crypto/common.h>
 #include <crypto/ripemd160.h>
 #include <crypto/sha256.h>
+#include <crypto/heavyhash.h>
 #include <prevector.h>
 #include <serialize.h>
 #include <uint256.h>
@@ -95,6 +96,50 @@ inline uint160 Hash160(const T1& in1)
     CHash160().Write(MakeUCharSpan(in1)).Finalize(result);
     return result;
 }
+
+/** A writer stream (for serialization) that computes a HeavyHash. */
+class CHeavyHashWriter
+{
+private:
+    CHeavyHash ctx;
+
+    const int nType;
+    const int nVersion;
+public:
+
+    CHeavyHashWriter(uint64_t heavyhash_matrix[64*64],
+                     int nTypeIn, int nVersionIn) : ctx(heavyhash_matrix), nType(nTypeIn), nVersion(nVersionIn) {};
+
+    int GetType() const { return nType; }
+    int GetVersion() const { return nVersion; }
+
+    void write(const char *pch, size_t size) {
+        ctx.Write((const unsigned char*)pch, size);
+    }
+
+    // invalidates the object
+    uint256 GetHash() {
+        uint256 result;
+        ctx.Finalize((unsigned char*)&result);
+        return result;
+    }
+
+    /**
+     * Returns the first 64 bits from the resulting hash.
+     */
+    inline uint64_t GetCheapHash() {
+        unsigned char result[CHeavyHash::OUTPUT_SIZE];
+        ctx.Finalize(result);
+        return ReadLE64(result);
+    }
+
+    template<typename T>
+    CHeavyHashWriter& operator<<(const T& obj) {
+        // Serialize to this stream
+        ::Serialize(*this, obj);
+        return (*this);
+    }
+};
 
 /** A writer stream (for serialization) that computes a 256-bit hash. */
 class CHashWriter
@@ -195,6 +240,22 @@ uint256 SerializeHash(const T& obj, int nType=SER_GETHASH, int nVersion=PROTOCOL
     ss << obj;
     return ss.GetHash();
 }
+
+/** Compute the 256-bit HeavyHash of an object's serialization*/
+template<typename T>
+uint256 SerializeHeavyHash(const T& obj, uint64_t heavyhash_matrix[64*64],
+                           const int nType=SER_GETHASH, int nVersion=PROTOCOL_VERSION)
+{
+    CHeavyHashWriter ss(heavyhash_matrix, nType, nVersion);
+    ss << obj;
+    return ss.GetHash();
+}
+
+/** Generates deterministically a full-rank pseudorandom matrix for HeavyHash using \p matrix_seed
+ * @pre matrix_seed must be non-zero
+ * */
+
+void GenerateHeavyHashMatrix(uint256 matrix_seed, uint64_t matrix[64*64]);
 
 /** Single-SHA256 a 32-byte input (represented as uint256). */
 NODISCARD uint256 SHA256Uint256(const uint256& input);

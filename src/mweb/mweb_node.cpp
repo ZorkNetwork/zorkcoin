@@ -30,7 +30,9 @@ bool Node::CheckBlock(const CBlock& block, BlockValidationState& state)
 bool Node::ContextualCheckBlock(const CBlock& block, const Consensus::Params& consensus_params, const CBlockIndex* pindexPrev, BlockValidationState& state)
 {
     // If MWEB is enabled, we must have an mweb_block. If it's not enabled, we must not have an MWEB block.
-    if (!IsMWEBEnabled(pindexPrev, consensus_params)) {
+    // MWEB is enabled when version bits say it can be AND when there is a hogEx transaction that carries MWEB value
+    // i.e. If there is no value Pegged-In to MWEB then it is not enabled.
+    if (!(IsMWEBEnabled(pindexPrev, consensus_params) && (block.GetHogEx() != nullptr))) {
         // No MWEB data is allowed in blocks that don't commit to MWEB data, as this would otherwise leave room for spam
         if (!block.mweb_block.IsNull()) {
             return state.Invalid(BlockValidationResult::BLOCK_MUTATED, "unexpected-mweb-data", "MWEB not activated, but extension block found");

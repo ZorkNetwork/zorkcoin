@@ -474,9 +474,12 @@ crypto_libbitcoin_crypto_base_a_SOURCES = \
   crypto/poly1305.cpp \
   crypto/ripemd160.cpp \
   crypto/ripemd160.h \
-  crypto/scrypt.cpp \
-  crypto/scrypt-sse2.cpp \
-  crypto/scrypt.h \
+  crypto/heavyhash.cpp \
+  crypto/heavyhash.h \
+  crypto/tiny_sha3/sha3.h \
+  crypto/tiny_sha3/sha3.cpp \
+  util/matrixchecks.cpp \
+  util/matrixcheck.h \
   crypto/sha1.cpp \
   crypto/sha1.h \
   crypto/sha256.cpp \
@@ -620,6 +623,8 @@ libbitcoin_util_a_SOURCES = \
   util/strencodings.cpp \
   util/string.cpp \
   util/time.cpp \
+  util/matrixchecks.cpp \
+  util/matrixcheck.h \
   $(BITCOIN_CORE_H)
 
 if USE_LIBEVENT

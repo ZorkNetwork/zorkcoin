@@ -9,7 +9,7 @@
 #include <tinyformat.h>
 #include <util/strencodings.h>
 #include <crypto/common.h>
-#include <crypto/scrypt.h>
+#include <crypto/heavyhash.h>
 
 uint256 CBlockHeader::GetHash() const
 {
@@ -18,9 +18,11 @@ uint256 CBlockHeader::GetHash() const
 
 uint256 CBlockHeader::GetPoWHash() const
 {
-    uint256 thash;
-    scrypt_1024_1_1_256(BEGIN(nVersion), BEGIN(thash));
-    return thash;
+    uint256 seed;
+    CSHA3_256().Write(hashPrevBlock.begin(), 32).Finalize(seed.begin());
+    uint64_t matrix[64*64];
+    GenerateHeavyHashMatrix(seed, matrix);
+    return SerializeHeavyHash(*this, matrix);
 }
 
 std::string CBlock::ToString() const

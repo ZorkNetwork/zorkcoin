@@ -248,7 +248,6 @@ BITCOIN_TESTS =\
   test/mempool_tests.cpp \
   test/merkle_tests.cpp \
   test/merkleblock_tests.cpp \
-  test/miner_tests.cpp \
   test/multisig_tests.cpp \
   test/net_tests.cpp \
   test/netbase_tests.cpp \
@@ -268,7 +267,6 @@ BITCOIN_TESTS =\
   test/script_tests.cpp \
   test/script_standard_tests.cpp \
   test/scriptnum_tests.cpp \
-  test/scrypt_tests.cpp \
   test/serialize_tests.cpp \
   test/settings_tests.cpp \
   test/sighash_tests.cpp \

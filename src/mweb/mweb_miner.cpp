@@ -155,6 +155,8 @@ void Miner::AddHogExTransaction(const CBlockIndex* pIndexPrev, CBlock* pblock, C
     //
     hogExTransaction.vin.insert(hogExTransaction.vin.end(), hogex_inputs.cbegin(), hogex_inputs.cend());
 
+    if (hogExTransaction.vin.empty()) return;  // If there is no carry over value and no peg-in then don't add this transaction
+  
     //
     // Add New HogAddr
     //

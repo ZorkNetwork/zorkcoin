@@ -123,6 +123,10 @@ static void ValidateCheckInputsForAllFlags(const CTransaction &tx, uint32_t fail
             // WITNESS requires P2SH
             test_flags |= SCRIPT_VERIFY_P2SH;
         }
+        if (!(test_flags & SCRIPT_VERIFY_DERSIG)) {
+            // $ZORK DER is required
+            test_flags |= SCRIPT_VERIFY_DERSIG;
+        }
         bool ret = CheckInputScripts(tx, state, &::ChainstateActive().CoinsTip(), test_flags, true, add_to_cache, txdata, nullptr);
         // CheckInputScripts should succeed iff test_flags doesn't intersect with
         // failing_flags
@@ -220,8 +224,27 @@ BOOST_FIXTURE_TEST_CASE(checkinputs_test, TestChain100Setup)
 
     // And if we produce a block with this tx, it should be valid (DERSIG not
     // enabled yet), even though there's no cache entry.
+    // $ZORK - DERSIG is always enabled
     CBlock block;
 
+    block = CreateAndProcessBlock({spend_tx}, p2pk_scriptPubKey);
+    LOCK(cs_main);
+    BOOST_CHECK(::ChainActive().Tip()->GetBlockHash() != block.GetHash());
+    BOOST_CHECK(::ChainstateActive().CoinsTip().GetBestBlock() != block.GetHash());
+
+    // $ZORK - DER is always enabled
+    // Sign, with a DER signature
+    {
+        std::vector<unsigned char> vchSig;
+        uint256 hash = SignatureHash(p2pk_scriptPubKey, spend_tx, 0, SIGHASH_ALL, 0, SigVersion::BASE);
+        BOOST_CHECK(coinbaseKey.Sign(hash, vchSig));
+        vchSig.push_back((unsigned char)SIGHASH_ALL);
+        spend_tx.vin[0].scriptSig.clear();
+        spend_tx.vin[0].scriptSig << vchSig;
+    }
+
+    // And if we produce a block with this tx, it should be valid
+    // even though there's no cache entry.
     block = CreateAndProcessBlock({spend_tx}, p2pk_scriptPubKey);
     LOCK(cs_main);
     BOOST_CHECK(::ChainActive().Tip()->GetBlockHash() == block.GetHash());
