@@ -66,8 +66,8 @@
         <translation>Адрес за получаване</translation>
     </message>
     <message>
-        <source>These are your Bitcoin addresses for sending payments. Always check the amount and the receiving address before sending coins.</source>
-        <translation>Тези са вашите Биткойн адреси за изпращане на монети. Винаги проверявайте количеството и получаващия адрес преди изпращане. </translation>
+        <source>These are your Zorkcoin addresses for sending payments. Always check the amount and the receiving address before sending coins.</source>
+        <translation>Тези са вашите зорккоин адреси за изпращане на монети. Винаги проверявайте количеството и получаващия адрес преди изпращане. </translation>
     </message>
     <message>
         <source>&amp;Copy Address</source>
@@ -240,7 +240,7 @@
     </message>
 </context>
 <context>
-    <name>BitcoinGUI</name>
+    <name>ZorkcoinGUI</name>
     <message>
         <source>Sign &amp;message...</source>
         <translation>Подпиши съобщение...</translation>
@@ -346,8 +346,8 @@
         <translation>Повторно индексиране на блоковете на диска...</translation>
     </message>
     <message>
-        <source>Send coins to a Bitcoin address</source>
-        <translation>Изпращане към Биткоин адрес</translation>
+        <source>Send coins to a Zorkcoin address</source>
+        <translation>Изпращане към Зорккойн адрес</translation>
     </message>
     <message>
         <source>Backup wallet to another location</source>
@@ -382,12 +382,12 @@
         <translation>Шифроване на личните ключове,които принадлежат на портфейла Ви.</translation>
     </message>
     <message>
-        <source>Sign messages with your Bitcoin addresses to prove you own them</source>
-        <translation>Пишете съобщения със своя Биткойн адрес за да докажете,че е ваш.</translation>
+        <source>Sign messages with your Zorkcoin addresses to prove you own them</source>
+        <translation>Пишете съобщения със своя зорккоин адрес за да докажете,че е ваш.</translation>
     </message>
     <message>
-        <source>Verify messages to ensure they were signed with specified Bitcoin addresses</source>
-        <translation>Потвърждаване на съобщения  за да се знае,че са написани с дадените Биткойн адреси.</translation>
+        <source>Verify messages to ensure they were signed with specified Zorkcoin addresses</source>
+        <translation>Потвърждаване на съобщения  за да се знае,че са написани с дадените зорккоин адреси.</translation>
     </message>
     <message>
         <source>&amp;File</source>
@@ -406,8 +406,8 @@
         <translation>Лентата с инструменти</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and bitcoin: URIs)</source>
-        <translation>Изискване на плащания(генерира QR кодове и биткойн: URIs)</translation>
+        <source>Request payments (generates QR codes and zorkcoin: URIs)</source>
+        <translation>Изискване на плащания(генерира QR кодове и зорккоин: URIs)</translation>
     </message>
     <message>
         <source>Show the list of used sending addresses and labels</source>
@@ -482,8 +482,8 @@
         <translation>Затвори всички портфейли</translation>
     </message>
     <message>
-        <source>Show the %1 help message to get a list with possible Bitcoin command-line options</source>
-        <translation>Покажи %1 помощно съобщение за да получиш лист с възможни Биткойн команди</translation>
+        <source>Show the %1 help message to get a list with possible Zorkcoin command-line options</source>
+        <translation>Покажи %1 помощно съобщение за да получиш лист с възможни зорккоин команди</translation>
     </message>
     <message>
         <source>default wallet</source>
@@ -760,8 +760,8 @@
         <translation>Редактиране на адрес за изпращане</translation>
     </message>
     <message>
-        <source>The entered address "%1" is not a valid Bitcoin address.</source>
-        <translation>"%1" не е валиден Биткоин адрес.</translation>
+        <source>The entered address "%1" is not a valid Zorkcoin address.</source>
+        <translation>"%1" не е валиден Зорккойн адрес.</translation>
     </message>
     <message>
         <source>Could not unlock wallet.</source>
@@ -833,8 +833,8 @@
         <translation>Използване на директория ръчно</translation>
     </message>
     <message>
-        <source>Bitcoin</source>
-        <translation>Биткоин</translation>
+        <source>Zorkcoin</source>
+        <translation>Зорккойн</translation>
     </message>
     <message>
         <source>At least %1 GB of data will be stored in this directory, and it will grow over time.</source>
@@ -945,8 +945,8 @@
         <translation>&amp;Похарчете непотвърденото ресто</translation>
     </message>
     <message>
-        <source>Automatically open the Bitcoin client port on the router. This only works when your router supports UPnP and it is enabled.</source>
-        <translation>Автоматично отваряне на входящия Bitcoin порт. Работи само с рутери поддържащи UPnP.</translation>
+        <source>Automatically open the Zorkcoin client port on the router. This only works when your router supports UPnP and it is enabled.</source>
+        <translation>Автоматично отваряне на входящия Zorkcoin порт. Работи само с рутери поддържащи UPnP.</translation>
     </message>
     <message>
         <source>Map port using &amp;UPnP</source>
@@ -961,8 +961,8 @@
         <translation>Позволи входящи връзки</translation>
     </message>
     <message>
-        <source>Connect to the Bitcoin network through a SOCKS5 proxy.</source>
-        <translation>Свързване с Биткойн мрежата чрез SOCKS5  прокси.</translation>
+        <source>Connect to the Zorkcoin network through a SOCKS5 proxy.</source>
+        <translation>Свързване с зорккоин мрежата чрез SOCKS5  прокси.</translation>
     </message>
     <message>
         <source>&amp;Connect through SOCKS5 proxy (default proxy):</source>
@@ -1072,8 +1072,8 @@
         <translation>форма</translation>
     </message>
     <message>
-        <source>The displayed information may be out of date. Your wallet automatically synchronizes with the Bitcoin network after a connection is established, but this process has not completed yet.</source>
-        <translation>Текущата информация на екрана може да не е актуална. Вашият портфейл ще се синхронизира автоматично с мрежата на Биткоин, щом поне една връзката с нея се установи; този процес все още не е приключил.</translation>
+        <source>The displayed information may be out of date. Your wallet automatically synchronizes with the Zorkcoin network after a connection is established, but this process has not completed yet.</source>
+        <translation>Текущата информация на екрана може да не е актуална. Вашият портфейл ще се синхронизира автоматично с мрежата на Зорккойн, щом поне една връзката с нея се установи; този процес все още не е приключил.</translation>
     </message>
     <message>
         <source>Watch-only:</source>
@@ -1138,8 +1138,8 @@
         <translation>Възникна грешка по време назаявката за плащане</translation>
     </message>
     <message>
-        <source>Cannot start bitcoin: click-to-pay handler</source>
-        <translation>Биткойн не можe да се стартира: click-to-pay handler</translation>
+        <source>Cannot start zorkcoin: click-to-pay handler</source>
+        <translation>зорккоин не можe да се стартира: click-to-pay handler</translation>
     </message>
     <message>
         <source>URI handling</source>
@@ -1180,8 +1180,8 @@
         <translation>Количество</translation>
     </message>
     <message>
-        <source>Enter a Bitcoin address (e.g. %1)</source>
-        <translation>Въведете Биткойн адрес (например: %1)</translation>
+        <source>Enter a Zorkcoin address (e.g. %1)</source>
+        <translation>Въведете зорккоин адрес (например: %1)</translation>
     </message>
     <message>
         <source>%1 d</source>
@@ -1698,8 +1698,8 @@
         <translation>Заявката за плащане е изтекла.</translation>
     </message>
     <message>
-        <source>Warning: Invalid Bitcoin address</source>
-        <translation>Внимание: Невалиден Биткойн адрес</translation>
+        <source>Warning: Invalid Zorkcoin address</source>
+        <translation>Внимание: Невалиден зорккоин адрес</translation>
     </message>
     <message>
         <source>Warning: Unknown change address</source>
@@ -1803,7 +1803,7 @@
         <translation>Копиране на текущия подпис</translation>
     </message>
     <message>
-        <source>Sign the message to prove you own this Bitcoin address</source>
+        <source>Sign the message to prove you own this Zorkcoin address</source>
         <translation>Подпишете съобщение като доказателство, че притежавате определен адрес</translation>
     </message>
     <message>
@@ -1819,8 +1819,8 @@
         <translation>&amp;Провери</translation>
     </message>
     <message>
-        <source>Verify the message to ensure it was signed with the specified Bitcoin address</source>
-        <translation>Проверете съобщение, за да сте сигурни че е подписано с определен Биткоин адрес</translation>
+        <source>Verify the message to ensure it was signed with the specified Zorkcoin address</source>
+        <translation>Проверете съобщение, за да сте сигурни че е подписано с определен Зорккойн адрес</translation>
     </message>
     <message>
         <source>Verify &amp;Message</source>
@@ -2314,7 +2314,7 @@
     </message>
     </context>
 <context>
-    <name>bitcoin-core</name>
+    <name>zorkcoin-core</name>
     <message>
         <source>Do you want to rebuild the block database now?</source>
         <translation>Желаете ли да пресъздадете базата данни с блокове сега?</translation>

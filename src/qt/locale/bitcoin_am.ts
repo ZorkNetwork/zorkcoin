@@ -62,8 +62,8 @@
         <translation>የመቀበያ አድራሻዎች</translation>
     </message>
     <message>
-        <source>These are your Bitcoin addresses for sending payments. Always check the amount and the receiving address before sending coins.</source>
-        <translation>እነኚ የቢትኮይን ክፍያ የመላኪያ አድራሻዎችዎ ናቸው:: ገንዘብ/ኮይኖች ከመላክዎ በፊት መጠኑን እና የመቀበያ አድራሻውን ሁልጊዜ ያረጋግጡ::</translation>
+        <source>These are your Zorkcoin addresses for sending payments. Always check the amount and the receiving address before sending coins.</source>
+        <translation>እነኚ ዞርክኮይን ክፍያ የመላኪያ አድራሻዎችዎ ናቸው:: ገንዘብ/ኮይኖች ከመላክዎ በፊት መጠኑን እና የመቀበያ አድራሻውን ሁልጊዜ ያረጋግጡ::</translation>
     </message>
     <message>
         <source>&amp;Copy Address</source>
@@ -129,23 +129,23 @@
     </message>
     <message>
         <source>Encrypt wallet</source>
-        <translation>የቢትኮይን ቦርሳውን አመስጥር</translation>
+        <translation>ዞርክኮይን ቦርሳውን አመስጥር</translation>
     </message>
     <message>
         <source>This operation needs your wallet passphrase to unlock the wallet.</source>
-        <translation>ይህ ክንዋኔ የቢትኮይን ቦርሳዎን ለመክፈት የቦርሳዎ ይለፍ-ሐረግ ያስፈልገዋል::</translation>
+        <translation>ይህ ክንዋኔ ዞርክኮይን ቦርሳዎን ለመክፈት የቦርሳዎ ይለፍ-ሐረግ ያስፈልገዋል::</translation>
     </message>
     <message>
         <source>Unlock wallet</source>
-        <translation>የቢትኮይን ቦርሳውን ክፈት</translation>
+        <translation>ዞርክኮይን ቦርሳውን ክፈት</translation>
     </message>
     <message>
         <source>This operation needs your wallet passphrase to decrypt the wallet.</source>
-        <translation>ይህ ክንዋኔ የቢትኮይን ቦርሳዎን ለመፍታት የቦርሳዎ ይለፍ-ሐረግ ያስፈልገዋል::</translation>
+        <translation>ይህ ክንዋኔ ዞርክኮይን ቦርሳዎን ለመፍታት የቦርሳዎ ይለፍ-ሐረግ ያስፈልገዋል::</translation>
     </message>
     <message>
         <source>Decrypt wallet</source>
-        <translation>የቢትኮይን ቦርሳውን ፍታ</translation>
+        <translation>ዞርክኮይን ቦርሳውን ፍታ</translation>
     </message>
     <message>
         <source>Change passphrase</source>
@@ -153,11 +153,11 @@
     </message>
     <message>
         <source>Confirm wallet encryption</source>
-        <translation>የቢትኮይን ቦርሳዎን ማመስጠር ያረጋግጡ</translation>
+        <translation>ዞርክኮይን ቦርሳዎን ማመስጠር ያረጋግጡ</translation>
     </message>
     <message>
         <source>Warning: If you encrypt your wallet and lose your passphrase, you will &lt;b&gt;LOSE ALL OF YOUR BITCOINS&lt;/b&gt;!</source>
-        <translation>ማስጠንቀቂያ: የቢትኮይን ቦርሳዎን አመስጥረው የይለፍ-ሐረግዎን ካጡት&lt;b&gt;ቢትኮይኖቾን በሙሉ ያጣሉ&lt;/b&gt;!</translation>
+        <translation>ማስጠንቀቂያ: ዞርክኮይን ቦርሳዎን አመስጥረው የይለፍ-ሐረግዎን ካጡት&lt;b&gt;ቢትኮይኖቾን በሙሉ ያጣሉ&lt;/b&gt;!</translation>
     </message>
     <message>
         <source>Are you sure you wish to encrypt your wallet?</source>
@@ -216,7 +216,7 @@
     </message>
 </context>
 <context>
-    <name>BitcoinGUI</name>
+    <name>ZorkcoinGUI</name>
     <message>
         <source>Sign &amp;message...</source>
         <translation>ምልክትና መልእክት...</translation>
@@ -465,7 +465,7 @@
         <translation>እንኳን  ወድ %1 በደህና መጣህ።</translation>
     </message>
     <message>
-        <source>Bitcoin</source>
+        <source>Zorkcoin</source>
         <translation>ቢትኮይን</translation>
     </message>
     <message>
@@ -714,6 +714,6 @@
     </message>
     </context>
 <context>
-    <name>bitcoin-core</name>
+    <name>zorkcoin-core</name>
     </context>
 </TS>

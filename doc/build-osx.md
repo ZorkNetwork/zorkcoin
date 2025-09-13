@@ -62,17 +62,17 @@ Also, the Homebrew package could be installed:
 brew install berkeley-db4
 ```
 
-## Build Litecoin Core
+## Build Zork Network Node
 
-1. Clone the Litecoin Core source code:
+1. Clone the Zork Network Node source code:
     ```shell
-    git clone https://github.com/litecoin-project/litecoin
-    cd litecoin
+    git clone https://github.com/ZorkNetwork/zorkcoin
+    cd zorkcoin
     ```
 
-2.  Build Litecoin Core:
+2.  Build Zork Network Node:
 
-    Configure and build the headless Litecoin Core binaries as well as the GUI (if Qt is found).
+    Configure and build the headless Zork Network Node binaries as well as the GUI (if Qt is found).
 
     You can disable the GUI build by passing `--without-gui` to configure.
     ```shell
@@ -92,7 +92,7 @@ brew install berkeley-db4
     ```
 
 ## Disable-wallet mode
-When the intention is to run only a P2P node without a wallet, Litecoin Core may be
+When the intention is to run only a P2P node without a wallet, Zork Network Node may be
 compiled in disable-wallet mode with:
 ```shell
 ./configure --disable-wallet
@@ -103,30 +103,30 @@ In this case there is no dependency on [*Berkeley DB*](#berkeley-db) and [*SQLit
 Mining is also possible in disable-wallet mode using the `getblocktemplate` RPC call.
 
 ## Running
-Litecoin Core is now available at `./src/litecoind`
+Zork Network Node is now available at `./src/zorkcoind`
 
 Before running, you may create an empty configuration file:
 ```shell
-mkdir -p "/Users/${USER}/Library/Application Support/Litecoin"
+mkdir -p "/Users/${USER}/Library/Application Support/Zorkcoin"
 
-touch "/Users/${USER}/Library/Application Support/Litecoin/litecoin.conf"
+touch "/Users/${USER}/Library/Application Support/Zorkcoin/zorkcoin.conf"
 
-chmod 600 "/Users/${USER}/Library/Application Support/Litecoin/litecoin.conf"
+chmod 600 "/Users/${USER}/Library/Application Support/Zorkcoin/zorkcoin.conf"
 ```
 
-The first time you run litecoind, it will start downloading the blockchain. This process could
+The first time you run zorkcoind, it will start downloading the blockchain. This process could
 take many hours, or even days on slower than average systems.
 
 You can monitor the download process by looking at the debug.log file:
 ```shell
-tail -f $HOME/Library/Application\ Support/Litecoin/debug.log
+tail -f $HOME/Library/Application\ Support/Zorkcoin/debug.log
 ```
 
 ## Other commands:
 ```shell
-./src/litecoind -daemon      # Starts the litecoin daemon.
-./src/litecoin-cli --help    # Outputs a list of command-line options.
-./src/litecoin-cli help      # Outputs a list of RPC commands when the daemon is running.
+./src/zorkcoind -daemon      # Starts the zorkcoin daemon.
+./src/zorkcoin-cli --help    # Outputs a list of command-line options.
+./src/zorkcoin-cli help      # Outputs a list of RPC commands when the daemon is running.
 ```
 
 ## Notes

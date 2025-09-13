@@ -48,7 +48,7 @@
     <name>BanTableModel</name>
     </context>
 <context>
-    <name>BitcoinGUI</name>
+    <name>ZorkcoinGUI</name>
     <message>
         <source>&amp;Transactions</source>
         <translation>&amp;Транзакциялар</translation>
@@ -167,8 +167,8 @@
 <context>
     <name>Intro</name>
     <message>
-        <source>Bitcoin</source>
-        <translation>Биткоин</translation>
+        <source>Zorkcoin</source>
+        <translation>Зорккойн</translation>
     </message>
     <message>
         <source>Error</source>
@@ -340,7 +340,7 @@
     </message>
     </context>
 <context>
-    <name>bitcoin-core</name>
+    <name>zorkcoin-core</name>
     <message>
         <source>Transaction amount too small</source>
         <translation>Транзакция өте кішкентай</translation>

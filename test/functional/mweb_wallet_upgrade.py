@@ -33,7 +33,7 @@ class MWEBWalletUpgradeTest(BitcoinTestFramework):
         self.sync_all()
         
         #
-        # Create a non-HD wallet using an older litecoin core version
+        # Create a non-HD wallet using an older Zork Network Node version
         #
         self.log.info("Creating non-hd wallet")
         nonhd_wallet_dat = create_non_hd_wallet(self.chain, self.options)

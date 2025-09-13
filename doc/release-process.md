@@ -1,6 +1,10 @@
 Release Process
 ====================
 
+### Not yet updated for Zorkcoin
+
+@todo This document needs updated for Zorkcoin.
+
 ## Branch updates
 
 ### Before every release candidate

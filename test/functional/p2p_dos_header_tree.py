@@ -20,13 +20,13 @@ import os
 class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
-        self.chain = 'testnet4'  # Use testnet chain because it has an early checkpoint
+        self.chain = 'testnet'  # Use testnet chain because it has an early checkpoint
         self.num_nodes = 2
 
     def add_options(self, parser):
         parser.add_argument(
             '--datafile',
-            default='data/blockheader_testnet4.hex',
+            default='data/blockheader_testnet.hex',
             help='Test data file (default: %(default)s)',
         )
 
@@ -36,7 +36,7 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
         with open(self.headers_file_path, encoding='utf-8') as headers_data:
             h_lines = [l.strip() for l in headers_data.readlines()]
 
-        # The headers data is taken from testnet4 for early blocks from genesis until the first checkpoint. There are
+        # The headers data is taken from testnet for early blocks from genesis until the first checkpoint. There are
         # two headers with valid POW at height 1 and 2, forking off from genesis. They are indicated by the FORK_PREFIX.
         FORK_PREFIX = 'fork:'
         self.headers = [l for l in h_lines if not l.startswith(FORK_PREFIX)]

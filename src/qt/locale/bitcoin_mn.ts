@@ -62,8 +62,8 @@
         <translation>Хүлээн авах хаяг</translation>
     </message>
     <message>
-        <source>These are your Bitcoin addresses for sending payments. Always check the amount and the receiving address before sending coins.</source>
-        <translation>Эдгээр Биткойн хаягууд нь илгээх хаягууд. Хүлээн авах хаяг болон тоо хэмжээг илгээхээсээ өмнө сайн нягталж үзэж байна уу</translation>
+        <source>These are your Zorkcoin addresses for sending payments. Always check the amount and the receiving address before sending coins.</source>
+        <translation>Эдгээр зорккоин хаягууд нь илгээх хаягууд. Хүлээн авах хаяг болон тоо хэмжээг илгээхээсээ өмнө сайн нягталж үзэж байна уу</translation>
     </message>
     <message>
         <source>&amp;Copy Address</source>
@@ -180,7 +180,7 @@
     <name>BanTableModel</name>
     </context>
 <context>
-    <name>BitcoinGUI</name>
+    <name>ZorkcoinGUI</name>
     <message>
         <source>Sign &amp;message...</source>
         <translation>&amp;Зурвас хавсаргах...</translation>
@@ -379,8 +379,8 @@
 <context>
     <name>Intro</name>
     <message>
-        <source>Bitcoin</source>
-        <translation>Биткойн</translation>
+        <source>Zorkcoin</source>
+        <translation>зорккоин</translation>
     </message>
     <message>
         <source>Error</source>
@@ -680,8 +680,8 @@
         <translation>Гүйлгээний тѳлбѳр %1-ийг тооцхоор нийт дүн нь таны балансаас хэтрээд байна.</translation>
     </message>
     <message>
-        <source>Warning: Invalid Bitcoin address</source>
-        <translation>Анхаар:Буруу Биткойны хаяг байна</translation>
+        <source>Warning: Invalid Zorkcoin address</source>
+        <translation>Анхаар:Буруу зорккоины хаяг байна</translation>
     </message>
     <message>
         <source>(no label)</source>
@@ -1012,7 +1012,7 @@
     </message>
     </context>
 <context>
-    <name>bitcoin-core</name>
+    <name>zorkcoin-core</name>
     <message>
         <source>Insufficient funds</source>
         <translation>Таны дансны үлдэгдэл хүрэлцэхгүй байна</translation>

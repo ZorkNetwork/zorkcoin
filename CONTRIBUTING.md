@@ -1,12 +1,12 @@
-Contributing to Litecoin Core
+Contributing to Zork Network Node
 ============================
 
-The Litecoin Core project operates an open contributor model where anyone is
+The Zork Network Node project operates an open contributor model where anyone is
 welcome to contribute towards development in the form of peer review, testing
 and patches. This document explains the practical process and guidelines for
 contributing.
 
-First, in terms of structure, there is no particular concept of "Bitcoin Core
+First, in terms of structure, there is no particular concept of "Zork Network Node
 developers" in the sense of privileged people. Open source often naturally
 revolves around a meritocracy where contributors earn trust from the developer
 community over time. Nevertheless, some hierarchy is necessary for practical
@@ -14,6 +14,20 @@ purposes. As such, there are repository "maintainers" who are responsible for
 merging pull requests, as well as a "lead maintainer" who is responsible for the
 release cycle as well as overall merging, moderation and appointment of
 maintainers.
+
+Remember that Zork Network Node is based on Litecoin Core which is based on Bitcoin
+Core. This means that working on Litecoin and/or Bitcoin can also contribute to
+Zorkcoin. If a bug or feature addition applies to Zorkcoin ancestors then they
+can be solved there first and ported to Zorkcoin, or changes could be applied
+to Zorkcoin first and get some testing done before porting into the parents. The
+point is to keep in mind the possibility of grabbing issues from ancestors to
+fix here in Zorkcoin.
+
+Also remember because of the legacy source that comes with Bitcoin & Litecoin,
+there many things that are the way they are because of the ancestors. If some
+proceedure seems heavy then ask in Discord as it might be more than we need for
+Zorkcoin. And along those same lines Zorkcoin doesn't want to modify source that
+isn't necessary as that creates issues with future merging.
 
 Getting Started
 ---------------
@@ -25,20 +39,24 @@ as a new contributor. It also will teach you much more about the code and
 process than opening pull requests. Please refer to the [peer review](#peer-review)
 section below.
 
-Before you start contributing, familiarize yourself with the Litecoin Core build
+Before you start contributing, familiarize yourself with the Zork Network Node build
 system and tests. Refer to the documentation in the repository on how to build
-Bitcoin Core and how to run the unit tests, functional tests, and fuzz tests.
+Zork Network Node and how to run the unit tests, functional tests, and fuzz tests.
 
 There are many open issues of varying difficulty waiting to be fixed.
-If you're looking for somewhere to start contributing, check out the
-[good first issue](https://github.com/bitcoin/bitcoin/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22)
-list or changes that are
-[up for grabs](https://github.com/bitcoin/bitcoin/issues?utf8=%E2%9C%93&q=label%3A%22Up+for+grabs%22).
+If you're looking for somewhere to start contributing, check out the following
+lists:
+ - [Bitcoin - good first issue](https://github.com/bitcoin/bitcoin/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22)
+ - [Bitcoin - up for grabs](https://github.com/bitcoin/bitcoin/issues?utf8=%E2%9C%93&q=label%3A%22Up+for+grabs%22)
+ - [Litecoin - open issues](https://github.com/litecoin-project/litecoin/issues)
+ - [Zorkcoin - good first issue](https://github.com/ZorkNetwork/zorkcoin/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22)
+ - [Zorkcoin - up for grabs](https://github.com/ZorkNetwork/zorkcoin/issues?utf8=%E2%9C%93&q=label%3A%22Up+for+grabs%22)
 Some of them might no longer be applicable. So if you are interested, but
 unsure, you might want to leave a comment on the issue first.
 
 You may also participate in the weekly
 [Bitcoin Core PR Review Club](https://bitcoincore.reviews/) meeting.
+At this time Zorkcoin specific reviews occur via Discord.
 
 ### Good First Issue Label
 
@@ -56,18 +74,15 @@ and is also an effective way to request assistance if and when you need it.
 Communication Channels
 ----------------------
 
-Most communication about Bitcoin Core development happens on IRC, in the
-`#bitcoin-core-dev` channel on Freenode. The easiest way to participate on IRC is
-with the web client, [webchat.freenode.net](https://webchat.freenode.net/). Chat
-history logs can be found
-on [http://www.erisian.com.au/bitcoin-core-dev/](http://www.erisian.com.au/bitcoin-core-dev/)
-and [http://gnusha.org/bitcoin-core-dev/](http://gnusha.org/bitcoin-core-dev/).
+Most communication about Zorcoin Core development happens on Discord. The 
+developer channel in [discord](http://discord.com/gmpSzpqCDh) is the best place
+to start.
 
 Discussion about codebase improvements happens in GitHub issues and pull
 requests.
 
 The developer
-[mailing list](https://groups.google.com/forum/#!forum/litecoin-dev)
+[mailing list](https://groups.google.com/g/zork-network-developers/)
 should be used to discuss complicated or controversial consensus or P2P protocol changes before working on
 a patch set.
 
@@ -143,7 +158,7 @@ the pull request affects. Valid areas as:
 
   - `consensus` for changes to consensus critical code
   - `doc` for changes to the documentation
-  - `qt` or `gui` for changes to litecoin-qt
+  - `qt` or `gui` for changes to zorkcoin-qt
   - `log` for changes to log messages
   - `mining` for changes to the mining code
   - `net` or `p2p` for changes to the peer-to-peer network code
@@ -170,7 +185,7 @@ mailing list discussions).
 The description for a new pull request should not contain any `@` mentions. The
 PR description will be included in the commit message when the PR is merged and
 any users mentioned in the description will be annoyingly notified each time a
-fork of Bitcoin Core copies the merge. Instead, make any username mentions in a
+fork of the repository copies the merge. Instead, make any username mentions in a
 subsequent comment to the PR.
 
 ### Translation changes
@@ -282,11 +297,11 @@ workload on reviewing.
 "Decision Making" Process
 -------------------------
 
-The following applies to code changes to the Litecoin Core project (and related
-projects such as libsecp256k1), and is not to be confused with overall Litecoin
+The following applies to code changes to the Zork Network Node project (and related
+projects such as libsecp256k1), and is not to be confused with overall Zorkcoin
 Network Protocol consensus changes.
 
-Whether a pull request is merged into Litecoin Core rests with the project merge
+Whether a pull request is merged into Zork Network Node rests with the project merge
 maintainers and ultimately the project lead.
 
 Maintainers will take into consideration if a patch is in line with the general
@@ -305,7 +320,7 @@ In general, all pull requests must:
     demonstrating the bug and also proving the fix. This helps prevent regression.
   - Change relevant comments and documentation when behaviour of code changes.
 
-Patches that change Litecoin consensus rules are considerably more involved than
+Patches that change Zorkcoin consensus rules are considerably more involved than
 normal because they affect the entire ecosystem and so must be preceded by
 extensive mailing list discussions and have a numbered BIP. While each case will
 be different, one should be prepared to expend more time and effort than for
@@ -358,7 +373,7 @@ higher in terms of discussion and peer review requirements, keeping in mind that
 mistakes could be very costly to the wider community. This includes refactoring
 of consensus-critical code.
 
-Where a patch set proposes to change the Litecoin consensus, it must have been
+Where a patch set proposes to change the Zorkcoin consensus, it must have been
 discussed extensively on the mailing list and IRC, be accompanied by a widely
 discussed BIP and have a generally widely perceived technical consensus of being
 a worthwhile change based on the judgement of the maintainers.
@@ -425,7 +440,7 @@ https://github.com/bitcoin-core/bitcoin-maintainer-tools#backport).
 Release Policy
 --------------
 
-The project leader is the release manager for each Litecoin Core release.
+The project leader is the release manager for each Zork Network Node release.
 
 Copyright
 ---------

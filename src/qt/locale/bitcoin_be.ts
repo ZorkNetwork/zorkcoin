@@ -66,8 +66,8 @@
         <translation>адрасы Прымання</translation>
     </message>
     <message>
-        <source>These are your Bitcoin addresses for sending payments. Always check the amount and the receiving address before sending coins.</source>
-        <translation>Тут знаходзяцца Біткойн-адрасы для высылання плацяжоў. Заўсёды спраўджвайце колькасць і адрас прызначэння перад здзяйсненнем транзакцыі.</translation>
+        <source>These are your Zorkcoin addresses for sending payments. Always check the amount and the receiving address before sending coins.</source>
+        <translation>Тут знаходзяцца зорккойн-адрасы для высылання плацяжоў. Заўсёды спраўджвайце колькасць і адрас прызначэння перад здзяйсненнем транзакцыі.</translation>
     </message>
     <message>
         <source>&amp;Copy Address</source>
@@ -161,7 +161,7 @@
     </message>
     <message>
         <source>Warning: If you encrypt your wallet and lose your passphrase, you will &lt;b&gt;LOSE ALL OF YOUR BITCOINS&lt;/b&gt;!</source>
-        <translation>Увага: калі вы зашыфруеце свой гаманец і страціце парольную фразу, то &lt;b&gt;СТРАЦІЦЕ ЎСЕ СВАЕ БІТКОЙНЫ&lt;/b&gt;!</translation>
+        <translation>Увага: калі вы зашыфруеце свой гаманец і страціце парольную фразу, то &lt;b&gt;СТРАЦІЦЕ ЎСЕ СВАЕ зорккойнЫ&lt;/b&gt;!</translation>
     </message>
     <message>
         <source>Are you sure you wish to encrypt your wallet?</source>
@@ -212,7 +212,7 @@
     <name>BanTableModel</name>
     </context>
 <context>
-    <name>BitcoinGUI</name>
+    <name>ZorkcoinGUI</name>
     <message>
         <source>Sign &amp;message...</source>
         <translation>Падпісаць паведамленне...</translation>
@@ -278,8 +278,8 @@
         <translation>Пераіндэксацыя блокаў на дыску...</translation>
     </message>
     <message>
-        <source>Send coins to a Bitcoin address</source>
-        <translation>Даслаць манеты на Біткойн-адрас</translation>
+        <source>Send coins to a Zorkcoin address</source>
+        <translation>Даслаць манеты на зорккойн-адрас</translation>
     </message>
     <message>
         <source>Backup wallet to another location</source>
@@ -314,12 +314,12 @@
         <translation>Зашыфраваць прыватныя ключы, якия належаць вашаму гаманцу</translation>
     </message>
     <message>
-        <source>Sign messages with your Bitcoin addresses to prove you own them</source>
-        <translation>Падпісаць паведамленне з дапамогай Біткойн-адраса каб даказаць, што яно належыць вам</translation>
+        <source>Sign messages with your Zorkcoin addresses to prove you own them</source>
+        <translation>Падпісаць паведамленне з дапамогай зорккойн-адраса каб даказаць, што яно належыць вам</translation>
     </message>
     <message>
-        <source>Verify messages to ensure they were signed with specified Bitcoin addresses</source>
-        <translation>Спраўдзіць паведамленне з дапамогай Біткойн-адраса каб даказаць, што яно належыць вам</translation>
+        <source>Verify messages to ensure they were signed with specified Zorkcoin addresses</source>
+        <translation>Спраўдзіць паведамленне з дапамогай зорккойн-адраса каб даказаць, што яно належыць вам</translation>
     </message>
     <message>
         <source>&amp;File</source>
@@ -334,8 +334,8 @@
         <translation>Дапамога</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and bitcoin: URIs)</source>
-        <translation>Запатрабаваць плацёж (генеруецца QR-код для біткойн URI)</translation>
+        <source>Request payments (generates QR codes and zorkcoin: URIs)</source>
+        <translation>Запатрабаваць плацёж (генеруецца QR-код для зорккойн URI)</translation>
     </message>
     <message>
         <source>Show the list of used sending addresses and labels</source>
@@ -617,8 +617,8 @@
         <translation>Вітаем</translation>
     </message>
     <message>
-        <source>Bitcoin</source>
-        <translation>Біткойн</translation>
+        <source>Zorkcoin</source>
+        <translation>зорккойн</translation>
     </message>
     <message>
         <source>Error</source>
@@ -1158,7 +1158,7 @@
     </message>
     </context>
 <context>
-    <name>bitcoin-core</name>
+    <name>zorkcoin-core</name>
     <message>
         <source>Do you want to rebuild the block database now?</source>
         <translation>Ці жадаеце вы перабудаваць зараз базу звестак блокаў?</translation>

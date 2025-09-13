@@ -64,7 +64,7 @@
     <name>BanTableModel</name>
     </context>
 <context>
-    <name>BitcoinGUI</name>
+    <name>ZorkcoinGUI</name>
     <message>
         <source>Sign &amp;message...</source>
         <translation>Потпиши &amp;порака...</translation>
@@ -126,8 +126,8 @@
         <translation>Повторно индексирање на блокови од дискот...</translation>
     </message>
     <message>
-        <source>Send coins to a Bitcoin address</source>
-        <translation>Испрати биткоини на Биткоин адреса</translation>
+        <source>Send coins to a Zorkcoin address</source>
+        <translation>Испрати биткоини на Зорккойн адреса</translation>
     </message>
     <message>
         <source>&amp;Verify message...</source>
@@ -285,8 +285,8 @@
 <context>
     <name>Intro</name>
     <message>
-        <source>Bitcoin</source>
-        <translation>Биткоин</translation>
+        <source>Zorkcoin</source>
+        <translation>Зорккойн</translation>
     </message>
     <message>
         <source>Error</source>
@@ -602,6 +602,6 @@
     </message>
     </context>
 <context>
-    <name>bitcoin-core</name>
+    <name>zorkcoin-core</name>
     </context>
 </TS>

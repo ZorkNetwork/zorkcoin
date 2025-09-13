@@ -66,13 +66,13 @@
         <translation>Адресе за примање</translation>
     </message>
     <message>
-        <source>These are your Bitcoin addresses for sending payments. Always check the amount and the receiving address before sending coins.</source>
-        <translation>Ово су твоје Биткоин адресе за слање уплата. Увек добро провери износ и адресу на коју шаљеш пре него што пошаљеш уплату.</translation>
+        <source>These are your Zorkcoin addresses for sending payments. Always check the amount and the receiving address before sending coins.</source>
+        <translation>Ово су твоје Зорккойн адресе за слање уплата. Увек добро провери износ и адресу на коју шаљеш пре него што пошаљеш уплату.</translation>
     </message>
     <message>
-        <source>These are your Bitcoin addresses for receiving payments. Use the 'Create new receiving address' button in the receive tab to create new addresses.
+        <source>These are your Zorkcoin addresses for receiving payments. Use the 'Create new receiving address' button in the receive tab to create new addresses.
 Signing is only possible with addresses of the type 'legacy'.</source>
-        <translation>Ово су твоје Биткоин адресе за приманје уплата. Користи дугме „Направи нову адресу за примање” у картици за примање за креирање нових адреса.
+        <translation>Ово су твоје Зорккойн адресе за приманје уплата. Користи дугме „Направи нову адресу за примање” у картици за примање за креирање нових адреса.
 Потписивање је могуће само за адресе типа 'legacy'.</translation>
     </message>
     <message>
@@ -190,7 +190,7 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation>Унеси стару лозинку и нову лозинку новчаника.</translation>
     </message>
     <message>
-        <source>Remember that encrypting your wallet cannot fully protect your bitcoins from being stolen by malware infecting your computer.</source>
+        <source>Remember that encrypting your wallet cannot fully protect your zorkcoins from being stolen by malware infecting your computer.</source>
         <translation>Упамти, шифрирање новчаника не може у потуности заштити твоје биткоине од крађе од стране малвера инфицира твој рачунар.</translation>
     </message>
     <message>
@@ -254,7 +254,7 @@ Signing is only possible with addresses of the type 'legacy'.</source>
     </message>
 </context>
 <context>
-    <name>BitcoinGUI</name>
+    <name>ZorkcoinGUI</name>
     <message>
         <source>Sign &amp;message...</source>
         <translation>Потпиши &amp;поруку...</translation>
@@ -364,8 +364,8 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation>Прокси је &lt;b&gt;омогућен&lt;/b&gt;: %1</translation>
     </message>
     <message>
-        <source>Send coins to a Bitcoin address</source>
-        <translation>Пошаљи новац на Биткоин адресу</translation>
+        <source>Send coins to a Zorkcoin address</source>
+        <translation>Пошаљи новац на Зорккойн адресу</translation>
     </message>
     <message>
         <source>Backup wallet to another location</source>
@@ -400,12 +400,12 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation>Шифрирај приватни клуљ који припада новчанику.</translation>
     </message>
     <message>
-        <source>Sign messages with your Bitcoin addresses to prove you own them</source>
-        <translation>Потписуј поруку са своје Биткоин адресе као доказ да си њихов власник</translation>
+        <source>Sign messages with your Zorkcoin addresses to prove you own them</source>
+        <translation>Потписуј поруку са своје Зорккойн адресе као доказ да си њихов власник</translation>
     </message>
     <message>
-        <source>Verify messages to ensure they were signed with specified Bitcoin addresses</source>
-        <translation>Верификуј поруке и утврди да ли су потписане од стране спецификованих Биткоин адреса</translation>
+        <source>Verify messages to ensure they were signed with specified Zorkcoin addresses</source>
+        <translation>Верификуј поруке и утврди да ли су потписане од стране спецификованих Зорккойн адреса</translation>
     </message>
     <message>
         <source>&amp;File</source>
@@ -424,7 +424,7 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation>Трака са картицама</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and bitcoin: URIs)</source>
+        <source>Request payments (generates QR codes and zorkcoin: URIs)</source>
         <translation>Затражи плаћање (генерише QR кодове и биткоин: URI-е)</translation>
     </message>
     <message>
@@ -440,8 +440,8 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation>&amp;Опције командне линије</translation>
     </message>
     <message numerus="yes">
-        <source>%n active connection(s) to Bitcoin network</source>
-        <translation><numerusform>%n aктивна веза са Биткоин мрежом</numerusform><numerusform>%n aктивних веза са Биткоин мрежом</numerusform><numerusform>%n aктивних веза са Биткоин мрежом</numerusform></translation>
+        <source>%n active connection(s) to Zorkcoin network</source>
+        <translation><numerusform>%n aктивна веза са Зорккойн мрежом</numerusform><numerusform>%n aктивних веза са Зорккойн мрежом</numerusform><numerusform>%n aктивних веза са Зорккойн мрежом</numerusform></translation>
     </message>
     <message>
         <source>Indexing blocks on disk...</source>
@@ -500,7 +500,7 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation>&amp;Адресе за примање</translation>
     </message>
     <message>
-        <source>Open a bitcoin: URI</source>
+        <source>Open a zorkcoin: URI</source>
         <translation>Отвори биткоин: URI</translation>
     </message>
     <message>
@@ -524,8 +524,8 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation>Затвори све новчанике</translation>
     </message>
     <message>
-        <source>Show the %1 help message to get a list with possible Bitcoin command-line options</source>
-        <translation>Прикажи  поруку помоћи %1 за листу са могућим опцијама Биткоин командне линије</translation>
+        <source>Show the %1 help message to get a list with possible Zorkcoin command-line options</source>
+        <translation>Прикажи  поруку помоћи %1 за листу са могућим опцијама Зорккойн командне линије</translation>
     </message>
     <message>
         <source>default wallet</source>
@@ -876,8 +876,8 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation>Измени адресу за слање</translation>
     </message>
     <message>
-        <source>The entered address "%1" is not a valid Bitcoin address.</source>
-        <translation>Унета адреса "%1" није важећа Биткоин адреса.</translation>
+        <source>The entered address "%1" is not a valid Zorkcoin address.</source>
+        <translation>Унета адреса "%1" није важећа Зорккойн адреса.</translation>
     </message>
     <message>
         <source>Address "%1" already exists as a receiving address with label "%2" and so cannot be added as a sending address.</source>
@@ -973,8 +973,8 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation>Користите прилагођени директоријум података:</translation>
     </message>
     <message>
-        <source>Bitcoin</source>
-        <translation>Биткоин</translation>
+        <source>Zorkcoin</source>
+        <translation>Зорккойн</translation>
     </message>
     <message>
         <source>Discard blocks after verification, except most recent %1 GB (prune)</source>
@@ -989,8 +989,8 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation>Најмање %1 GB подататака биће складиштен у овај директорјиум.</translation>
     </message>
     <message>
-        <source>%1 will download and store a copy of the Bitcoin block chain.</source>
-        <translation>%1 биће преузеће и складиштити копију Биткоин ланца блокова.</translation>
+        <source>%1 will download and store a copy of the Zorkcoin block chain.</source>
+        <translation>%1 биће преузеће и складиштити копију Зорккойн ланца блокова.</translation>
     </message>
     <message>
         <source>The wallet will also be stored in this directory.</source>
@@ -1024,11 +1024,11 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation>Форма</translation>
     </message>
     <message>
-        <source>Recent transactions may not yet be visible, and therefore your wallet's balance might be incorrect. This information will be correct once your wallet has finished synchronizing with the bitcoin network, as detailed below.</source>
+        <source>Recent transactions may not yet be visible, and therefore your wallet's balance might be incorrect. This information will be correct once your wallet has finished synchronizing with the zorkcoin network, as detailed below.</source>
         <translation>Недавне трансакције можда не буду видљиве, зато салдо твог новчаника може бити нетачан. Ова информација биће тачна када новчаник заврши са синхронизацијом биткоин мреже, приказаном испод.</translation>
     </message>
     <message>
-        <source>Attempting to spend bitcoins that are affected by not-yet-displayed transactions will not be accepted by the network.</source>
+        <source>Attempting to spend zorkcoins that are affected by not-yet-displayed transactions will not be accepted by the network.</source>
         <translation>Покушај трошења биткоина на које утичу још увек неприказане трансакције мрежа неће прихватити.</translation>
     </message>
     <message>
@@ -1079,7 +1079,7 @@ Signing is only possible with addresses of the type 'legacy'.</source>
 <context>
     <name>OpenURIDialog</name>
     <message>
-        <source>Open bitcoin URI</source>
+        <source>Open zorkcoin URI</source>
         <translation>Отвори биткоин URI</translation>
     </message>
     <message>
@@ -1221,8 +1221,8 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation>&amp;Троши непотврђени кусур</translation>
     </message>
     <message>
-        <source>Automatically open the Bitcoin client port on the router. This only works when your router supports UPnP and it is enabled.</source>
-        <translation>Аутоматски отвори Биткоин клијент порт на рутеру. Ова опција ради само уколико твој рутер подржава и има омогућен UPnP.</translation>
+        <source>Automatically open the Zorkcoin client port on the router. This only works when your router supports UPnP and it is enabled.</source>
+        <translation>Аутоматски отвори Зорккойн клијент порт на рутеру. Ова опција ради само уколико твој рутер подржава и има омогућен UPnP.</translation>
     </message>
     <message>
         <source>Map port using &amp;UPnP</source>
@@ -1237,8 +1237,8 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation>Дозволи долазеће конекције.</translation>
     </message>
     <message>
-        <source>Connect to the Bitcoin network through a SOCKS5 proxy.</source>
-        <translation>Конектуј се на Биткоин мрежу кроз SOCKS5 проксијем.</translation>
+        <source>Connect to the Zorkcoin network through a SOCKS5 proxy.</source>
+        <translation>Конектуј се на Зорккойн мрежу кроз SOCKS5 проксијем.</translation>
     </message>
     <message>
         <source>&amp;Connect through SOCKS5 proxy (default proxy):</source>
@@ -1376,8 +1376,8 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation>Форма</translation>
     </message>
     <message>
-        <source>The displayed information may be out of date. Your wallet automatically synchronizes with the Bitcoin network after a connection is established, but this process has not completed yet.</source>
-        <translation>Приказана информација може бити застарела. Ваш новчаник се аутоматски синхронизује са Биткоин мрежом након успостављања конекције, али овај процес је још увек у току.</translation>
+        <source>The displayed information may be out of date. Your wallet automatically synchronizes with the Zorkcoin network after a connection is established, but this process has not completed yet.</source>
+        <translation>Приказана информација може бити застарела. Ваш новчаник се аутоматски синхронизује са Зорккойн мрежом након успостављања конекције, али овај процес је још увек у току.</translation>
     </message>
     <message>
         <source>Watch-only:</source>
@@ -1494,7 +1494,7 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation>Грешка у захтеву за плаћање</translation>
     </message>
     <message>
-        <source>Cannot start bitcoin: click-to-pay handler</source>
+        <source>Cannot start zorkcoin: click-to-pay handler</source>
         <translation>Не могу покренути биткоин: "кликни-да-платиш" механизам</translation>
     </message>
     <message>
@@ -1502,8 +1502,8 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation>URI руковање</translation>
     </message>
     <message>
-        <source>'bitcoin://' is not a valid URI. Use 'bitcoin:' instead.</source>
-        <translation>'bitcoin://' није важећи URI. Уместо тога користити  'bitcoin:'.</translation>
+        <source>'zorkcoin://' is not a valid URI. Use 'zorkcoin:' instead.</source>
+        <translation>'zorkcoin://' није важећи URI. Уместо тога користити  'zorkcoin:'.</translation>
     </message>
     <message>
         <source>Cannot process payment request because BIP70 is not supported.</source>
@@ -1522,8 +1522,8 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation>Неважећа адреса за плаћање %1</translation>
     </message>
     <message>
-        <source>URI cannot be parsed! This can be caused by an invalid Bitcoin address or malformed URI parameters.</source>
-        <translation>URI се не може рашчланити! Ово може бити проузроковано неважећом Биткоин адресом или погрешно форматираним URI параметрима.</translation>
+        <source>URI cannot be parsed! This can be caused by an invalid Zorkcoin address or malformed URI parameters.</source>
+        <translation>URI се не може рашчланити! Ово може бити проузроковано неважећом Зорккойн адресом или погрешно форматираним URI параметрима.</translation>
     </message>
     <message>
         <source>Payment request file handling</source>
@@ -1564,8 +1564,8 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation>Износ</translation>
     </message>
     <message>
-        <source>Enter a Bitcoin address (e.g. %1)</source>
-        <translation>Унеси Биткоин адресу, (нпр %1)</translation>
+        <source>Enter a Zorkcoin address (e.g. %1)</source>
+        <translation>Унеси Зорккойн адресу, (нпр %1)</translation>
     </message>
     <message>
         <source>%1 d</source>
@@ -2009,8 +2009,8 @@ Signing is only possible with addresses of the type 'legacy'.</source>
         <translation>Poruka:</translation>
     </message>
     <message>
-        <source>An optional message to attach to the payment request, which will be displayed when the request is opened. Note: The message will not be sent with the payment over the Bitcoin network.</source>
-        <translation>Опциона порука коју можеш прикачити уз захтев за плаћање, која ће бити приказана када захтев буде отворен. Напомена: Порука неће бити послата са уплатом на Биткоин мрежи.</translation>
+        <source>An optional message to attach to the payment request, which will be displayed when the request is opened. Note: The message will not be sent with the payment over the Zorkcoin network.</source>
+        <translation>Опциона порука коју можеш прикачити уз захтев за плаћање, која ће бити приказана када захтев буде отворен. Напомена: Порука неће бити послата са уплатом на Зорккойн мрежи.</translation>
     </message>
     <message>
         <source>An optional label to associate with the new receiving address.</source>
@@ -2286,7 +2286,7 @@ Note:  Since the fee is calculated on a per-byte basis, a fee of "100 satoshis p
         <translation>Сакријте износ накнаде за трансакцију</translation>
     </message>
     <message>
-        <source>When there is less transaction volume than space in the blocks, miners as well as relaying nodes may enforce a minimum fee. Paying only this minimum fee is just fine, but be aware that this can result in a never confirming transaction once there is more demand for bitcoin transactions than the network can process.</source>
+        <source>When there is less transaction volume than space in the blocks, miners as well as relaying nodes may enforce a minimum fee. Paying only this minimum fee is just fine, but be aware that this can result in a never confirming transaction once there is more demand for zorkcoin transactions than the network can process.</source>
         <translation>Када је мањи обим трансакција од простора у блоку, рудари, као и повезани нодови могу применити минималну провизију. Плаћање само минималне накнаде - провизије је добро, али треба бити свестан да ово може резултовати трансакцијом која неће никада бити потврђена, у случају када је број захтева за биткоин трансакцијама већи од могућности мреже да обради.</translation>
     </message>
     <message>
@@ -2358,8 +2358,8 @@ Note:  Since the fee is calculated on a per-byte basis, a fee of "100 satoshis p
         <translation>Креирај непотписано</translation>
     </message>
     <message>
-        <source>Creates a Partially Signed Bitcoin Transaction (PSBT) for use with e.g. an offline %1 wallet, or a PSBT-compatible hardware wallet.</source>
-        <translation>Креира делимично потписану Биткоин трансакцију (PSBT) за коришћење са нпр. офлајн %1 новчаником, или PSBT компатибилним хардверским новчаником. </translation>
+        <source>Creates a Partially Signed Zorkcoin Transaction (PSBT) for use with e.g. an offline %1 wallet, or a PSBT-compatible hardware wallet.</source>
+        <translation>Креира делимично потписану Зорккойн трансакцију (PSBT) за коришћење са нпр. офлајн %1 новчаником, или PSBT компатибилним хардверским новчаником. </translation>
     </message>
     <message>
         <source> from wallet '%1'</source>
@@ -2474,8 +2474,8 @@ Note:  Since the fee is calculated on a per-byte basis, a fee of "100 satoshis p
         <translation><numerusform>Процењује се да ће започети потврду унутар %n блока.</numerusform><numerusform>Процењује се да ће започети потврду унутар %n блока.</numerusform><numerusform>Процењује се да ће започети потврду унутар %n блокова.</numerusform></translation>
     </message>
     <message>
-        <source>Warning: Invalid Bitcoin address</source>
-        <translation>Упозорење: Неважећа Биткоин адреса</translation>
+        <source>Warning: Invalid Zorkcoin address</source>
+        <translation>Упозорење: Неважећа Зорккойн адреса</translation>
     </message>
     <message>
         <source>Warning: Unknown change address</source>
@@ -2513,8 +2513,8 @@ Note:  Since the fee is calculated on a per-byte basis, a fee of "100 satoshis p
         <translation>Одабери претходно коришћену адресу</translation>
     </message>
     <message>
-        <source>The Bitcoin address to send the payment to</source>
-        <translation>Биткоин адреса на коју се шаље уплата</translation>
+        <source>The Zorkcoin address to send the payment to</source>
+        <translation>Зорккойн адреса на коју се шаље уплата</translation>
     </message>
     <message>
         <source>Alt+A</source>
@@ -2537,7 +2537,7 @@ Note:  Since the fee is calculated on a per-byte basis, a fee of "100 satoshis p
         <translation>Износ који ће бити послат у одабрану јединицу</translation>
     </message>
     <message>
-        <source>The fee will be deducted from the amount being sent. The recipient will receive less bitcoins than you enter in the amount field. If multiple recipients are selected, the fee is split equally.</source>
+        <source>The fee will be deducted from the amount being sent. The recipient will receive less zorkcoins than you enter in the amount field. If multiple recipients are selected, the fee is split equally.</source>
         <translation>Провизија ће бити одузета од износа који је послат. Примаоц ће добити мање биткоина него што је унесено у поље за износ. Уколико је одабрано више примаоца, провизија се дели равномерно.</translation>
     </message>
     <message>
@@ -2565,8 +2565,8 @@ Note:  Since the fee is calculated on a per-byte basis, a fee of "100 satoshis p
         <translation>Унесите ознаку за ову адресу да бисте је додали на листу коришћених адреса</translation>
     </message>
     <message>
-        <source>A message that was attached to the bitcoin: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Bitcoin network.</source>
-        <translation>Порука која је приложена биткоину: URI која ће бити сачувана уз трансакцију ради референце. Напомена: Ова порука се шаље преко Биткоин мреже.</translation>
+        <source>A message that was attached to the zorkcoin: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Zorkcoin network.</source>
+        <translation>Порука која је приложена биткоину: URI која ће бити сачувана уз трансакцију ради референце. Напомена: Ова порука се шаље преко Зорккойн мреже.</translation>
     </message>
     <message>
         <source>Pay To:</source>
@@ -2595,12 +2595,12 @@ Note:  Since the fee is calculated on a per-byte basis, a fee of "100 satoshis p
         <translation>Потписи - Потпиши / Потврди поруку</translation>
     </message>
     <message>
-        <source>You can sign messages/agreements with your addresses to prove you can receive bitcoins sent to them. Be careful not to sign anything vague or random, as phishing attacks may try to trick you into signing your identity over to them. Only sign fully-detailed statements you agree to.</source>
+        <source>You can sign messages/agreements with your addresses to prove you can receive zorkcoins sent to them. Be careful not to sign anything vague or random, as phishing attacks may try to trick you into signing your identity over to them. Only sign fully-detailed statements you agree to.</source>
         <translation>Можете потписати поруку/споразум са вашом адресом да би сте доказали да можете примити биткоин послат ка њима. Будите опрезни да не потписујете ништа нејасно или случајно, јер се може десити напад крађе идентитета, да потпишете ваш идентитет нападачу. Потпишите само потпуно детаљне изјаве са којима се слажете.</translation>
     </message>
     <message>
-        <source>The Bitcoin address to sign the message with</source>
-        <translation>Биткоин адреса са којом ћете потписати поруку</translation>
+        <source>The Zorkcoin address to sign the message with</source>
+        <translation>Зорккойн адреса са којом ћете потписати поруку</translation>
     </message>
     <message>
         <source>Choose previously used address</source>
@@ -2631,8 +2631,8 @@ Note:  Since the fee is calculated on a per-byte basis, a fee of "100 satoshis p
         <translation>Копирајте тренутни потпис у системску базу за копирање</translation>
     </message>
     <message>
-        <source>Sign the message to prove you own this Bitcoin address</source>
-        <translation>Потпишите поруку да докажете да сте власник ове Биткоин адресе</translation>
+        <source>Sign the message to prove you own this Zorkcoin address</source>
+        <translation>Потпишите поруку да докажете да сте власник ове Зорккойн адресе</translation>
     </message>
     <message>
         <source>Sign &amp;Message</source>
@@ -2655,8 +2655,8 @@ Note:  Since the fee is calculated on a per-byte basis, a fee of "100 satoshis p
         <translation>Унесите адресу примаоца, поруку (осигурајте да тачно копирате прекиде линија, размаке, картице итд) и потпишите испод да потврдите поруку. Будите опрезни да не убаците више у потпис од онога што је у потписаној поруци, да би сте избегли напад посредника. Имајте на уму да потпис само доказује да потписник прима са потписаном адресом, а не може да докаже слање било које трансакције!</translation>
     </message>
     <message>
-        <source>The Bitcoin address the message was signed with</source>
-        <translation>Биткоин адреса са којом је потписана порука</translation>
+        <source>The Zorkcoin address the message was signed with</source>
+        <translation>Зорккойн адреса са којом је потписана порука</translation>
     </message>
     <message>
         <source>The signed message to verify</source>
@@ -2667,8 +2667,8 @@ Note:  Since the fee is calculated on a per-byte basis, a fee of "100 satoshis p
         <translation>Потпис који је дат приликом потписивања поруке</translation>
     </message>
     <message>
-        <source>Verify the message to ensure it was signed with the specified Bitcoin address</source>
-        <translation>Потврдите поруку да осигурате да је потписана са одговарајућом Биткоин адресом</translation>
+        <source>Verify the message to ensure it was signed with the specified Zorkcoin address</source>
+        <translation>Потврдите поруку да осигурате да је потписана са одговарајућом Зорккойн адресом</translation>
     </message>
     <message>
         <source>Verify &amp;Message</source>
@@ -3346,7 +3346,7 @@ Note:  Since the fee is calculated on a per-byte basis, a fee of "100 satoshis p
     </message>
 </context>
 <context>
-    <name>bitcoin-core</name>
+    <name>zorkcoin-core</name>
     <message>
         <source>Distributed under the MIT software license, see the accompanying file %s or %s</source>
         <translation>Дистрибуирано под MIT софтверском лиценцом, погледајте придружени документ %s или %s</translation>
