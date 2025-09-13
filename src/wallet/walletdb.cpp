@@ -493,7 +493,7 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
                     }
 
                     // Extract the index and internal from the path
-                    // Path string is m/0'/k'/i'
+                    // Path string is m/240079435'/k'/i'
                     // Path vector is [0', k', i'] (but as ints OR'd with the hardened bit
                     // k == 0 for external, 1 for internal. i is the index
                     if (path.size() != 3) {

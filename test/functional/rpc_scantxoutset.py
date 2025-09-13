@@ -36,12 +36,12 @@ class ScantxoutsetTest(BitcoinTestFramework):
         self.nodes[0].sendtoaddress(addr_BECH32, 0.004)
 
         #send to child keys of tprv8ZgxMBicQKsPd7Uf69XL1XwhmjHopUGep8GuEiJDZmbQz6o58LninorQAfcKZWARbtRtfnLcJ5MQ2AtHcQJCCRUcMRvmDUjyEmNUWwx8UbK
-        self.nodes[0].sendtoaddress("mkHV1C6JLheLoUSSZYk7x3FH5tnx9bu7yc", 0.008) # (m/0'/0'/0')
-        self.nodes[0].sendtoaddress("mipUSRmJAj2KrjSvsPQtnP8ynUon7FhpCR", 0.016) # (m/0'/0'/1')
-        self.nodes[0].sendtoaddress("n37dAGe6Mq1HGM9t4b6rFEEsDGq7Fcgfqg", 0.032) # (m/0'/0'/1500')
-        self.nodes[0].sendtoaddress("mqS9Rpg8nNLAzxFExsgFLCnzHBsoQ3PRM6", 0.064) # (m/0'/0'/0)
-        self.nodes[0].sendtoaddress("mnTg5gVWr3rbhHaKjJv7EEEc76ZqHgSj4S", 0.128) # (m/0'/0'/1)
-        self.nodes[0].sendtoaddress("mketCd6B9U9Uee1iCsppDJJBHfvi6U6ukC", 0.256) # (m/0'/0'/1500)
+        self.nodes[0].sendtoaddress("mkHV1C6JLheLoUSSZYk7x3FH5tnx9bu7yc", 0.008) # (m/240079435'/0'/0')
+        self.nodes[0].sendtoaddress("mipUSRmJAj2KrjSvsPQtnP8ynUon7FhpCR", 0.016) # (m/240079435'/0'/1')
+        self.nodes[0].sendtoaddress("n37dAGe6Mq1HGM9t4b6rFEEsDGq7Fcgfqg", 0.032) # (m/240079435'/0'/1500')
+        self.nodes[0].sendtoaddress("mqS9Rpg8nNLAzxFExsgFLCnzHBsoQ3PRM6", 0.064) # (m/240079435'/0'/0)
+        self.nodes[0].sendtoaddress("mnTg5gVWr3rbhHaKjJv7EEEc76ZqHgSj4S", 0.128) # (m/240079435'/0'/1)
+        self.nodes[0].sendtoaddress("mketCd6B9U9Uee1iCsppDJJBHfvi6U6ukC", 0.256) # (m/240079435'/0'/1500)
         self.nodes[0].sendtoaddress("mj8zFzrbBcdaWXowCQ1oPZ4qioBVzLzAp7", 0.512) # (m/1/1/0')
         self.nodes[0].sendtoaddress("mfnKpKQEftniaoE1iXuMMePQU3PUpcNisA", 1.024) # (m/1/1/1')
         self.nodes[0].sendtoaddress("mou6cB1kaP1nNJM1sryW6YRwnd4shTbXYQ", 2.048) # (m/1/1/1500')

@@ -15,6 +15,8 @@
 //! Value for the first BIP 32 hardened derivation. Can be used as a bit mask and as a value. See BIP 32 for more details.
 const uint32_t BIP32_HARDENED_KEY_LIMIT = 0x80000000;
 
+const std::string COIN_TYPE = std::string("240079435");  // coin type from SLIP-0044 for Zork Network
+
 static KeyPurpose GetPurpose(const OutputType type, const bool internal)
 {
     if (type == OutputType::MWEB) {
@@ -1117,11 +1119,11 @@ CPubKey LegacyScriptPubKeyMan::GenerateNewKey(WalletBatch &batch, CHDChain& hd_c
 
 void LegacyScriptPubKeyMan::DeriveNewChildKey(WalletBatch& batch, CKeyMetadata& metadata, CKey& secret, CHDChain& hd_chain, const KeyPurpose purpose)
 {
-    // for now we use a fixed keypath scheme of m/0'/0'/k
+    // for now we use a fixed keypath scheme of m/240079435'/0'/k
     CKey seed;                     //seed (256bit)
     CExtKey masterKey;             //hd master key
-    CExtKey accountKey;            //key at m/0'
-    CExtKey chainChildKey;         //key at m/0'/0' (external) or m/0'/1' (internal)
+    CExtKey accountKey;            //key at m/240079435'
+    CExtKey chainChildKey;         //key at m/240079435'/0' (external) or m/240079435'/1' (internal)
 
     // try to get the seed
     if (!GetKey(hd_chain.seed_id, seed))
@@ -1133,11 +1135,11 @@ void LegacyScriptPubKeyMan::DeriveNewChildKey(WalletBatch& batch, CKeyMetadata& 
 
     masterKey.SetSeed(seed.begin(), seed.size());
 
-    // derive m/0'
+    // derive m/240079435'
     // use hardened derivation (child keys >= 0x80000000 are hardened after bip32)
     masterKey.Derive(accountKey, BIP32_HARDENED_KEY_LIMIT);
 
-    // derive m/0'/0' (external chain) OR m/0'/1' (internal chain)
+    // derive m/240079435'/0' (external chain) OR m/240079435'/1' (internal chain)
     assert(purpose == KeyPurpose::INTERNAL ? m_storage.CanSupportFeature(FEATURE_HD_SPLIT) : true);
     assert(purpose == KeyPurpose::MWEB ? m_storage.CanSupportFeature(FEATURE_HD_SPLIT) : true);
     accountKey.Derive(chainChildKey, BIP32_HARDENED_KEY_LIMIT + (uint32_t)purpose);
@@ -1157,9 +1159,9 @@ void LegacyScriptPubKeyMan::DeriveNewChildKey(WalletBatch& batch, CKeyMetadata& 
             metadata.hdKeypath = "x/" + ToString(chain_counter);
             metadata.key_origin.path.push_back(chain_counter);
         } else {
-            CExtKey childKey; //key at m/0'/0'/<n>'
+            CExtKey childKey; //key at m/240079435'/0'/<n>'
             chainChildKey.Derive(childKey, chain_counter | BIP32_HARDENED_KEY_LIMIT);
-            metadata.hdKeypath = "m/0'/" + ToString((uint32_t)purpose) + "'/" + ToString(chain_counter) + "'";
+            metadata.hdKeypath = "m/" + COIN_TYPE + "'/" + ToString((uint32_t)purpose) + "'/" + ToString(chain_counter) + "'";
             metadata.key_origin.path.push_back(0 | BIP32_HARDENED_KEY_LIMIT);
             metadata.key_origin.path.push_back((uint32_t)purpose | BIP32_HARDENED_KEY_LIMIT);
             metadata.key_origin.path.push_back(chain_counter | BIP32_HARDENED_KEY_LIMIT);
@@ -1749,11 +1751,11 @@ void LegacyScriptPubKeyMan::LoadMWEBKeychain()
     CExtKey masterKey;
     masterKey.SetSeed(seed.begin(), seed.size());
 
-    // derive m/0'
+    // derive m/240079435'
     CExtKey accountKey;
     masterKey.Derive(accountKey, BIP32_HARDENED_KEY_LIMIT);
 
-    // derive m/0'/100' (MWEB)
+    // derive m/240079435'/100' (MWEB)
     CExtKey chainChildKey;
     accountKey.Derive(chainChildKey, BIP32_HARDENED_KEY_LIMIT + (uint32_t)KeyPurpose::MWEB);
 
@@ -2109,11 +2111,11 @@ bool DescriptorScriptPubKeyMan::SetupDescriptorGeneration(const CExtKey& master_
     } // no default case, so the compiler can warn about missing cases
     assert(!desc_prefix.empty());
 
-    // Mainnet derives at 2', testnet and regtest derive at 1'
+    // Mainnet derives at COIN_TYPE', testnet and regtest derive at 1'
     if (Params().IsTestChain()) {
         desc_prefix += "/1'";
     } else {
-        desc_prefix += "/2'";
+        desc_prefix += "/" + COIN_TYPE + "'";
     }
 
     std::string internal_path = m_internal ? "/1" : "/0";

@@ -46,7 +46,7 @@ BOOST_AUTO_TEST_CASE(psbt_updater_test)
     spk_man->AddCScript(ws1);
 
     // Add hd seed
-    CKey key = DecodeSecret("6usgJoGKXW12i7Ruxy8Z1C5hrRMVGfLmi9NU9uDQJMPXDJ6tQAH"); // Mainnet and uncompressed form of cUkG8i1RFfWGWy5ziR11zJ5V4U4W3viSFCfyJmZnvQaUsd1xuF3T
+    CKey key = DecodeSecret("6cNyiiE2rfuzVjCZokYZRJgjcPp2RKktdPjVxZ2LMTL2meRkJUD"); // Mainnet and uncompressed form of prv key 63227045132b2c5c3c992f427b646fd7fb2532fb1a4d6f5758bcfdbd3fea3ca3
     CPubKey master_pub_key = spk_man->DeriveNewSeed(key);
     spk_man->SetHDSeed(master_pub_key);
     spk_man->NewKeyPool();
@@ -120,10 +120,10 @@ BOOST_AUTO_TEST_CASE(parse_hd_keypath)
     BOOST_CHECK(ParseHDKeypath("m/0", keypath));
     BOOST_CHECK(!ParseHDKeypath("n/0", keypath));
 
-    BOOST_CHECK(ParseHDKeypath("m/0'", keypath));
-    BOOST_CHECK(!ParseHDKeypath("m/0''", keypath));
+    BOOST_CHECK(ParseHDKeypath("m/240079435'", keypath));
+    BOOST_CHECK(!ParseHDKeypath("m/240079435''", keypath));
 
-    BOOST_CHECK(ParseHDKeypath("m/0'/0'", keypath));
+    BOOST_CHECK(ParseHDKeypath("m/240079435'/0'", keypath));
     BOOST_CHECK(!ParseHDKeypath("m/'0/0'", keypath));
 
     BOOST_CHECK(ParseHDKeypath("m/0/0", keypath));
@@ -136,7 +136,7 @@ BOOST_AUTO_TEST_CASE(parse_hd_keypath)
     BOOST_CHECK(!ParseHDKeypath("m/1/1/111111111111111111111111111111111111111111111111111111111111111111111111111111111111", keypath));
 
     BOOST_CHECK(ParseHDKeypath("m/0/00/0", keypath));
-    BOOST_CHECK(!ParseHDKeypath("m/0'/00/'0", keypath));
+    BOOST_CHECK(!ParseHDKeypath("m/240079435'/00/'0", keypath));
 
     BOOST_CHECK(ParseHDKeypath("m/1/", keypath));
     BOOST_CHECK(!ParseHDKeypath("m/1//", keypath));

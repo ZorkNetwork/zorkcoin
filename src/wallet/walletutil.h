@@ -20,7 +20,7 @@ enum WalletFeature
 
     FEATURE_HD = 130000, // Hierarchical key derivation after BIP32 (HD Wallet)
 
-    FEATURE_HD_SPLIT = 139900, // Wallet with HD chain split (change outputs will use m/0'/1'/k)
+    FEATURE_HD_SPLIT = 139900, // Wallet with HD chain split (change outputs will use m/240079435'/1'/k)
 
     FEATURE_NO_DEFAULT_KEY = 159900, // Wallet without a default key written
 
