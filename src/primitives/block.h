@@ -115,6 +115,20 @@ public:
         return block;
     }
 
+    // PoW requires a hash with zeroized timestamp & nonce
+    // To be used as seed input before timestamp & nonce are applied for PoW
+    CBlockHeader GetPrePowBlockHeader() const
+    {
+        CBlockHeader block;
+        block.nVersion       = nVersion;
+        block.hashPrevBlock  = hashPrevBlock;
+        block.hashMerkleRoot = hashMerkleRoot;
+        block.nTime          = 0;
+        block.nBits          = nBits;
+        block.nNonce         = 0;
+        return block;
+    }
+
     std::string ToString() const;
 
     // Returns the hogex (integrating) transaction, if it exists.

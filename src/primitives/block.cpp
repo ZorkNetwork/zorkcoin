@@ -9,7 +9,7 @@
 #include <tinyformat.h>
 #include <util/strencodings.h>
 #include <crypto/common.h>
-#include <crypto/scrypt.h>
+#include <crypto/kheavyhash.h>
 
 uint256 CBlockHeader::GetHash() const
 {
@@ -18,9 +18,22 @@ uint256 CBlockHeader::GetHash() const
 
 uint256 CBlockHeader::GetPoWHash() const
 {
-    uint256 thash;
-    scrypt_1024_1_1_256(BEGIN(nVersion), BEGIN(thash));
-    return thash;
+    uint256 prePowHash;
+    uint256 output;
+    uint8_t time[8];
+    uint8_t nonce[8];
+
+    *(uint64_t*)time = (uint64_t)nTime*1000;  // time presently stored accurate to second only but should be in millisecconds
+    *(uint64_t*)nonce = (uint64_t)nNonce;     // nonce presently stored as 32bit only but should be a 64 bit field
+
+    // prePowHash = hash of header with zero timestamp and nonce
+    prePowHash = CBlock(*this).GetPrePowBlockHeader().GetHash();
+
+    KHeavyHash work = KHeavyHash(prePowHash);    
+    work.Write(prePowHash).Write(time).Write(uint256().ZERO).Write(nonce);
+    work.Finalize(output);
+
+    return output;
 }
 
 std::string CBlock::ToString() const

@@ -138,11 +138,11 @@ SHA3_256& SHA3_256::Write(Span<const unsigned char> data)
     return *this;
 }
 
-SHA3_256& SHA3_256::Finalize(Span<unsigned char> output)
+SHA3_256& SHA3_256::Finalize(Span<unsigned char> output, const unsigned char delim)
 {
     assert(output.size() == OUTPUT_SIZE);
     std::fill(m_buffer + m_bufsize, m_buffer + sizeof(m_buffer), 0);
-    m_buffer[m_bufsize] ^= 0x06;
+    m_buffer[m_bufsize] ^= delim;
     m_state[m_pos] ^= ReadLE64(m_buffer);
     m_state[RATE_BUFFERS - 1] ^= 0x8000000000000000;
     KeccakF(m_state);

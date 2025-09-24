@@ -34,7 +34,7 @@ public:
 
     SHA3_256() {}
     SHA3_256& Write(Span<const unsigned char> data);
-    SHA3_256& Finalize(Span<unsigned char> output);
+    SHA3_256& Finalize(Span<unsigned char> output, const unsigned char delim=0x06);
     SHA3_256& Reset();
 };
 
