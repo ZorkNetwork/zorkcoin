@@ -51,34 +51,34 @@ constexpr static struct {
     unsigned char extranonce;
     unsigned int nonce;
 } blockinfo[] = {
- {4, 0xa4e1e6a3}, {2, 0x15f01630}, {1, 0x038fb8bd}, {1, 0x7020d8ec},
- {2, 0xce94db28}, {2, 0x52f35423}, {1, 0x77eac0b9}, {2, 0xbb68078e},
- {2, 0x8413f3e0}, {1, 0x48c71944}, {1, 0xefc36809}, {2, 0x682277ef},
- {2, 0x08a86337}, {1, 0x089329b2}, {2, 0x212b3354}, {2, 0xe01b8042},
- {1, 0xeed1d1c6}, {2, 0xba6b819e}, {1, 0xa753fa2c}, {1, 0x3473f56f},
- {3, 0xd668e78c}, {2, 0xecb5db6e}, {2, 0xca623c53}, {1, 0x6bf9d1fb},
- {2, 0x0172c884}, {1, 0x6e25f2c8}, {2, 0x444f25d6}, {2, 0x27c57191},
- {2, 0xb5b3d5ec}, {2, 0xb39cc756}, {2, 0xd1ccd3fb}, {2, 0x6bcdb53e},
- {1, 0x635da427}, {2, 0x9a84ec42}, {2, 0x555a8f59}, {1, 0xd6667787},
- {2, 0xa147457f}, {1, 0x75e12a5c}, {2, 0xfb8fc5a0}, {1, 0xe855f063},
- {1, 0xe3583f51}, {3, 0x65a460cc}, {2, 0xba710e00}, {5, 0x023f1168},
- {1, 0xa9c19be4}, {5, 0xd0a757f9}, {1, 0x37409c92}, {1, 0x833f9c5a},
- {1, 0xc6fe71af}, {2, 0x826bbf01}, {1, 0x99a9d6c3}, {1, 0x75522b5c},
- {1, 0xaae7f219}, {1, 0xd670fe41}, {5, 0x7b182655}, {5, 0x9d868b97},
- {1, 0x4d35f063}, {1, 0xabf721d9}, {6, 0x4a53f0d7}, {2, 0xf26fdada},
- {2, 0x1be27e7f}, {1, 0xad86b1fd}, {1, 0x9f4a222f}, {1, 0x15bdb598},
- {2, 0xd1eeb9f2}, {2, 0xf89ba62b}, {1, 0x0fc063a3}, {1, 0xe0759c90},
- {1, 0x78ebe2ab}, {5, 0x3e44765d}, {5, 0x73b2eacf}, {1, 0x636f05a3},
- {1, 0x6d737ebd}, {2, 0x88a8df97}, {2, 0xe989eeca}, {1, 0xb8057f75},
- {2, 0x19c8329e}, {1, 0x5ab6e5c4}, {2, 0x5c19d92c}, {2, 0x953c5006},
- {1, 0xa9e26c19}, {1, 0x3a7109e4}, {1, 0x571ea424}, {5, 0x85d280c5},
- {1, 0xfda9ffe1}, {1, 0x2b3bb53c}, {1, 0xbaa10a45}, {1, 0x71c131d4},
- {1, 0x7114e831}, {1, 0x74f4cc69}, {1, 0x49f4425d}, {2, 0x6935a4ae},
- {0, 0x648fd74c}, {1, 0x54922d8f}, {2, 0x980d380c}, {2, 0x551f2beb},
- {2, 0x04153fae}, {1, 0x991aff2c}, {1, 0xc0a80606}, {1, 0xdff6775e},
- {1, 0x316e1024}, {1, 0xb3dbdeae}, {1, 0x738b296f}, {5, 0x6280fb40},
- {2, 0xd38ddffa}, {1, 0xf4cf2ec3}, {1, 0x5b2622b6}, {1, 0xa17ba448},
- {2, 0xbbd8e6ef}, {2, 0xfe4a433a},
+ {4, 0xa500c82b}, {2, 0x160ae541}, {1, 0x03d13db0}, {1, 0x708bdf60},
+ {2, 0xced27a3a}, {2, 0x5320cf4f}, {1, 0x7801d182}, {2, 0xbba04dbf},
+ {2, 0x8446547b}, {1, 0x4906dc90}, {1, 0xefe9769d}, {2, 0x6885be90},
+ {2, 0x08da73ac}, {1, 0x08c8c947}, {2, 0x2164fadd}, {2, 0xe03cffe6},
+ {1, 0xef105b1c}, {2, 0xbab8e595}, {1, 0xa76e00c5}, {1, 0x34c19baf},
+ {3, 0xd6d8bdb7}, {2, 0xecd8a9fa}, {2, 0xcaa57fda}, {1, 0x6c19744f},
+ {2, 0x01d81ae6}, {1, 0x6e545159}, {2, 0x4481e273}, {2, 0x27e711a9},
+ {2, 0xb5e868bc}, {2, 0xb3c5cb37}, {2, 0xd2275945}, {2, 0x6c2e08f7},
+ {1, 0x637a2b4a}, {2, 0x9aae973d}, {2, 0x55710a69}, {1, 0xd6ab3384},
+ {2, 0xa17fdf6f}, {1, 0x761e21f1}, {2, 0xfc10d968}, {1, 0xe8bcfdbe},
+ {1, 0xe38dbc93}, {3, 0x65e81024}, {2, 0xbad017d0}, {5, 0x0272ba73},
+ {1, 0xaa22af9c}, {5, 0xd0c256fb}, {1, 0x378e47af}, {1, 0x83870051},
+ {1, 0xc747baff}, {2, 0x8276172e}, {1, 0x9a0579ae}, {1, 0x75d214a1},
+ {1, 0xab09bd0f}, {1, 0xd6c27b33}, {5, 0x7b500eae}, {5, 0x9dd4876e},
+ {1, 0x4d898432}, {1, 0xac30aa66}, {6, 0x4ac19658}, {2, 0xf280091a},
+ {2, 0x1c1257b1}, {1, 0xadb835c8}, {1, 0x9fa85ad5}, {1, 0x164d9fef},
+ {2, 0xd2118ce0}, {2, 0xf8d2b806}, {1, 0x10199c6b}, {1, 0xe0e7b2da},
+ {1, 0x7927e70b}, {5, 0x3e81c091}, {5, 0x73d4a96c}, {1, 0x63abff61},
+ {1, 0x6da8bee0}, {2, 0x88c72ccb}, {2, 0xe9b667fc}, {1, 0xb8328678},
+ {2, 0x19eaba0b}, {1, 0x5b07db9c}, {2, 0x5c8a4c48}, {2, 0x957f5f53},
+ {1, 0xaa31824d}, {1, 0x3ac30a6c}, {1, 0x57867e1b}, {5, 0x85e36397},
+ {1, 0xfdec077b}, {1, 0x2bf62f9b}, {1, 0xbaee8541}, {1, 0x72007b15},
+ {1, 0x7163da25}, {1, 0x752bdbda}, {1, 0x4a54d1e9}, {2, 0x694ee1c8},
+ {0, 0x64d44e45}, {1, 0x54e86a9f}, {2, 0x984304a6}, {2, 0x55588455},
+ {2, 0x0489148f}, {1, 0x992da1ea}, {1, 0xc10aa642}, {1, 0xe016eb57},
+ {1, 0x31d21165}, {1, 0xb404e723}, {1, 0x73c9d01d}, {5, 0x62b855b0},
+ {2, 0xd3be9b89}, {1, 0xf4e16c60}, {1, 0x5b8b7dcb}, {1, 0xa1b3d1a1},
+ {2, 0xbc12e8c6}, {2, 0xfe8a4fd8},
 };
 
 static CBlockIndex CreateBlockIndex(int nHeight) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
@@ -224,13 +224,12 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
         CBlock *pblock = &pblocktemplate->block; // pointer for convenience
         {
             LOCK(cs_main);
-            pblock->nVersion = 1;
+            pblock->nVersion = VERSIONBITS_TOP_BITS;
             pblock->nTime = ::ChainActive().Tip()->GetMedianTimePast()+1;
             CMutableTransaction txCoinbase(*pblock->vtx[0]);
             txCoinbase.nVersion = 1;
-            txCoinbase.vin[0].scriptSig = CScript();
-            txCoinbase.vin[0].scriptSig.push_back(blockinfo[i].extranonce);
-            txCoinbase.vin[0].scriptSig.push_back(::ChainActive().Height());
+            txCoinbase.vin[0].scriptSig = CScript() << (::ChainActive().Height() + 1) << OP_0 << blockinfo[i].extranonce;
+            txCoinbase.vin[0].scriptWitness.stack.resize(0);
             txCoinbase.vout.resize(1); // Ignore the (optional) segwit commitment added by CreateNewBlock (as the hardcoded nonces don't account for this)
             txCoinbase.vout[0].scriptPubKey = CScript();
             pblock->vtx[0] = MakeTransactionRef(std::move(txCoinbase));
@@ -490,13 +489,13 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     tx.vin[0].nSequence = CTxIn::SEQUENCE_LOCKTIME_TYPE_FLAG | 1;
     BOOST_CHECK(!TestSequenceLocks(CTransaction(tx), flags)); // Sequence locks fail
 
-    BOOST_CHECK(pblocktemplate = AssemblerForTest(chainparams).CreateNewBlock(scriptPubKey));
+    // @ZORK BIG68 always enabled BOOST_CHECK(pblocktemplate = AssemblerForTest(chainparams).CreateNewBlock(scriptPubKey));
 
     // None of the of the absolute height/time locked tx should have made
     // it into the template because we still check IsFinalTx in CreateNewBlock,
     // but relative locked txs will if inconsistently added to mempool.
     // For now these will still generate a valid template until BIP68 soft fork
-    BOOST_CHECK_EQUAL(pblocktemplate->block.vtx.size(), 3U);
+    // @ZORK BIG68 always enabled BOOST_CHECK_EQUAL(pblocktemplate->block.vtx.size(), 3U);
     // However if we advance height by 1 and time by 512, all of them should be mined
     for (int i = 0; i < CBlockIndex::nMedianTimeSpan; i++)
         ::ChainActive().Tip()->GetAncestor(::ChainActive().Tip()->nHeight - i)->nTime += 512; //Trick the MedianTimePast

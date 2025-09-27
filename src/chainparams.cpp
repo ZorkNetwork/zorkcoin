@@ -24,7 +24,7 @@ static CBlock CreateGenesisBlock(const char* pszTimestamp, const CScript& genesi
     txNew.nVersion = 1;
     txNew.vin.resize(1);
     txNew.vout.resize(1);
-    txNew.vin[0].scriptSig = CScript() << 486604799 << CScriptNum(4) << std::vector<unsigned char>((const unsigned char*)pszTimestamp, (const unsigned char*)pszTimestamp + strlen(pszTimestamp));
+    txNew.vin[0].scriptSig = CScript() << 0 << OP_0 << 1130459756 << std::vector<unsigned char>((const unsigned char*)pszTimestamp, (const unsigned char*)pszTimestamp + strlen(pszTimestamp));
     txNew.vout[0].nValue = genesisReward;
     txNew.vout[0].scriptPubKey = genesisOutputScript;
 
@@ -52,8 +52,8 @@ static CBlock CreateGenesisBlock(const char* pszTimestamp, const CScript& genesi
  */
 static CBlock CreateGenesisBlock(uint32_t nTime, uint32_t nNonce, uint32_t nBits, int32_t nVersion, const CAmount& genesisReward)
 {
-    const char* pszTimestamp = "NY Times 05/Oct/2011 Steve Jobs, Apple’s Visionary, Dies at 56";
-    const CScript genesisOutputScript = CScript() << ParseHex("040184710fa689ad5023690c80f3a49c8f13f8d45b8c857fbcbc8bc4a8e4d3eb4b10f4d4604fa08dce601aaf0f470216fe1b51850b4acf21b179c45070ac7b03a9") << OP_CHECKSIG;
+    const char* pszTimestamp = "LTC BLK: 262442fec84311827a5fb724f1a259b3eddd2efa525cabc393c1c7404ebfb814";
+    const CScript genesisOutputScript = CScript() << ParseHex("040241e2ab92d48de2889fe28891ceb7cf84e28487d18f70c2aed19753e284ae24588d0429a6a46d555360b9f3b83a60a6c49895a62abad18fd8182c0009492308") << OP_CHECKSIG;
     return CreateGenesisBlock(pszTimestamp, genesisOutputScript, nTime, nNonce, nBits, nVersion, genesisReward);
 }
 
@@ -67,14 +67,14 @@ public:
         consensus.signet_blocks = false;
         consensus.signet_challenge.clear();
         consensus.nSubsidyHalvingInterval = 840000;
-        consensus.BIP16Height = 218579; // 87afb798a3ad9378fcd56123c81fb31cfd9a8df4719b9774d71730c16315a092 - October 1, 2012
-        consensus.BIP34Height = 710000;
-        consensus.BIP34Hash = uint256S("0xfa09d204a83a768ed5a7c8d441fa62f2043abf420cff1226c7b4329aeb9d51cf");
-        consensus.BIP65Height = 918684; // bab3041e8977e0dc3eeff63fe707b92bde1dd449d8efafb248c27c8264cc311a
-        consensus.BIP66Height = 811879; // 7aceee012833fa8952f8835d8b1b3ae233cd6ab08fdb27a771d2bd7bdc491894
-        consensus.CSVHeight = 1201536; // 53e0af7626f7f51ce9f3b6cfc36508a5b1d2f6c4a75ac215dc079442692a4c0b
-        consensus.SegwitHeight = 1201536; // 0000000000000000001c8018d9cb3b742ef25114f27563e3fc4a1902167f9893
-        consensus.MinBIP9WarningHeight = 1209600; // segwit activation height + miner confirmation window
+        consensus.BIP16Height = 0; // always enforce P2SH
+        consensus.BIP34Height = 0; // blocks always have block height
+        consensus.BIP34Hash = uint256S("0x55b4c43203f1f466037d199dcb15a85a74c7b133ca8111d1b8e5400ae27e5a1f");
+        consensus.BIP65Height = 0; // CHECKLOCKTIMEVERIFY always available
+        consensus.BIP66Height = 0; // DERSIG always required
+        consensus.CSVHeight = 0; // always enabled
+        consensus.SegwitHeight = 0; // SegWit always enabled
+        consensus.MinBIP9WarningHeight = 0; // BIP9 enabled from the start
         consensus.powLimit = uint256S("00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.nPowTargetTimespan = 3.5 * 24 * 60 * 60; // 3.5 days
         consensus.nPowTargetSpacing = 2.5 * 60;
@@ -88,8 +88,8 @@ public:
 
         // Deployment of Taproot (BIPs 340-342)
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].bit = 2;
-        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nStartHeight = 2161152; // End November 2021
-        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nTimeoutHeight = 2370816; // 364 days later
+        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nStartTime = Consensus::BIP9Deployment::ALWAYS_ACTIVE;
+        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
 
         // Deployment of MWEB (LIP-0002, LIP-0003, and LIP-0004)
         consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].bit = 4;
@@ -113,10 +113,10 @@ public:
         m_assumed_blockchain_size = 40;
         m_assumed_chain_state_size = 2;
 
-        genesis = CreateGenesisBlock(1758357905, 0xC10EBC16, 0x1e0ffff0, 1, 50 * COIN);
+        genesis = CreateGenesisBlock(1758719194, 0xc1697c6b, 0x1e0ffff0, 0x20000000UL, 50 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
-        assert(consensus.hashGenesisBlock == uint256S("0x7cf82bc4004333ce710839658d51d21a42ee9281a4965b4745072efd397dc033"));
-        assert(genesis.hashMerkleRoot == uint256S("0x97ddfbbae6be97fd6cdf3e7ca13232a3afff2353e29badfab7f73011edd4ced9"));
+        assert(consensus.hashGenesisBlock == uint256S("0x55b4c43203f1f466037d199dcb15a85a74c7b133ca8111d1b8e5400ae27e5a1f"));
+        assert(genesis.hashMerkleRoot == uint256S("0x56b802bf9621087a469ec1aedde397a18e1dd346a76a97568e84be058ab4b09c"));
 
         // Note that of those which support the service bits prefix, most only support a subset of
         // possible options.
@@ -144,7 +144,7 @@ public:
 
         checkpointData = {
             {
-                {      0, uint256S("0x7cf82bc4004333ce710839658d51d21a42ee9281a4965b4745072efd397dc033")},
+                {      0, uint256S("0x55b4c43203f1f466037d199dcb15a85a74c7b133ca8111d1b8e5400ae27e5a1f")},
             }
         };
 
@@ -168,13 +168,13 @@ public:
         consensus.signet_challenge.clear();
         consensus.nSubsidyHalvingInterval = 840000;
         consensus.BIP16Height = 0; // always enforce P2SH BIP16 on testnet
-        consensus.BIP34Height = 76;
-        consensus.BIP34Hash = uint256S("8075c771ed8b495ffd943980a95f702ab34fce3c8c54e379548bda33cc8c0573");
-        consensus.BIP65Height = 76; // 8075c771ed8b495ffd943980a95f702ab34fce3c8c54e379548bda33cc8c0573
-        consensus.BIP66Height = 76; // 8075c771ed8b495ffd943980a95f702ab34fce3c8c54e379548bda33cc8c0573
-        consensus.CSVHeight = 6048; // 00000000025e930139bac5c6c31a403776da130831ab85be56578f3fa75369bb
-        consensus.SegwitHeight = 6048; // 00000000002b980fcd729daaa248fd9316a5200e9b367f4ff2c42453e84201ca
-        consensus.MinBIP9WarningHeight = 8064; // segwit activation height + miner confirmation window
+        consensus.BIP34Height = 0; // blocks always have block height
+        consensus.BIP34Hash = uint256S("0xfa830bca31ed95a58adcdfe2167f0594e600e76e6c44ae2818a84ed9cd5ad302");
+        consensus.BIP65Height = 0; // CHECKLOCKTIMEVERIFY always available
+        consensus.BIP66Height = 0; // DERSIG always required
+        consensus.CSVHeight = 0; // always enabled
+        consensus.SegwitHeight = 0; // SegWit always enabled
+        consensus.MinBIP9WarningHeight = 0; // BIP9 enabled from the start
         consensus.powLimit = uint256S("00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.nPowTargetTimespan = 3.5 * 24 * 60 * 60; // 3.5 days
         consensus.nPowTargetSpacing = 2.5 * 60;
@@ -188,8 +188,8 @@ public:
 
         // Deployment of Taproot (BIPs 340-342)
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].bit = 2;
-        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nStartHeight = 2225664; // March 2022
-        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nTimeoutHeight = 2435328; // 364 days later
+        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nStartTime = Consensus::BIP9Deployment::ALWAYS_ACTIVE;
+        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
 
         // Deployment of MWEB (LIP-0002, LIP-0003, and LIP-0004)
         consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].bit = 4;
@@ -208,10 +208,10 @@ public:
         m_assumed_blockchain_size = 4;
         m_assumed_chain_state_size = 1;
 
-        genesis = CreateGenesisBlock(1758357955, 0x002ce8d5, 0x1f0007f8, 1, 50 * COIN);
+        genesis = CreateGenesisBlock(1758719194, 0x00aa77c8, 0x1f0007f8, 0x20000000UL, 50 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
-        assert(consensus.hashGenesisBlock == uint256S("0x4c0885330123ad5c79ed63dfde4bcf9a9aa2a438f96fa4b1837e99f4bd331a90"));
-        assert(genesis.hashMerkleRoot == uint256S("0x97ddfbbae6be97fd6cdf3e7ca13232a3afff2353e29badfab7f73011edd4ced9"));
+        assert(consensus.hashGenesisBlock == uint256S("0xfa830bca31ed95a58adcdfe2167f0594e600e76e6c44ae2818a84ed9cd5ad302"));
+        assert(genesis.hashMerkleRoot == uint256S("0x56b802bf9621087a469ec1aedde397a18e1dd346a76a97568e84be058ab4b09c"));
 
         vFixedSeeds.clear();
         vSeeds.clear();
@@ -237,7 +237,7 @@ public:
 
         checkpointData = {
             {
-                {      0, uint256S("0x0cc09ce62466146e81d6f95bfb5932f99aae49850423356a7a22bbf18ba3d4f4")},
+                {      0, uint256S("0xfa830bca31ed95a58adcdfe2167f0594e600e76e6c44ae2818a84ed9cd5ad302")},
             }
         };
 
@@ -261,11 +261,11 @@ public:
         consensus.signet_challenge.clear();
         consensus.nSubsidyHalvingInterval = 150;
         consensus.BIP16Height = 0;
-        consensus.BIP34Height = 500; // BIP34 activated on regtest (Used in functional tests)
-        consensus.BIP34Hash = uint256();
-        consensus.BIP65Height = 1351; // BIP65 activated on regtest (Used in functional tests)
-        consensus.BIP66Height = 1251; // BIP66 activated on regtest (Used in functional tests)
-        consensus.CSVHeight = 432; // CSV activated on regtest (Used in rpc activation tests)
+        consensus.BIP34Height = 0; // blocks always have block height
+        consensus.BIP34Hash = uint256S("0xd46428ad76810ee30e86730e08523b37f3f2e2c59d803b6531b9f802d3db5ca9");
+        consensus.BIP65Height = 0; // CHECKLOCKTIMEVERIFY always available
+        consensus.BIP66Height = 0; // DERSIG always required
+        consensus.CSVHeight = 0; // always enabled
         consensus.SegwitHeight = 0; // SEGWIT is always activated on regtest unless overridden
         consensus.MinBIP9WarningHeight = 0;
         consensus.powLimit = uint256S("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
@@ -303,10 +303,10 @@ public:
 
         UpdateActivationParametersFromArgs(args);
 
-        genesis = CreateGenesisBlock(1758357905, 0xC0FFEE00, 0x207fffff, 1, 50 * COIN);
+        genesis = CreateGenesisBlock(1758719194, 0xC0FFEE00, 0x207fffff, 0x20000000UL, 50 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
-        assert(consensus.hashGenesisBlock == uint256S("0x91f98a09eac44a0c02472242b3400e990fa29b8d8d02f37b7d2b60601e61b7fd"));
-        assert(genesis.hashMerkleRoot == uint256S("0x97ddfbbae6be97fd6cdf3e7ca13232a3afff2353e29badfab7f73011edd4ced9"));
+        assert(consensus.hashGenesisBlock == uint256S("0xd46428ad76810ee30e86730e08523b37f3f2e2c59d803b6531b9f802d3db5ca9"));
+        assert(genesis.hashMerkleRoot == uint256S("0x56b802bf9621087a469ec1aedde397a18e1dd346a76a97568e84be058ab4b09c"));
 
         vFixedSeeds.clear(); //!< Regtest mode doesn't have any fixed seeds.
         vSeeds.clear();      //!< Regtest mode doesn't have any DNS seeds.
@@ -318,7 +318,7 @@ public:
 
         checkpointData = {
             {
-                {0, uint256S("0x91f98a09eac44a0c02472242b3400e990fa29b8d8d02f37b7d2b60601e61b7fd")},
+                {0, uint256S("0xd46428ad76810ee30e86730e08523b37f3f2e2c59d803b6531b9f802d3db5ca9")},
             }
         };
 
