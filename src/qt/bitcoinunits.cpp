@@ -55,7 +55,7 @@ QString BitcoinUnits::shortName(int unit)
     switch(unit)
     {
     case BTC: return QString("ℤ");
-    case mBTC: return QString("𝓂ℤ");
+    case mBTC: return QString("mℤ");
     case uBTC: return QString("μℤ");
     case SAT: return QString("βℤ");
     default: return longName(unit);
@@ -67,7 +67,7 @@ QString BitcoinUnits::description(int unit)
     switch(unit)
     {
     case BTC: return QString("ℤ - ℤorkcoins aka ℤorks");                                              // Zorkcoins Zorks
-    case mBTC: return QString("𝓂ℤ - Milliℤorks (1 / 1" THIN_SP_UTF8 "000)");                         // MilliZorkcoins
+    case mBTC: return QString("mℤ - Milliℤorks (1 / 1" THIN_SP_UTF8 "000)");                         // MilliZorkcoins
     case uBTC: return QString("μℤ - Microℤorks (1 / 1" THIN_SP_UTF8 "000" THIN_SP_UTF8 "000)");       // MicroZorkcoins
     case SAT: return QString("βℤ - Bitaℤorks (sat) (1 / 100" THIN_SP_UTF8 "000" THIN_SP_UTF8 "000)"); // BitaZorkcoin
     default: return QString("???");
