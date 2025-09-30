@@ -48,13 +48,11 @@ BOOST_AUTO_TEST_CASE(kheavyhash_hashtest)
 static void TestKHeavyHash(const std::string &seedin, const std::string &timestamp, const std::string &nonce, const std::string &hexout) {
     uint256 seed = swap256S(seedin.c_str());
     uint256 solution = swap256S(hexout.c_str());
-    uint8_t ts2[8];
-    uint8_t n2[8];
     char *end;
     uint64_t tsb2 = strtoul(timestamp.c_str(), &end, 16);
     uint64_t nb2 = strtoul(nonce.c_str(), &end, 16);
-    *(uint64_t*)ts2 = tsb2;
-    *(uint64_t*)n2 = nb2;
+    Span<const unsigned char> ts2(reinterpret_cast<const unsigned char*>(&tsb2), sizeof(uint64_t));
+    Span<const unsigned char> n2(reinterpret_cast<const unsigned char*>(&nb2), sizeof(uint64_t));
 
     KHeavyHash testhash = KHeavyHash(seed);
     testhash.Write(seed).Write(ts2).Write(uint256().ZERO).Write(n2);

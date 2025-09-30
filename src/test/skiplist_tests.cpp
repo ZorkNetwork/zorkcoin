@@ -120,7 +120,7 @@ BOOST_AUTO_TEST_CASE(findearliestatleast_test)
         }
     }
     // Check that we set nTimeMax up correctly.
-    unsigned int curTimeMax = 0;
+    uint64_t curTimeMax = 0;
     for (unsigned int i=0; i<vBlocksMain.size(); ++i) {
         curTimeMax = std::max(curTimeMax, vBlocksMain[i].nTime);
         BOOST_CHECK(curTimeMax == vBlocksMain[i].nTimeMax);

@@ -25,9 +25,9 @@ public:
     int32_t nVersion;
     uint256 hashPrevBlock;
     uint256 hashMerkleRoot;
-    uint32_t nTime;
+    uint64_t nTime;
     uint32_t nBits;
-    uint32_t nNonce;
+    uint64_t nNonce;
 
     CBlockHeader()
     {

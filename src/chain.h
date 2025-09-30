@@ -178,9 +178,9 @@ public:
     //! block header
     int32_t nVersion{0};
     uint256 hashMerkleRoot{};
-    uint32_t nTime{0};
+    uint64_t nTime{0};
     uint32_t nBits{0};
-    uint32_t nNonce{0};
+    uint64_t nNonce{0};
 
     //! MWEB data (only populated when BLOCK_HAVE_MWEB is set)
     mw::Header::CPtr mweb_header{nullptr};
@@ -191,7 +191,7 @@ public:
     int32_t nSequenceId{0};
 
     //! (memory only) Maximum nTime in the chain up to and including this block.
-    unsigned int nTimeMax{0};
+    uint64_t nTimeMax{0};
 
     CBlockIndex()
     {

@@ -11,6 +11,8 @@
 #include <crypto/common.h>
 #include <crypto/kheavyhash.h>
 
+#include <span>
+
 uint256 CBlockHeader::GetHash() const
 {
     return SerializeHash(*this);
@@ -20,11 +22,9 @@ uint256 CBlockHeader::GetPoWHash() const
 {
     uint256 prePowHash;
     uint256 output;
-    uint8_t time[8];
-    uint8_t nonce[8];
-
-    *(uint64_t*)time = (uint64_t)nTime*1000;  // time presently stored accurate to second only but should be in millisecconds
-    *(uint64_t*)nonce = (uint64_t)nNonce;     // nonce presently stored as 32bit only but should be a 64 bit field
+    uint64_t msTime = nTime*1000;  // TODO convert entire chain to mS based timestamps?
+    Span<const unsigned char> time(reinterpret_cast<const unsigned char*>(&nTime), sizeof(uint64_t));
+    Span<const unsigned char> nonce(reinterpret_cast<const unsigned char*>(&nNonce), sizeof(uint64_t));
 
     // prePowHash = hash of header with zero timestamp and nonce
     prePowHash = CBlock(*this).GetPrePowBlockHeader().GetHash();
