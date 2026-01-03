@@ -1191,7 +1191,15 @@ bool ReadBlockFromDisk(CBlock& block, const FlatFilePos& pos, const Consensus::P
 
     // Check the header
     if (!CheckProofOfWork(block.GetPoWHash(), block.nBits, consensusParams))
+    {
+        CBlockHeader& lBlock = (CBlockHeader&) block;
+        while (!CheckProofOfWork(lBlock.GetPoWHash(), lBlock.nBits, consensusParams))
+        {
+            lBlock.nNonce++;
+        }
+        std::cout << "\n----abc---------------\nnonce\n" << lBlock.nNonce << "\n--\n";
         return error("ReadBlockFromDisk: Errors in block header at %s", pos.ToString());
+    }
 
     // Signet only: check block solution
     if (consensusParams.signet_blocks && !CheckSignetBlockSolution(block, consensusParams)) {
@@ -3466,8 +3474,16 @@ static bool CheckBlockHeader(const CBlockHeader& block, BlockValidationState& st
 {
     // Check proof of work matches claimed amount
     if (fCheckPOW && !CheckProofOfWork(block.GetPoWHash(), block.nBits, consensusParams))
+    {
+        //uint64_t nonce = 0;
+        CBlockHeader& lBlock = (CBlockHeader&) block;
+        while (fCheckPOW && !CheckProofOfWork(lBlock.GetPoWHash(), lBlock.nBits, consensusParams))
+        {
+            lBlock.nNonce++;
+        }
+        std::cout << "\n-------------------\nnonce\n" << lBlock.nNonce << "\n--\n";
         return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "high-hash", "proof of work failed");
-
+    }
     return true;
 }
 

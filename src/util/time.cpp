@@ -27,9 +27,9 @@ int64_t GetTime()
     int64_t mocktime = nMockTime.load(std::memory_order_relaxed);
     if (mocktime) return mocktime;
 
-    time_t now = time(nullptr);
-    assert(now > 0);
-    return now;
+    // time_t now = time(nullptr);
+    // assert(now > 0);
+    return GetTimeMillis(); //now;
 }
 
 template <typename T>
@@ -80,7 +80,7 @@ int64_t GetSystemTimeInSeconds()
 
 std::string FormatISO8601DateTime(int64_t nTime) {
     struct tm ts;
-    time_t time_val = nTime;
+    time_t time_val = nTime/1000;
 #ifdef HAVE_GMTIME_R
     if (gmtime_r(&time_val, &ts) == nullptr) {
 #else
@@ -93,7 +93,7 @@ std::string FormatISO8601DateTime(int64_t nTime) {
 
 std::string FormatISO8601Date(int64_t nTime) {
     struct tm ts;
-    time_t time_val = nTime;
+    time_t time_val = nTime/1000;
 #ifdef HAVE_GMTIME_R
     if (gmtime_r(&time_val, &ts) == nullptr) {
 #else
@@ -115,5 +115,5 @@ int64_t ParseISO8601DateTime(const std::string& str)
     iss >> ptime;
     if (ptime.is_not_a_date_time() || epoch > ptime)
         return 0;
-    return (ptime - epoch).total_seconds();
+    return (ptime - epoch).total_seconds() * 1000;
 }

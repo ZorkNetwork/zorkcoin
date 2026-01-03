@@ -2537,7 +2537,7 @@ void CWallet::ResendWalletTransactions()
     if (GetTime() < nNextResend || !fBroadcastTransactions) return;
     bool fFirst = (nNextResend == 0);
     // resend 12-36 hours from now, ~1 day on average.
-    nNextResend = GetTime() + (12 * 60 * 60) + GetRand(24 * 60 * 60);
+    nNextResend = GetTime() + (12 * 60 * 60 * 1000) + GetRand(24 * 60 * 60 * 1000);
     if (fFirst) return;
 
     int submitted_tx_count = 0;
@@ -2551,7 +2551,7 @@ void CWallet::ResendWalletTransactions()
             // Attempt to rebroadcast all txes more than 5 minutes older than
             // the last block. SubmitMemoryPoolAndRelay() will not rebroadcast
             // any confirmed or conflicting txs.
-            if (wtx.nTimeReceived > m_best_block_time - 5 * 60) continue;
+            if (wtx.nTimeReceived > m_best_block_time - 5 * 60 * 1000) continue;
             std::string unused_err_string;
             if (wtx.SubmitMemoryPoolAndRelay(unused_err_string, true)) ++submitted_tx_count;
         }
@@ -3701,9 +3701,9 @@ void CWallet::GetKeyBirthTimes(std::map<CKeyID, int64_t>& mapKeyBirth) const {
  * https://bitcointalk.org/?topic=54527, or
  * https://github.com/bitcoin/bitcoin/pull/1393.
  */
-unsigned int CWallet::ComputeTimeSmart(const CWalletTx& wtx) const
+uint64_t CWallet::ComputeTimeSmart(const CWalletTx& wtx) const
 {
-    unsigned int nTimeSmart = wtx.nTimeReceived;
+    uint64_t nTimeSmart = wtx.nTimeReceived;
     if (!wtx.isUnconfirmed() && !wtx.isAbandoned()) {
         int64_t blocktime;
         if (chain().findBlock(wtx.m_confirm.hashBlock, FoundBlock().time(blocktime))) {
@@ -3711,7 +3711,7 @@ unsigned int CWallet::ComputeTimeSmart(const CWalletTx& wtx) const
             int64_t latestEntry = 0;
 
             // Tolerate times up to the last timestamp in the wallet not more than 5 minutes into the future
-            int64_t latestTolerated = latestNow + 300;
+            int64_t latestTolerated = latestNow + 300 * 1000;
             const TxItems& txOrdered = wtxOrdered;
             for (auto it = txOrdered.rbegin(); it != txOrdered.rend(); ++it) {
                 CWalletTx* const pwtx = it->second;

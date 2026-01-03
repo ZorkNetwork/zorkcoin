@@ -18,7 +18,7 @@
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
 
-static CBlock CreateGenesisBlock(const char* pszTimestamp, const CScript& genesisOutputScript, uint32_t nTime, uint32_t nNonce, uint32_t nBits, int32_t nVersion, const CAmount& genesisReward)
+static CBlock CreateGenesisBlock(const char* pszTimestamp, const CScript& genesisOutputScript, uint64_t nTime, uint32_t nNonce, uint32_t nBits, int32_t nVersion, const CAmount& genesisReward)
 {
     CMutableTransaction txNew;
     txNew.nVersion = 1;
@@ -50,7 +50,7 @@ static CBlock CreateGenesisBlock(const char* pszTimestamp, const CScript& genesi
  *     CTxOut(nValue=50.00000000, scriptPubKey=0x5F1DF16B2B704C8A578D0B)
  *   vMerkleTree: 4a5e1e
  */
-static CBlock CreateGenesisBlock(uint32_t nTime, uint32_t nNonce, uint32_t nBits, int32_t nVersion, const CAmount& genesisReward)
+static CBlock CreateGenesisBlock(uint64_t nTime, uint32_t nNonce, uint32_t nBits, int32_t nVersion, const CAmount& genesisReward)
 {
     const char* pszTimestamp = "LTC BLK: 262442fec84311827a5fb724f1a259b3eddd2efa525cabc393c1c7404ebfb814";
     const CScript genesisOutputScript = CScript() << ParseHex("040241e2ab92d48de2889fe28891ceb7cf84e28487d18f70c2aed19753e284ae24588d0429a6a46d555360b9f3b83a60a6c49895a62abad18fd8182c0009492308") << OP_CHECKSIG;
@@ -169,15 +169,15 @@ public:
         consensus.nSubsidyHalvingInterval = 840000;
         consensus.BIP16Height = 0; // always enforce P2SH BIP16 on testnet
         consensus.BIP34Height = 0; // blocks always have block height
-        consensus.BIP34Hash = uint256S("0xc4ee739739b56db7879f78c6366d98918c2817a68b0f45053a18721924b572fc");
+        consensus.BIP34Hash = uint256S("0x6e6d3eb1c409ea2dac514ccaa4c7620d351bd11e615db31cc89e785c4ca9b596");
         consensus.BIP65Height = 0; // CHECKLOCKTIMEVERIFY always available
         consensus.BIP66Height = 0; // DERSIG always required
         consensus.CSVHeight = 0; // always enabled
         consensus.SegwitHeight = 0; // SegWit always enabled
         consensus.MinBIP9WarningHeight = 0; // BIP9 enabled from the start
         consensus.powLimit = uint256S("00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
-        consensus.nPowTargetTimespan = 3.5 * 24 * 60 * 60; // 3.5 days
-        consensus.nPowTargetSpacing = 2.5 * 60;
+        consensus.nPowTargetTimespan = 3.5 * 24 * 60 * 60 * 1000; // 3.5 days
+        consensus.nPowTargetSpacing = 2.5 * 60 * 1000;
         consensus.fPowAllowMinDifficultyBlocks = true;
         consensus.fPowNoRetargeting = false;
         consensus.nRuleChangeActivationThreshold = 1512; // 75% for testchains
@@ -208,9 +208,10 @@ public:
         m_assumed_blockchain_size = 4;
         m_assumed_chain_state_size = 1;
 
-        genesis = CreateGenesisBlock(1758719194, 0x00efed7b, 0x1f0007f8, 0x20000000UL, 50 * COIN);
+        genesis = CreateGenesisBlock(1763418790000, 0xF6F8EC, 0x1f0007f8, 0x20000000UL, 50 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
-        assert(consensus.hashGenesisBlock == uint256S("0xc4ee739739b56db7879f78c6366d98918c2817a68b0f45053a18721924b572fc"));
+        std::cout << "-----------\nHash:" << consensus.hashGenesisBlock.ToString() << "-----------\n";
+        assert(consensus.hashGenesisBlock == uint256S("0x6e6d3eb1c409ea2dac514ccaa4c7620d351bd11e615db31cc89e785c4ca9b596"));
         assert(genesis.hashMerkleRoot == uint256S("0x56b802bf9621087a469ec1aedde397a18e1dd346a76a97568e84be058ab4b09c"));
 
         vFixedSeeds.clear();
@@ -237,13 +238,13 @@ public:
 
         checkpointData = {
             {
-                {      0, uint256S("0xc4ee739739b56db7879f78c6366d98918c2817a68b0f45053a18721924b572fc")},
+                {      0, uint256S("0x6e6d3eb1c409ea2dac514ccaa4c7620d351bd11e615db31cc89e785c4ca9b596")},
             }
         };
 
         chainTxData = ChainTxData{
             // Data from RPC: getchaintxstats 4096 36d8ad003bac090cf7bf4e24fbe1d319554c8933b9314188d6096ac12648764d
-            /* nTime    */ 1758215212,
+            /* nTime    */ 1763418790000,
             /* nTxCount */ 1,
             /* dTxRate  */ 0.009810333551340745,
         };
