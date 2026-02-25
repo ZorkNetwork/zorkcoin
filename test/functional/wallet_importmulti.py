@@ -580,7 +580,7 @@ class ImportMultiTest(BitcoinTestFramework):
         # Test ranged descriptor fails if range is not specified
         xpriv = "tprv8ZgxMBicQKsPeuVhWwi6wuMQGfPKi9Li5GtX35jVNknACgqe3CY4g5xgkfDDJcmtF7o1QnxWDRYw4H5P26PXq7sbcUkEqeR4fg3Kxp2tigg"
         addresses = ["QbLgBpzWA5HfXpPMae62q6A8vuNgxHqXbU", "QLej6btYT9sG7dQR6yL8r5EM1HGUaDYa2F"] # hdkeypath=m/240079435'/0'/0' and 1'
-        addresses += ["zorksim1qrd3n235cj2czsfmsuvqqpr3lu6lg0ju7w49wld", "zorksim1qfqeppuvj0ww98r6qghmdkj70tv8qpchef5j2le"] # wpkh subscripts corresponding to the above addresses
+        addresses += ["zorksim1qrd3n235cj2czsfmsuvqqpr3lu6lg0ju77qhnc3", "zorksim1qfqeppuvj0ww98r6qghmdkj70tv8qpcheepqhc9"] # wpkh subscripts corresponding to the above addresses
         desc = "sh(wpkh(" + xpriv + "/0'/0'/*'" + "))"
         self.log.info("Ranged descriptor import should fail without a specified range")
         self.test_importmulti({"desc": descsum_create(desc),
@@ -839,11 +839,11 @@ class ImportMultiTest(BitcoinTestFramework):
         assert_equal(wrpc.getwalletinfo()["private_keys_enabled"], False)
         xpub = "tpubDAXcJ7s7ZwicqjprRaEWdPoHKrCS215qxGYxpusRLLmJuT69ZSicuGdSfyvyKpvUNYBW1s2U3NSrT6vrCYB9e6nZUEvrqnwXPF8ArTCRXMY"
         addresses = [
-            'zorksim1qtmp74ayg7p24uslctssvjm06q5phz4yrc3zpyj', # m/240079435'/0'/0
-            'zorksim1q8vprchan07gzagd5e6v9wd7azyucksq2c4ynpe', # m/240079435'/0'/1
-            'zorksim1qtuqdtha7zmqgcrr26n2rqxztv5y8rafjlg94gz', # m/240079435'/0'/2
-            'zorksim1qau64272ymawq26t90md6an0ps99qkrse22pnz3', # m/240079435'/0'/3
-            'zorksim1qsg97266hrh6cpmutqen8s4s962aryy77vv4ql3', # m/240079435'/0'/4
+            'zorksim1qtmp74ayg7p24uslctssvjm06q5phz4yrgysurw', # m/240079435'/0'/0
+            'zorksim1q8vprchan07gzagd5e6v9wd7azyucksq2gqkwx9', # m/240079435'/0'/1
+            'zorksim1qtuqdtha7zmqgcrr26n2rqxztv5y8rafj0ahg07', # m/240079435'/0'/2
+            'zorksim1qau64272ymawq26t90md6an0ps99qkrse6lnw9d', # m/240079435'/0'/3
+            'zorksim1qsg97266hrh6cpmutqen8s4s962aryy77ue8acd', # m/240079435'/0'/4
         ]
         result = wrpc.importmulti(
             [{

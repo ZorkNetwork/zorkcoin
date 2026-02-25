@@ -11,7 +11,7 @@
 #include <crypto/common.h>
 #include <crypto/kheavyhash.h>
 
-#include <span>
+#include <span.h>
 
 uint256 CBlockHeader::GetHash() const
 {
@@ -22,7 +22,6 @@ uint256 CBlockHeader::GetPoWHash() const
 {
     uint256 prePowHash;
     uint256 output;
-    uint64_t msTime = nTime*1000;  // TODO convert entire chain to mS based timestamps?
     Span<const unsigned char> time(reinterpret_cast<const unsigned char*>(&nTime), sizeof(uint64_t));
     Span<const unsigned char> nonce(reinterpret_cast<const unsigned char*>(&nNonce), sizeof(uint64_t));
 

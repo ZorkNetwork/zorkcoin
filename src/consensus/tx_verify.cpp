@@ -22,7 +22,7 @@ bool IsFinalTx(const CTransaction &tx, int nBlockHeight, int64_t nBlockTime)
 
     if (tx.nLockTime == 0)
         return true;
-    if ((int64_t)tx.nLockTime < ((int64_t)tx.nLockTime < LOCKTIME_THRESHOLD ? (int64_t)nBlockHeight : nBlockTime))
+    if ((int64_t)tx.nLockTime < ((int64_t)tx.nLockTime < LOCKTIME_THRESHOLD ? (int64_t)nBlockHeight : nBlockTime / 1000)) // MILLISECOND_TIMESTAMP:
         return true;
     for (const auto& txin : tx.vin) {
         if (!(txin.nSequence == CTxIn::SEQUENCE_FINAL))
@@ -84,7 +84,7 @@ std::pair<int, int64_t> CalculateSequenceLocks(const CTransaction &tx, int flags
             // smallest allowed timestamp of the block containing the
             // txout being spent, which is the median time past of the
             // block prior.
-            nMinTime = std::max(nMinTime, nCoinTime + (int64_t)((txin.nSequence & CTxIn::SEQUENCE_LOCKTIME_MASK) << CTxIn::SEQUENCE_LOCKTIME_GRANULARITY) - 1);
+            nMinTime = std::max(nMinTime, nCoinTime + ((int64_t)((txin.nSequence & CTxIn::SEQUENCE_LOCKTIME_MASK) << CTxIn::SEQUENCE_LOCKTIME_GRANULARITY) * 1000) - 1);  // MILLISECOND_TIMESTAMP:
         } else {
             nMinHeight = std::max(nMinHeight, nCoinHeight + (int)(txin.nSequence & CTxIn::SEQUENCE_LOCKTIME_MASK) - 1);
         }

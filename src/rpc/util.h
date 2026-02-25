@@ -28,6 +28,7 @@
  * constant for consistency.
  */
 extern const std::string UNIX_EPOCH_TIME;
+extern const std::string UNIX_EPOCH_TIME_MS;
 
 /**
  * Example bech32 addresses for the RPCExamples help documentation. They are intentionally

@@ -240,12 +240,12 @@ class UpgradeWalletTest(BitcoinTestFramework):
         # Next key should be HD
         info = wallet.getaddressinfo(wallet.getnewaddress())
         assert_equal(seed_id.hex(), info['hdseedid'])
-        assert_equal('m/0\'/0\'/0\'', info['hdkeypath'])
+        assert_equal('m/240079435\'/0\'/0\'', info['hdkeypath'])
         prev_seed_id = info['hdseedid']
         # Change key should be the same keypool
         info = wallet.getaddressinfo(wallet.getrawchangeaddress())
         assert_equal(prev_seed_id, info['hdseedid'])
-        assert_equal('m/0\'/0\'/1\'', info['hdkeypath'])
+        assert_equal('m/240079435\'/0\'/1\'', info['hdkeypath'])
 
         self.log.info('Cannot upgrade to HD Split, needs Pre Split Keypool')
         for version in [139900, 159900, 169899]:
@@ -267,15 +267,15 @@ class UpgradeWalletTest(BitcoinTestFramework):
         # Next change address is the same keypool
         info = wallet.getaddressinfo(wallet.getrawchangeaddress())
         assert_equal(prev_seed_id, info['hdseedid'])
-        assert_equal('m/0\'/0\'/2\'', info['hdkeypath'])
+        assert_equal('m/240079435\'/0\'/2\'', info['hdkeypath'])
         # Next change address is the new keypool
         info = wallet.getaddressinfo(wallet.getrawchangeaddress())
         assert_equal(prev_seed_id, info['hdseedid'])
-        assert_equal('m/0\'/1\'/0\'', info['hdkeypath'])
+        assert_equal('m/240079435\'/1\'/0\'', info['hdkeypath'])
         # External addresses use the same keypool
         info = wallet.getaddressinfo(wallet.getnewaddress())
         assert_equal(prev_seed_id, info['hdseedid'])
-        assert_equal('m/0\'/0\'/3\'', info['hdkeypath'])
+        assert_equal('m/240079435\'/0\'/3\'', info['hdkeypath'])
 
         self.log.info('Upgrade non-HD to HD chain split')
         copy_non_hd()
@@ -297,10 +297,10 @@ class UpgradeWalletTest(BitcoinTestFramework):
         # The next addresses are HD and should be on different HD chains
         info = wallet.getaddressinfo(wallet.getnewaddress())
         ext_id = info['hdseedid']
-        assert_equal('m/0\'/0\'/0\'', info['hdkeypath'])
+        assert_equal('m/240079435\'/0\'/0\'', info['hdkeypath'])
         info = wallet.getaddressinfo(wallet.getrawchangeaddress())
         assert_equal(ext_id, info['hdseedid'])
-        assert_equal('m/0\'/1\'/0\'', info['hdkeypath'])
+        assert_equal('m/240079435\'/1\'/0\'', info['hdkeypath'])
 
         self.log.info('KeyMetadata should upgrade when loading into master')
         copy_v16()

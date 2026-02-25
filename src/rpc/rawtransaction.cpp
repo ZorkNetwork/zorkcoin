@@ -143,7 +143,7 @@ static RPCHelpMan getrawtransaction()
                              }},
                              {RPCResult::Type::STR_HEX, "blockhash", "the block hash"},
                              {RPCResult::Type::NUM, "confirmations", "The confirmations"},
-                             {RPCResult::Type::NUM_TIME, "blocktime", "The block time expressed in " + UNIX_EPOCH_TIME},
+                             {RPCResult::Type::NUM_TIME, "blocktime", "The block time expressed in " + UNIX_EPOCH_TIME_MS},
                              {RPCResult::Type::NUM, "time", "Same as \"blocktime\""},
                         }
                     },

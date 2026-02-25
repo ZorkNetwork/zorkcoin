@@ -44,7 +44,7 @@ class NULLDUMMYTest(BitcoinTestFramework):
         # This script tests NULLDUMMY activation, which is part of the 'segwit' deployment, so we go through
         # normal segwit activation here (and don't use the default always-on behaviour).
         self.extra_args = [[
-            '-segwitheight=432',
+            '-testactivationheight=segwit@432',
             '-addresstype=legacy',
             '-vbparams=mweb:-2:0',
         ]] * 2
@@ -115,7 +115,7 @@ class NULLDUMMYTest(BitcoinTestFramework):
         tmpl = node.getblocktemplate(NORMAL_GBT_REQUEST_PARAMS)
         assert_equal(tmpl['previousblockhash'], self.lastblockhash)
         assert_equal(tmpl['height'], self.lastblockheight + 1)
-        block = create_block(tmpl=tmpl, ntime=self.lastblocktime + 1)
+        block = create_block(tmpl=tmpl, ntime=(self.lastblocktime + 1) * 1000) # // MILLISECOND_TIMESTAMP:
         block.nVersion = version
         for tx in txs:
             tx.rehash()

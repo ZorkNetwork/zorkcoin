@@ -59,6 +59,8 @@ class BIP65Test(BitcoinTestFramework):
             '-par=1',  # Use only one script thread to get the exact reject reason for testing
             '-acceptnonstdtxn=1',  # cltv_invalidate is nonstandard
             '-vbparams=mweb:-2:0',
+            '-testactivationheight=dersig@1251',
+            '-testactivationheight=cltv@1351',
         ]]
         self.setup_clean_chain = True
         self.rpc_timeout = 480

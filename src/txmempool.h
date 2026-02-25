@@ -529,7 +529,7 @@ private:
 
 public:
 
-    static const int ROLLING_FEE_HALFLIFE = 60 * 60 * 12; // public only for testing
+    static const int ROLLING_FEE_HALFLIFE = 60 * 60 * 12 * 1000; // public only for testing  MILLISECOND_TIMESTAMP:
 
     typedef boost::multi_index_container<
         CTxMemPoolEntry,

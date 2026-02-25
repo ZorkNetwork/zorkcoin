@@ -385,10 +385,10 @@ static RPCHelpMan setmocktime()
     if (time < 0) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Mocktime can not be negative: %s.", time));
     }
-    SetMockTime(time);
+    SetMockTime(time * 1000);  // setmocktime rpc accepts seconds but internal is milliseconds
     if (request.context.Has<NodeContext>()) {
         for (const auto& chain_client : request.context.Get<NodeContext>().chain_clients) {
-            chain_client->setMockTime(time);
+            chain_client->setMockTime(time * 1000); // MILLISECOND_TIMESTAMP:
         }
     }
 

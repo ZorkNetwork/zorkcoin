@@ -36,8 +36,10 @@ int CAddrInfo::GetBucketPosition(const uint256 &nKey, bool fNew, int nBucket) co
     return hash1 % ADDRMAN_BUCKET_SIZE;
 }
 
-bool CAddrInfo::IsTerrible(int64_t nNow) const
+bool CAddrInfo::IsTerrible(int64_t nNowMs) const
 {
+    int64_t nNow = nNowMs / 1000;
+
     if (nLastTry && nLastTry >= nNow - 60) // never remove things tried in the last minute
         return false;
 
@@ -59,7 +61,7 @@ bool CAddrInfo::IsTerrible(int64_t nNow) const
 double CAddrInfo::GetChance(int64_t nNow) const
 {
     double fChance = 1.0;
-    int64_t nSinceLastTry = std::max<int64_t>(nNow - nLastTry, 0);
+    int64_t nSinceLastTry = std::max<int64_t>(nNow/1000 - nLastTry, 0);
 
     // deprioritize very recent attempts away
     if (nSinceLastTry < 60 * 10)
@@ -212,8 +214,8 @@ void CAddrMan::Good_(const CService& addr, bool test_before_evict, int64_t nTime
         return;
 
     // update info
-    info.nLastSuccess = nTime;
-    info.nLastTry = nTime;
+    info.nLastSuccess = nTime / 1000; // MILLISECOND_TIMESTAMP:
+    info.nLastTry = nTime / 1000;
     info.nAttempts = 0;
     // nTime is not updated here, to avoid leaking information about
     // currently-connected peers.
@@ -275,10 +277,10 @@ bool CAddrMan::Add_(const CAddress& addr, const CNetAddr& source, int64_t nTimeP
 
     if (pinfo) {
         // periodically update nTime
-        bool fCurrentlyOnline = (GetAdjustedTime() - addr.nTime < 24 * 60 * 60);
+        bool fCurrentlyOnline = (GetAdjustedTime() / 1000 - addr.nTime < 24 * 60 * 60); // MILLISECOND_TIMESTAMP:
         int64_t nUpdateInterval = (fCurrentlyOnline ? 60 * 60 : 24 * 60 * 60);
-        if (addr.nTime && (!pinfo->nTime || pinfo->nTime < addr.nTime - nUpdateInterval - nTimePenalty))
-            pinfo->nTime = std::max((int64_t)0, addr.nTime - nTimePenalty);
+        if (addr.nTime && (!pinfo->nTime || pinfo->nTime < addr.nTime - nUpdateInterval - nTimePenalty / 1000))
+            pinfo->nTime = std::max((int64_t)0, addr.nTime - nTimePenalty / 1000);
 
         // add services
         pinfo->nServices = ServiceFlags(pinfo->nServices | addr.nServices);
@@ -314,7 +316,7 @@ bool CAddrMan::Add_(const CAddress& addr, const CNetAddr& source, int64_t nTimeP
         bool fInsert = vvNew[nUBucket][nUBucketPos] == -1;
         if (!fInsert) {
             CAddrInfo& infoExisting = mapInfo[vvNew[nUBucket][nUBucketPos]];
-            if (infoExisting.IsTerrible() || (infoExisting.nRefCount > 1 && pinfo->nRefCount == 0)) {
+            if (infoExisting.IsTerrible(GetAdjustedTime()) || (infoExisting.nRefCount > 1 && pinfo->nRefCount == 0)) {
                 // Overwrite the existing new table entry.
                 fInsert = true;
             }
@@ -347,9 +349,9 @@ void CAddrMan::Attempt_(const CService& addr, bool fCountFailure, int64_t nTime)
         return;
 
     // update info
-    info.nLastTry = nTime;
-    if (fCountFailure && info.nLastCountAttempt < nLastGood) {
-        info.nLastCountAttempt = nTime;
+    info.nLastTry = nTime / 1000; // MILLISECOND_TIMESTAMP:
+    if (fCountFailure && info.nLastCountAttempt < nLastGood / 1000) {
+        info.nLastCountAttempt = nTime / 1000;
         info.nAttempts++;
     }
 }
@@ -499,7 +501,7 @@ void CAddrMan::GetAddr_(std::vector<CAddress>& vAddr, size_t max_addresses, size
         assert(mapInfo.count(vRandom[n]) == 1);
 
         const CAddrInfo& ai = mapInfo[vRandom[n]];
-        if (!ai.IsTerrible())
+        if (!ai.IsTerrible(GetAdjustedTime()))
             vAddr.push_back(ai);
     }
 }
@@ -520,8 +522,8 @@ void CAddrMan::Connected_(const CService& addr, int64_t nTime)
 
     // update info
     int64_t nUpdateInterval = 20 * 60;
-    if (nTime - info.nTime > nUpdateInterval)
-        info.nTime = nTime;
+    if (nTime/1000 - (int64_t)info.nTime > nUpdateInterval)
+        info.nTime = nTime/1000;
 }
 
 void CAddrMan::SetServices_(const CService& addr, ServiceFlags nServices)
@@ -567,19 +569,20 @@ void CAddrMan::ResolveCollisions_()
                 CAddrInfo& info_old = mapInfo[id_old];
 
                 // Has successfully connected in last X hours
-                if (GetAdjustedTime() - info_old.nLastSuccess < ADDRMAN_REPLACEMENT_HOURS*(60*60)) {
+                int64_t nNowSeconds = GetAdjustedTime() / 1000; // MILLISECOND_TIMESTAMP:
+                if (nNowSeconds - info_old.nLastSuccess < ADDRMAN_REPLACEMENT_HOURS*(60*60)) {
                     erase_collision = true;
-                } else if (GetAdjustedTime() - info_old.nLastTry < ADDRMAN_REPLACEMENT_HOURS*(60*60)) { // attempted to connect and failed in last X hours
+                } else if (nNowSeconds - info_old.nLastTry < ADDRMAN_REPLACEMENT_HOURS*(60*60)) { // attempted to connect and failed in last X hours
 
                     // Give address at least 60 seconds to successfully connect
-                    if (GetAdjustedTime() - info_old.nLastTry > 60) {
+                    if (nNowSeconds - info_old.nLastTry > 60) {
                         LogPrint(BCLog::ADDRMAN, "Replacing %s with %s in tried table\n", info_old.ToString(), info_new.ToString());
 
                         // Replaces an existing address already in the tried table with the new address
                         Good_(info_new, false, GetAdjustedTime());
                         erase_collision = true;
                     }
-                } else if (GetAdjustedTime() - info_new.nLastSuccess > ADDRMAN_TEST_WINDOW) {
+                } else if (nNowSeconds - info_new.nLastSuccess > ADDRMAN_TEST_WINDOW) {
                     // If the collision hasn't resolved in some reasonable amount of time,
                     // just evict the old entry -- we must not be able to
                     // connect to it for some reason.

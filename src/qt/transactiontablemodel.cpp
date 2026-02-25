@@ -589,7 +589,7 @@ QVariant TransactionTableModel::data(const QModelIndex &index, int role) const
     case TypeRole:
         return rec->type;
     case DateRole:
-        return QDateTime::fromTime_t(static_cast<uint>(rec->GetTxTime()));
+        return QDateTime::fromMSecsSinceEpoch(static_cast<uint64_t>(rec->GetTxTime()));
     case WatchonlyRole:
         return rec->involvesWatchAddress;
     case WatchonlyDecorationRole:
@@ -609,7 +609,7 @@ QVariant TransactionTableModel::data(const QModelIndex &index, int role) const
     case TxPlainTextRole:
         {
             QString details;
-            QDateTime date = QDateTime::fromTime_t(static_cast<uint>(rec->GetTxTime()));
+            QDateTime date = QDateTime::fromMSecsSinceEpoch(static_cast<uint64_t>(rec->GetTxTime()));
             QString txLabel = walletModel->getAddressTableModel()->labelForAddress(QString::fromStdString(rec->address));
 
             details.append(date.toString("M/d/yy HH:mm"));

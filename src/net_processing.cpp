@@ -64,9 +64,14 @@ static constexpr uint64_t RANDOMIZER_ID_ADDRESS_RELAY = 0x3cac0035b5866b90ULL;
 /// Age after which a stale block will no longer be served if requested as
 /// protection against fingerprinting. Set to one month, denominated in seconds.
 static constexpr int STALE_RELAY_AGE_LIMIT = 30 * 24 * 60 * 60;
+/// Same as STALE_RELAY_AGE_LIMIT but in milliseconds, for comparison with
+/// block header nTime (which is in ms in Zorkcoin). Derived to stay in lockstep.
+static constexpr int64_t STALE_RELAY_AGE_LIMIT_MS = static_cast<int64_t>(STALE_RELAY_AGE_LIMIT) * 1000;
 /// Age after which a block is considered historical for purposes of rate
 /// limiting block relay. Set to one week, denominated in seconds.
 static constexpr int HISTORICAL_BLOCK_AGE = 7 * 24 * 60 * 60;
+/// Same as HISTORICAL_BLOCK_AGE but in milliseconds, for comparison with block nTime. Derived to stay in lockstep.
+static constexpr int64_t HISTORICAL_BLOCK_AGE_MS = static_cast<int64_t>(HISTORICAL_BLOCK_AGE) * 1000;
 /** Time between pings automatically sent out for latency probing and keepalive */
 static constexpr std::chrono::minutes PING_INTERVAL{2};
 /** The maximum number of entries in a locator */
@@ -866,7 +871,7 @@ void PeerManager::InitializeNode(CNode *pnode) {
         g_peer_map.emplace_hint(g_peer_map.end(), nodeid, std::move(peer));
     }
     if (!pnode->IsInboundConn()) {
-        PushNodeVersion(*pnode, m_connman, GetTime());
+        PushNodeVersion(*pnode, m_connman, GetTime() / 1000); // MILLISECOND_TIMESTAMP:
     }
 }
 
@@ -1210,8 +1215,8 @@ static bool BlockRequestAllowed(const CBlockIndex* pindex, const Consensus::Para
     AssertLockHeld(cs_main);
     if (::ChainActive().Contains(pindex)) return true;
     return pindex->IsValid(BLOCK_VALID_SCRIPTS) && (pindexBestHeader != nullptr) &&
-        (pindexBestHeader->GetBlockTime() - pindex->GetBlockTime() < STALE_RELAY_AGE_LIMIT) &&
-        (GetBlockProofEquivalentTime(*pindexBestHeader, *pindex, *pindexBestHeader, consensusParams) < STALE_RELAY_AGE_LIMIT);
+        (pindexBestHeader->GetBlockTime() - pindex->GetBlockTime() < STALE_RELAY_AGE_LIMIT_MS) &&
+        (GetBlockProofEquivalentTime(*pindexBestHeader, *pindex, *pindexBestHeader, consensusParams) < STALE_RELAY_AGE_LIMIT_MS);
 }
 
 PeerManager::PeerManager(const CChainParams& chainparams, CConnman& connman, BanMan* banman,
@@ -1612,7 +1617,7 @@ void static ProcessGetBlockData(CNode& pfrom, const CChainParams& chainparams, c
     // disconnect node in case we have reached the outbound limit for serving historical blocks
     if (send &&
         connman.OutboundTargetReached(true) &&
-        (((pindexBestHeader != nullptr) && (pindexBestHeader->GetBlockTime() - pindex->GetBlockTime() > HISTORICAL_BLOCK_AGE)) || inv.IsMsgFilteredBlk()) &&
+        (((pindexBestHeader != nullptr) && (pindexBestHeader->GetBlockTime() - pindex->GetBlockTime() > HISTORICAL_BLOCK_AGE_MS)) || inv.IsMsgFilteredBlk()) &&
         !pfrom.HasPermission(PF_DOWNLOAD) // nodes with the download permission may exceed target
     ) {
         LogPrint(BCLog::NET, "historical block serving limit reached, disconnect peer=%d\n", pfrom.GetId());
@@ -2656,7 +2661,7 @@ void PeerManager::ProcessMessage(CNode& pfrom, const std::string& msg_type, CDat
 
         // Be shy and don't send version until we hear
         if (pfrom.IsInboundConn())
-            PushNodeVersion(pfrom, m_connman, GetAdjustedTime());
+            PushNodeVersion(pfrom, m_connman, GetAdjustedTime() / 1000); // MILLISECOND_TIMESTAMP:
 
         // Change version
         const int greatest_common_version = std::min(nVersion, PROTOCOL_VERSION);
@@ -2776,7 +2781,7 @@ void PeerManager::ProcessMessage(CNode& pfrom, const std::string& msg_type, CDat
                   pfrom.nStartingHeight, addrMe.ToString(), pfrom.GetId(),
                   remoteAddr);
 
-        int64_t nTimeOffset = nTime - GetTime();
+        int64_t nTimeOffset = nTime * 1000 - GetTime(); // MILLISECOND_TIMESTAMP:
         pfrom.nTimeOffset = nTimeOffset;
         AddTimeData(pfrom.addr, nTimeOffset);
 
@@ -2901,7 +2906,7 @@ void PeerManager::ProcessMessage(CNode& pfrom, const std::string& msg_type, CDat
 
         // Store the new addresses
         std::vector<CAddress> vAddrOk;
-        int64_t nNow = GetAdjustedTime();
+        int64_t nNow = GetAdjustedTime() / 1000; // MILLISECOND_TIMESTAMP:
         int64_t nSince = nNow - 10 * 60;
 
         // Update/increment addr rate limiting bucket.
@@ -4371,7 +4376,7 @@ void PeerManager::CheckForStaleTipAndEvictPeers()
 {
     LOCK(cs_main);
 
-    int64_t time_in_seconds = GetTime();
+    int64_t time_in_seconds = GetTime() / 1000;
 
     EvictExtraOutboundPeers(time_in_seconds);
 
@@ -4379,7 +4384,7 @@ void PeerManager::CheckForStaleTipAndEvictPeers()
         // Check whether our tip is stale, and if so, allow using an extra
         // outbound peer
         if (!fImporting && !fReindex && m_connman.GetNetworkActive() && m_connman.GetUseAddrmanOutgoing() && TipMayBeStale(m_chainparams.GetConsensus())) {
-            LogPrintf("Potential stale tip detected, will try using extra outbound peer (last tip update: %d seconds ago)\n", time_in_seconds - g_last_tip_update);
+            LogPrintf("Potential stale tip detected, will try using extra outbound peer (last tip update: %d seconds ago)\n", time_in_seconds - g_last_tip_update / 1000);
             m_connman.SetTryNewOutboundPeer(true);
         } else if (m_connman.GetTryNewOutboundPeer()) {
             m_connman.SetTryNewOutboundPeer(false);
@@ -4893,7 +4898,7 @@ bool PeerManager::SendMessages(CNode* pto)
 
         // Check that outbound peers have reasonable chains
         // GetTime() is used by this anti-DoS logic so we can test this using mocktime
-        ConsiderEviction(*pto, GetTime());
+        ConsiderEviction(*pto, GetTime() / 1000);
 
         //
         // Message: getdata (blocks)

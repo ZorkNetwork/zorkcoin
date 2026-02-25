@@ -66,9 +66,9 @@ def calc_hash_str(blk_hdr):
     return hash_str
 
 def get_blk_dt(blk_hdr):
-    members = struct.unpack("<I", blk_hdr[68:68+4])
+    members = struct.unpack("<Q", blk_hdr[68:68+8])
     nTime = members[0]
-    dt = datetime.datetime.fromtimestamp(nTime)
+    dt = datetime.datetime.fromtimestamp(nTime // 1000)
     dt_ym = datetime.datetime(dt.year, dt.month, 1)
     return (dt_ym, nTime)
 
@@ -247,8 +247,8 @@ class BlockDataCopier:
                 continue
             inLenLE = inhdr[4:]
             su = struct.unpack("<I", inLenLE)
-            inLen = su[0] - 80 # length without header
-            blk_hdr = self.inF.read(80)
+            inLen = su[0] - 88 # length without header
+            blk_hdr = self.inF.read(88)
             inExtent = BlockExtent(self.inFn, self.inF.tell(), inhdr, blk_hdr, inLen)
 
             self.hash_str = calc_hash_str(blk_hdr)

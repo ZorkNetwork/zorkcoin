@@ -55,20 +55,20 @@ class SegWitTest(BitcoinTestFramework):
             [
                 "-acceptnonstdtxn=1",
                 "-rpcserialversion=0",
-                "-segwitheight=432",
+                "-testactivationheight=segwit@432",
                 "-addresstype=legacy",
                 "-vbparams=mweb:-2:0",
             ],
             [
                 "-acceptnonstdtxn=1",
                 "-rpcserialversion=1",
-                "-segwitheight=432",
+                "-testactivationheight=segwit@432",
                 "-addresstype=legacy",
                 "-vbparams=mweb:-2:0",
             ],
             [
                 "-acceptnonstdtxn=1",
-                "-segwitheight=432",
+                "-testactivationheight=segwit@432",
                 "-addresstype=legacy",
                 "-vbparams=mweb:-2:0",
             ],

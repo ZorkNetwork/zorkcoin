@@ -65,6 +65,11 @@ unsigned int CalculateNextWorkRequired(const CBlockIndex* pindexLast, int64_t nF
         nActualTimespan = params.nPowTargetTimespan/4;
     if (nActualTimespan > params.nPowTargetTimespan*4)
         nActualTimespan = params.nPowTargetTimespan*4;
+    
+    // MILLISECOND_TIMESTAMPS:  modifications for correct scaling for NextWork
+    // ASERT changes should change all this later
+    nActualTimespan = nActualTimespan/1000;
+    int64_t nPowTargetSec = params.nPowTargetTimespan/1000;
 
     // Retarget
     arith_uint256 bnNew;
@@ -77,7 +82,7 @@ unsigned int CalculateNextWorkRequired(const CBlockIndex* pindexLast, int64_t nF
     if (fShift)
         bnNew >>= 1;
     bnNew *= nActualTimespan;
-    bnNew /= params.nPowTargetTimespan;
+    bnNew /= nPowTargetSec;
     if (fShift)
         bnNew <<= 1;
 

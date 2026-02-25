@@ -205,7 +205,7 @@ bool ClientModel::isReleaseVersion() const
 
 QString ClientModel::formatClientStartupTime() const
 {
-    return QDateTime::fromTime_t(GetStartupTime()).toString();
+    return QDateTime::fromMSecsSinceEpoch(GetStartupTime()).toString();
 }
 
 QString ClientModel::dataDir() const
@@ -283,7 +283,7 @@ static void BlockTipChanged(ClientModel* clientmodel, SynchronizationState sync_
 
     bool invoked = QMetaObject::invokeMethod(clientmodel, "numBlocksChanged", Qt::QueuedConnection,
         Q_ARG(int, tip.block_height),
-        Q_ARG(QDateTime, QDateTime::fromTime_t(tip.block_time)),
+        Q_ARG(QDateTime, QDateTime::fromMSecsSinceEpoch(tip.block_time)),
         Q_ARG(double, verificationProgress),
         Q_ARG(bool, fHeader),
         Q_ARG(SynchronizationState, sync_state));

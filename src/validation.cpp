@@ -48,6 +48,7 @@
 #include <util/rbf.h>
 #include <util/strencodings.h>
 #include <util/system.h>
+#include <util/time.h>
 #include <util/translation.h>
 #include <validationinterface.h>
 #include <warnings.h>
@@ -144,7 +145,7 @@ bool fRequireStandard = true;
 bool fCheckBlockIndex = false;
 bool fCheckpointsEnabled = DEFAULT_CHECKPOINTS_ENABLED;
 uint64_t nPruneTarget = 0;
-int64_t nMaxTipAge = DEFAULT_MAX_TIP_AGE;
+int64_t nMaxTipAge = DEFAULT_MAX_TIP_AGE*1000; // MILLISECOND_TIMESTAMP:
 
 uint256 hashAssumeValid;
 arith_uint256 nMinimumChainWork;
@@ -1116,7 +1117,7 @@ bool AcceptToMemoryPool(CTxMemPool& pool, TxValidationState &state, const CTrans
                         bool bypass_limits, bool test_accept, CAmount* fee_out)
 {
     const CChainParams& chainparams = Params();
-    return AcceptToMemoryPoolWithTime(chainparams, pool, state, tx, GetTime(), plTxnReplaced, bypass_limits, test_accept, fee_out);
+    return AcceptToMemoryPoolWithTime(chainparams, pool, state, tx, GetTime<std::chrono::seconds>().count(), plTxnReplaced, bypass_limits, test_accept, fee_out);
 }
 
 CTransactionRef GetTransaction(const CBlockIndex* const block_index, const CTxMemPool* const mempool, const uint256& hash, const Consensus::Params& consensusParams, uint256& hashBlock)
@@ -3685,8 +3686,16 @@ static bool ContextualCheckBlock(const CBlock& block, BlockValidationState& stat
     // Start enforcing BIP113 (Median Time Past).
     int nLockTimeFlags = 0;
     if (nHeight >= consensusParams.CSVHeight) {
-        assert(pindexPrev != nullptr);
-        nLockTimeFlags |= LOCKTIME_MEDIAN_TIME_PAST;
+        if (pindexPrev == nullptr) {
+            // Only valid for genesis block; otherwise something is wrong
+            if (block.GetHash() != consensusParams.hashGenesisBlock) {
+                assert(pindexPrev != nullptr);
+            }
+            // genesis: do not set LOCKTIME_MEDIAN_TIME_PAST (no median time past for block 0)
+        } else {
+            assert(pindexPrev != nullptr);
+            nLockTimeFlags |= LOCKTIME_MEDIAN_TIME_PAST;
+        }
     }
 
     int64_t nLockTimeCutoff = (nLockTimeFlags & LOCKTIME_MEDIAN_TIME_PAST)
@@ -5203,7 +5212,7 @@ bool LoadMempool(CTxMemPool& pool)
     int64_t failed = 0;
     int64_t already_there = 0;
     int64_t unbroadcast = 0;
-    int64_t nNow = GetTime();
+    int64_t nNow = GetTime<std::chrono::seconds>().count();
 
     try {
         uint64_t version;

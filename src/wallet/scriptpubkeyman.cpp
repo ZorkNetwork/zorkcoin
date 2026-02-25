@@ -16,6 +16,7 @@
 const uint32_t BIP32_HARDENED_KEY_LIMIT = 0x80000000;
 
 const std::string COIN_TYPE = std::string("240079435");  // coin type from SLIP-0044 for Zork Network
+const uint32_t COIN_TYPE_VALUE = 240079435;
 
 static KeyPurpose GetPurpose(const OutputType type, const bool internal)
 {
@@ -1137,7 +1138,7 @@ void LegacyScriptPubKeyMan::DeriveNewChildKey(WalletBatch& batch, CKeyMetadata& 
 
     // derive m/240079435'
     // use hardened derivation (child keys >= 0x80000000 are hardened after bip32)
-    masterKey.Derive(accountKey, BIP32_HARDENED_KEY_LIMIT);
+    masterKey.Derive(accountKey, BIP32_HARDENED_KEY_LIMIT | COIN_TYPE_VALUE);
 
     // derive m/240079435'/0' (external chain) OR m/240079435'/1' (internal chain)
     assert(purpose == KeyPurpose::INTERNAL ? m_storage.CanSupportFeature(FEATURE_HD_SPLIT) : true);
@@ -1162,7 +1163,7 @@ void LegacyScriptPubKeyMan::DeriveNewChildKey(WalletBatch& batch, CKeyMetadata& 
             CExtKey childKey; //key at m/240079435'/0'/<n>'
             chainChildKey.Derive(childKey, chain_counter | BIP32_HARDENED_KEY_LIMIT);
             metadata.hdKeypath = "m/" + COIN_TYPE + "'/" + ToString((uint32_t)purpose) + "'/" + ToString(chain_counter) + "'";
-            metadata.key_origin.path.push_back(0 | BIP32_HARDENED_KEY_LIMIT);
+            metadata.key_origin.path.push_back(COIN_TYPE_VALUE | BIP32_HARDENED_KEY_LIMIT);
             metadata.key_origin.path.push_back((uint32_t)purpose | BIP32_HARDENED_KEY_LIMIT);
             metadata.key_origin.path.push_back(chain_counter | BIP32_HARDENED_KEY_LIMIT);
             secret = childKey.key;

@@ -8,7 +8,7 @@ from test_framework.test_framework import BitcoinTestFramework
 
 from test_framework.util import assert_raises_rpc_error
 
-BECH32_VALID = 'zorksim1qhku5rq7jz8ulufe2y6fkcpnlvpsta7rqtc0r66'
+BECH32_VALID = 'zorksim1qjqmxmkpmxt80xz4y3746zgt0q3u3ferrld4vak'
 BECH32_INVALID_BECH32 = 'zorksim1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqdmchcc'
 BECH32_INVALID_BECH32M = 'zorksim1qw508d6qejxtdg4y5r3zarvary0c5xw7k35mrzd'
 BECH32_INVALID_VERSION = 'zorksim130xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqynjegk'
@@ -16,7 +16,7 @@ BECH32_INVALID_SIZE = 'zorksim1s0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hc
 BECH32_INVALID_V0_SIZE = 'zorksim1qw508d6qejxtdg4y5r3zarvary0c5xw7kqqq5k3my'
 BECH32_INVALID_PREFIX = 'bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7k7grplx'
 
-BASE58_VALID = 'mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn'
+BASE58_VALID = 'mjafofC1HJUFtyoNJPCEXZwV29UmhuDfsD'
 BASE58_INVALID_PREFIX = '17VZNX1SN5NtKa8UQFxwQbFeFc3iqRYhem'
 
 INVALID_ADDRESS = 'asfah14i8fajz0123f'

@@ -51,34 +51,34 @@ constexpr static struct {
     unsigned char extranonce;
     unsigned int nonce;
 } blockinfo[] = {
- {4, 0xa51cd528}, {2, 0x1616fbaa}, {1, 0x03e11256}, {1, 0x70a0f443},
- {2, 0xcef680ea}, {2, 0x53211d9c}, {1, 0x7834ea0c}, {2, 0xbbc3b026},
- {2, 0x8446b9a9}, {1, 0x490f7d59}, {1, 0xf00ef635}, {2, 0x6897a42c},
- {2, 0x0929f70b}, {1, 0x08ce43ac}, {2, 0x21730534}, {2, 0xe04a871a},
- {1, 0xef14b7d2}, {2, 0xbabb6d19}, {1, 0xa772946a}, {1, 0x34e89e3c},
- {3, 0xd6e4dc5e}, {2, 0xecde8022}, {2, 0xcab8abaa}, {1, 0x6c240fe4},
- {2, 0x01df63bf}, {1, 0x6e5f9a5e}, {2, 0x448ef5f3}, {2, 0x27e9ffa6},
- {2, 0xb5e8eec6}, {2, 0xb3cd7c74}, {2, 0xd2357581}, {2, 0x6c3d645e},
- {1, 0x637e5ac5}, {2, 0x9ab10539}, {2, 0x55789e74}, {1, 0xd6ab9e81},
- {2, 0xa19eb04f}, {1, 0x761e98a3}, {2, 0xfc35325a}, {1, 0xe8ed3bf7},
- {1, 0xe39fea4d}, {3, 0x65fdc23f}, {2, 0xbae3a924}, {5, 0x02848b07},
- {1, 0xaa23c27d}, {5, 0xd0c4c379}, {1, 0x378ee368}, {1, 0x8387dd8a},
- {1, 0xc74ddaf2}, {2, 0x828823d9}, {1, 0x9a1d3aee}, {1, 0x75dbee36},
- {1, 0xab2e9ab2}, {1, 0xd6c85c21}, {5, 0x7b5665b1}, {5, 0x9def095c},
- {1, 0x4d9d1f02}, {1, 0xac435353}, {6, 0x4ad3e854}, {2, 0xf288a7ef},
- {2, 0x1c1409a4}, {1, 0xadb91337}, {1, 0x9fc060fc}, {1, 0x168c25f6},
- {2, 0xd21ecab8}, {2, 0xf8f00e03}, {1, 0x102b261b}, {1, 0xe1003cc5},
- {1, 0x7945d732}, {5, 0x3e869f4e}, {5, 0x73da5d90}, {1, 0x63c87577},
- {1, 0x6dd9f4f5}, {2, 0x88cf8a3e}, {2, 0xe9b932e2}, {1, 0xb83a3f10},
- {2, 0x19ee3a46}, {1, 0x5b0bca58}, {2, 0x5c8e2600}, {2, 0x95a385ef},
- {1, 0xaa351245}, {1, 0x3ad2bf03}, {1, 0x5795709a}, {5, 0x85f35926},
- {1, 0xfdefc5b2}, {1, 0x2c0a222f}, {1, 0xbafb7868}, {1, 0x7202e7a8},
- {1, 0x718b8285}, {1, 0x7537bc56}, {1, 0x4a5a66ce}, {2, 0x695b1e72},
- {0, 0x64eae02d}, {1, 0x54ea7ce2}, {2, 0x988ad459}, {2, 0x55677972},
- {2, 0x0492771b}, {1, 0x9935ae13}, {1, 0xc10d4011}, {1, 0xe0176d1f},
- {1, 0x31d61020}, {1, 0xb417be4f}, {1, 0x73cd1eed}, {5, 0x62bbb3db},
- {2, 0xd3ee8bea}, {1, 0xf4e8bade}, {1, 0x5b9d9333}, {1, 0xa1e3c3a0},
- {2, 0xbc32ba07}, {2, 0xfe9caef4},
+    {4, 0xa539905c}, {2, 0x1620d4a8}, {1, 0x03e5eeff}, {1, 0x70b6be69},
+    {2, 0xcf217504}, {2, 0x5323fe32}, {1, 0x78377d1d}, {2, 0xbbe0a6d4},
+    {2, 0x8450a9ce}, {1, 0x492918c3}, {1, 0xf01a4c23}, {2, 0x68991dba},
+    {2, 0x092a9403}, {1, 0x08d093ba}, {2, 0x217e8190}, {2, 0xe057a0d2},
+    {1, 0xef19bcd6}, {2, 0xbac097be}, {1, 0xa77bc7db}, {1, 0x34ed17a8},
+    {3, 0xd6fa9c9a}, {2, 0xed05ad77}, {2, 0xcac8966a}, {1, 0x6c3b21cb},
+    {2, 0x01e298fb}, {1, 0x6e75dc19}, {2, 0x449c19a6}, {2, 0x27f375cf},
+    {2, 0xb607e3a6}, {2, 0xb3ce5af0}, {2, 0xd23cfc6b}, {2, 0x6c3f7e33},
+    {1, 0x638c3a20}, {2, 0x9ab3e4a7}, {2, 0x5599b83d}, {1, 0xd6ad93b8},
+    {2, 0xa1aaa77c}, {1, 0x76243939}, {2, 0xfc35dd32}, {1, 0xe900aae6},
+    {1, 0xe3a13d6b}, {3, 0x6613b2e1}, {2, 0xbae4a656}, {5, 0x02854e4b},
+    {1, 0xaa40ea4c}, {5, 0xd0ca4ee8}, {1, 0x37984082}, {1, 0x83a64ee3},
+    {1, 0xc7536063}, {2, 0x8288b1e0}, {1, 0x9a4b2d2b}, {1, 0x75dc10f3},
+    {1, 0xab329d5f}, {1, 0xd6d0fdc3}, {5, 0x7b76383e}, {5, 0x9dfd71ec},
+    {1, 0x4daf957d}, {1, 0xac5ec913}, {6, 0x4ae123bd}, {2, 0xf28fab6e},
+    {2, 0x1c235ad9}, {1, 0xadbaf917}, {1, 0x9fd2fcf3}, {1, 0x16960fba},
+    {2, 0xd22092ca}, {2, 0xf9025efc}, {1, 0x10406826}, {1, 0xe114c5f4},
+    {1, 0x794bf36f}, {5, 0x3e8b935f}, {5, 0x73e60d4a}, {1, 0x63da0d31},
+    {1, 0x6dedb7df}, {2, 0x88e7b5bc}, {2, 0xe9c598ce}, {1, 0xb841fc8e},
+    {2, 0x19fc483f}, {1, 0x5b2b8b9c}, {2, 0x5c97f145}, {2, 0x95a78342},
+    {1, 0xaa396de2}, {1, 0x3af1f857}, {1, 0x57991e9e}, {5, 0x85fb0af9},
+    {1, 0xfdfce177}, {1, 0x2c144214}, {1, 0xbb12be1b}, {1, 0x7224681e},
+    {1, 0x71a354d9}, {1, 0x753efebd}, {1, 0x4a63f5e6}, {2, 0x69689e30},
+    {0, 0x64f033ca}, {1, 0x550914e8}, {2, 0x98994fb8}, {2, 0x556ac073},
+    {2, 0x04992484}, {1, 0x99452a4e}, {1, 0xc1165c7b}, {1, 0xe022add4},
+    {1, 0x31df7bfe}, {1, 0xb41dc27c}, {1, 0x73e53958}, {5, 0x62c58be4},
+    {2, 0xd401baa5}, {1, 0xf4ecd473}, {1, 0x5ba34c61}, {1, 0xa1edebb4},
+    {2, 0xbc35dba6}, {2, 0xfea73b91}
 };
 
 static CBlockIndex CreateBlockIndex(int nHeight) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
@@ -225,7 +225,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
         {
             LOCK(cs_main);
             pblock->nVersion = VERSIONBITS_TOP_BITS;
-            pblock->nTime = ::ChainActive().Tip()->GetMedianTimePast()+1;
+            pblock->nTime = ::ChainActive().Tip()->GetMedianTimePast()+1*1000; // MILLISECOND_TIMESTAMP:
             CMutableTransaction txCoinbase(*pblock->vtx[0]);
             txCoinbase.nVersion = 1;
             txCoinbase.vin[0].scriptSig = CScript() << (::ChainActive().Height() + 1) << OP_0 << blockinfo[i].extranonce;
@@ -414,7 +414,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     }
 
     // non-final txs in mempool
-    SetMockTime(::ChainActive().Tip()->GetMedianTimePast()+1);
+    SetMockTime(::ChainActive().Tip()->GetMedianTimePast()+1*1000); // MILLISECOND_TIMESTAMP:
     int flags = LOCKTIME_VERIFY_SEQUENCE|LOCKTIME_MEDIAN_TIME_PAST;
     // height map
     std::vector<int> prevheights;
@@ -440,7 +440,9 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
 
     // relative time locked
     tx.vin[0].prevout.hash = txFirst[1]->GetHash();
-    tx.vin[0].nSequence = CTxIn::SEQUENCE_LOCKTIME_TYPE_FLAG | (((::ChainActive().Tip()->GetMedianTimePast()+1-::ChainActive()[1]->GetMedianTimePast()) >> CTxIn::SEQUENCE_LOCKTIME_GRANULARITY) + 1); // txFirst[1] is the 3rd block
+    // GetMedianTimePast() returns milliseconds, but BIP68 sequence values represent 512-second units
+    // So we need to convert ms to seconds first, then divide by 512 (right-shift by 9)
+    tx.vin[0].nSequence = CTxIn::SEQUENCE_LOCKTIME_TYPE_FLAG | ((((::ChainActive().Tip()->GetMedianTimePast()+1*1000-::ChainActive()[1]->GetMedianTimePast()) / 1000) >> CTxIn::SEQUENCE_LOCKTIME_GRANULARITY) + 1); // txFirst[1] is the 3rd block
     prevheights[0] = baseheight + 2;
     hash = tx.GetHash();
     m_node.mempool->addUnchecked(entry.Time(GetTime()).FromTx(tx));
@@ -448,10 +450,10 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     BOOST_CHECK(!TestSequenceLocks(CTransaction(tx), flags)); // Sequence locks fail
 
     for (int i = 0; i < CBlockIndex::nMedianTimeSpan; i++)
-        ::ChainActive().Tip()->GetAncestor(::ChainActive().Tip()->nHeight - i)->nTime += 512; //Trick the MedianTimePast
+        ::ChainActive().Tip()->GetAncestor(::ChainActive().Tip()->nHeight - i)->nTime += 512 * 1000; //Trick the MedianTimePast (512 seconds = 512000 milliseconds)
     BOOST_CHECK(SequenceLocks(CTransaction(tx), flags, prevheights, CreateBlockIndex(::ChainActive().Tip()->nHeight + 1))); // Sequence locks pass 512 seconds later
     for (int i = 0; i < CBlockIndex::nMedianTimeSpan; i++)
-        ::ChainActive().Tip()->GetAncestor(::ChainActive().Tip()->nHeight - i)->nTime -= 512; //undo tricked MTP
+        ::ChainActive().Tip()->GetAncestor(::ChainActive().Tip()->nHeight - i)->nTime -= 512 * 1000; //undo tricked MTP (512 seconds = 512000 milliseconds)
 
     // absolute height locked
     tx.vin[0].prevout.hash = txFirst[2]->GetHash();
@@ -466,14 +468,18 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
 
     // absolute time locked
     tx.vin[0].prevout.hash = txFirst[3]->GetHash();
-    tx.nLockTime = ::ChainActive().Tip()->GetMedianTimePast();
+    tx.vin[0].nSequence = CTxIn::SEQUENCE_FINAL - 1; // Not SEQUENCE_FINAL so nLockTime check applies
+    // nLockTime must be in seconds when >= LOCKTIME_THRESHOLD, but GetMedianTimePast() returns milliseconds
+    // Set to current time so: initially nLockTime == blockTime, transaction not final (needs SEQUENCE_FINAL)
+    // 1 second later: nLockTime < (blockTime + 1), transaction becomes final
+    tx.nLockTime = ::ChainActive().Tip()->GetMedianTimePast() / 1000;
     prevheights.resize(1);
     prevheights[0] = baseheight + 4;
     hash = tx.GetHash();
     m_node.mempool->addUnchecked(entry.Time(GetTime()).FromTx(tx));
     BOOST_CHECK(!CheckFinalTx(CTransaction(tx), flags)); // Locktime fails
     BOOST_CHECK(TestSequenceLocks(CTransaction(tx), flags)); // Sequence locks pass
-    BOOST_CHECK(IsFinalTx(CTransaction(tx), ::ChainActive().Tip()->nHeight + 2, ::ChainActive().Tip()->GetMedianTimePast() + 1)); // Locktime passes 1 second later
+    BOOST_CHECK(IsFinalTx(CTransaction(tx), ::ChainActive().Tip()->nHeight + 2, ::ChainActive().Tip()->GetMedianTimePast() + 1*1000)); // Locktime passes 1 second later (1000 milliseconds)
 
     // mempool-dependent transactions (not added)
     tx.vin[0].prevout.hash = hash;
@@ -496,11 +502,11 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     // but relative locked txs will if inconsistently added to mempool.
     // For now these will still generate a valid template until BIP68 soft fork
     // @ZORK BIG68 always enabled BOOST_CHECK_EQUAL(pblocktemplate->block.vtx.size(), 3U);
-    // However if we advance height by 1 and time by 512, all of them should be mined
+    // However if we advance height by 1 and time by 512 seconds, all of them should be mined
     for (int i = 0; i < CBlockIndex::nMedianTimeSpan; i++)
-        ::ChainActive().Tip()->GetAncestor(::ChainActive().Tip()->nHeight - i)->nTime += 512; //Trick the MedianTimePast
+        ::ChainActive().Tip()->GetAncestor(::ChainActive().Tip()->nHeight - i)->nTime += 512 * 1000; //Trick the MedianTimePast (512 seconds = 512000 milliseconds)
     ::ChainActive().Tip()->nHeight++;
-    SetMockTime(::ChainActive().Tip()->GetMedianTimePast() + 1);
+    SetMockTime(::ChainActive().Tip()->GetMedianTimePast() + 1*1000); // Advance by 1 second (1000 milliseconds)
 
     BOOST_CHECK(pblocktemplate = AssemblerForTest(chainparams).CreateNewBlock(scriptPubKey));
     BOOST_CHECK_EQUAL(pblocktemplate->block.vtx.size(), 5U);

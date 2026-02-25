@@ -555,6 +555,7 @@ libbitcoin_common_a_SOURCES = \
   bech32.cpp \
   bloom.cpp \
   chainparams.cpp \
+  deploymentinfo.cpp \
   coins.cpp \
   compressor.cpp \
   core_read.cpp \

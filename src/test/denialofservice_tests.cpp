@@ -111,7 +111,7 @@ BOOST_AUTO_TEST_CASE(outbound_slow_chain_eviction)
 
     int64_t nStartTime = GetTime();
     // Wait 21 minutes
-    SetMockTime(nStartTime+21*60);
+    SetMockTime(nStartTime + 21 * 60 * 1000); // MILLISECOND_TIMESTAMP:
     {
         LOCK(dummyNode1.cs_sendProcessing);
         BOOST_CHECK(peerLogic->SendMessages(&dummyNode1)); // should result in getheaders
@@ -121,7 +121,7 @@ BOOST_AUTO_TEST_CASE(outbound_slow_chain_eviction)
         BOOST_CHECK(dummyNode1.vSendMsg.size() > 0);
     }
     // Wait 3 more minutes
-    SetMockTime(nStartTime+24*60);
+    SetMockTime(nStartTime + 24 * 60 * 1000); // MILLISECOND_TIMESTAMP:
     {
         LOCK(dummyNode1.cs_sendProcessing);
         BOOST_CHECK(peerLogic->SendMessages(&dummyNode1)); // should result in disconnect
@@ -173,7 +173,7 @@ BOOST_AUTO_TEST_CASE(stale_tip_peer_management)
         BOOST_CHECK(node->fDisconnect == false);
     }
 
-    SetMockTime(GetTime() + 3 * chainparams.GetConsensus().nPowTargetSpacing + 1);
+    SetMockTime(GetTime() + 3 * chainparams.GetConsensus().nPowTargetSpacing + 1 * 1000); // MILLISECOND_TIMESTAMP:
 
     // Now tip should definitely be stale, and we should look for an extra
     // outbound peer

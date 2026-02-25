@@ -50,7 +50,10 @@ MAX_BLOCK_SIGOPS = 20000
 MAX_BLOCK_SIGOPS_WEIGHT = MAX_BLOCK_SIGOPS * WITNESS_SCALE_FACTOR
 
 # Genesis block time (regtest)
-TIME_GENESIS_BLOCK = 1296688602
+# Real genesis time in milliseconds (for block nTime / getblockheader when needed)
+TIME_GENESIS_BLOCK_MS = 1770398737714
+# Genesis time in seconds for setmocktime / -mocktime (RPC and CLI expect seconds)
+TIME_GENESIS_BLOCK = TIME_GENESIS_BLOCK_MS // 1000
 
 # From BIP141
 WITNESS_COMMITMENT_HEADER = b"\xaa\x21\xa9\xed"
@@ -64,7 +67,7 @@ def create_block(hashprev=None, coinbase=None, ntime=None, *, version=None, tmpl
     if tmpl is None:
         tmpl = {}
     block.nVersion = version or tmpl.get('version') or 1
-    block.nTime = ntime or tmpl.get('curtime') or int(time.time() + 600)
+    block.nTime = ntime or tmpl.get('curtime') or int(time.time() * 1000 + 600 * 1000) # // MILLISECOND_TIMESTAMP:
     block.hashPrevBlock = hashprev or int(tmpl['previousblockhash'], 0x10)
     if tmpl and not tmpl.get('bits') is None:
         block.nBits = struct.unpack('>I', a2b_hex(tmpl['bits']))[0]

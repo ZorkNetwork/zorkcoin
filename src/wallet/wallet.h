@@ -303,7 +303,7 @@ public:
     mapValue_t mapValue;
     std::vector<std::pair<std::string, std::string> > vOrderForm;
     unsigned int fTimeReceivedIsTxTime;
-    unsigned int nTimeReceived; //!< time received by this node
+    uint64_t nTimeReceived; //!< time received by this node
     /**
      * Stable timestamp that never changes, and reflects the order a transaction
      * was added to the wallet. Timestamp is based on the block time for a
@@ -313,7 +313,7 @@ public:
      * were added to the wallet. More details can be found in
      * CWallet::ComputeTimeSmart().
      */
-    unsigned int nTimeSmart;
+    uint64_t nTimeSmart;
     /**
      * From me flag is set to 1 for transactions that were created by the wallet
      * on this bitcoin node, and set to 0 for transactions that were created
@@ -451,7 +451,7 @@ public:
         }
 
         ReadOrderPos(nOrderPos, mapValue);
-        nTimeSmart = mapValue.count("timesmart") ? (unsigned int)atoi64(mapValue["timesmart"]) : 0;
+        nTimeSmart = mapValue.count("timesmart") ? (uint64_t)atoi64(mapValue["timesmart"]) : 0;
 
         ReadPegoutIndices(pegout_indices, mapValue);
         mweb_wtx_info = mapValue.count("mweb_info") ? boost::make_optional(MWEB::WalletTxInfo::FromHex(mapValue["mweb_info"])) : boost::none;
@@ -1035,7 +1035,7 @@ public:
     bool EncryptWallet(const SecureString& strWalletPassphrase);
 
     void GetKeyBirthTimes(std::map<CKeyID, int64_t> &mapKeyBirth) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
-    unsigned int ComputeTimeSmart(const CWalletTx& wtx) const;
+    uint64_t ComputeTimeSmart(const CWalletTx& wtx) const;
 
     /**
      * Increment the next transaction order id

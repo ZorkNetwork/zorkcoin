@@ -164,12 +164,12 @@ BOOST_AUTO_TEST_CASE(util_Join)
 
 BOOST_AUTO_TEST_CASE(util_FormatParseISO8601DateTime)
 {
-    BOOST_CHECK_EQUAL(FormatISO8601DateTime(1317425777), "2011-09-30T23:36:17Z");
+    BOOST_CHECK_EQUAL(FormatISO8601DateTime(1317425777LL * 1000), "2011-09-30T23:36:17Z"); // MILLISECOND_TIMESTAMP:
     BOOST_CHECK_EQUAL(FormatISO8601DateTime(0), "1970-01-01T00:00:00Z");
 
     BOOST_CHECK_EQUAL(ParseISO8601DateTime("1970-01-01T00:00:00Z"), 0);
     BOOST_CHECK_EQUAL(ParseISO8601DateTime("1960-01-01T00:00:00Z"), 0);
-    BOOST_CHECK_EQUAL(ParseISO8601DateTime("2011-09-30T23:36:17Z"), 1317425777);
+    BOOST_CHECK_EQUAL(ParseISO8601DateTime("2011-09-30T23:36:17Z"), 1317425777LL * 1000); // MILLISECOND_TIMESTAMP:
 
     auto time = GetSystemTimeInSeconds();
     BOOST_CHECK_EQUAL(ParseISO8601DateTime(FormatISO8601DateTime(time)), time);
@@ -177,7 +177,7 @@ BOOST_AUTO_TEST_CASE(util_FormatParseISO8601DateTime)
 
 BOOST_AUTO_TEST_CASE(util_FormatISO8601Date)
 {
-    BOOST_CHECK_EQUAL(FormatISO8601Date(1317425777), "2011-09-30");
+    BOOST_CHECK_EQUAL(FormatISO8601Date(1317425777LL * 1000), "2011-09-30"); // MILLISECOND_TIMESTAMP:
 }
 
 struct TestArgsManager : public ArgsManager
@@ -1365,24 +1365,26 @@ BOOST_AUTO_TEST_CASE(strprintf_numbers)
 #undef B
 #undef E
 
-/* Check for mingw/wine issue #3494
- * Remove this test before time.ctime(0xffffffff) == 'Sun Feb  7 07:28:15 2106'
- */
 BOOST_AUTO_TEST_CASE(gettime)
 {
-    BOOST_CHECK((GetTime() & ~0xFFFFFFFFLL) == 0);
+    // GetTime() returns milliseconds, which fits in 64 bits (int64_t)
+    // The original test checked 32 bits for seconds, but milliseconds need 64 bits
+    int64_t time_ms = GetTime();
+    BOOST_CHECK(time_ms > 0); // Should be positive (milliseconds since epoch)
+    BOOST_CHECK(time_ms < (1LL << 62)); // Should fit comfortably in 64-bit signed int
 }
 
 BOOST_AUTO_TEST_CASE(util_time_GetTime)
 {
-    SetMockTime(111);
+    uint64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    SetMockTime(now); // MILLISECOND_TIMESTAMP:
     // Check that mock time does not change after a sleep
     for (const auto& num_sleep : {0, 1}) {
         UninterruptibleSleep(std::chrono::milliseconds{num_sleep});
-        BOOST_CHECK_EQUAL(111, GetTime()); // Deprecated time getter
-        BOOST_CHECK_EQUAL(111, GetTime<std::chrono::seconds>().count());
-        BOOST_CHECK_EQUAL(111000, GetTime<std::chrono::milliseconds>().count());
-        BOOST_CHECK_EQUAL(111000000, GetTime<std::chrono::microseconds>().count());
+        BOOST_CHECK_EQUAL(now, GetTime()); // Deprecated time getter
+        BOOST_CHECK_EQUAL(now/1000, GetTime<std::chrono::seconds>().count());
+        BOOST_CHECK_EQUAL(now, GetTime<std::chrono::milliseconds>().count());
+        BOOST_CHECK_EQUAL(now*1000, GetTime<std::chrono::microseconds>().count());
     }
 
     SetMockTime(0);

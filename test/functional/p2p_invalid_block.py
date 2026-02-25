@@ -32,7 +32,7 @@ class InvalidBlockRequestTest(BitcoinTestFramework):
         best_block = node.getblock(node.getbestblockhash())
         tip = int(node.getbestblockhash(), 16)
         height = best_block["height"] + 1
-        block_time = best_block["time"] + 1
+        block_time = best_block["time"] + 1*1000
 
         self.log.info("Create a new block with an anyone-can-spend coinbase")
 
@@ -50,7 +50,7 @@ class InvalidBlockRequestTest(BitcoinTestFramework):
         best_block = node.getblock(node.getbestblockhash())
         tip = int(node.getbestblockhash(), 16)
         height = best_block["height"] + 1
-        block_time = best_block["time"] + 1
+        block_time = best_block["time"] + 1*1000
 
         # Use merkle-root malleability to generate an invalid block with
         # same blockheader (CVE-2012-2459).

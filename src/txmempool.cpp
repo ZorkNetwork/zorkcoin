@@ -1152,7 +1152,7 @@ CFeeRate CTxMemPool::GetMinFee(size_t sizelimit) const {
         return CFeeRate(llround(rollingMinimumFeeRate));
 
     int64_t time = GetTime();
-    if (time > lastRollingFeeUpdate + 10) {
+    if (time > lastRollingFeeUpdate + 10 * 1000) { // MILLISECOND_TIMESTAMP:
         double halflife = ROLLING_FEE_HALFLIFE;
         if (DynamicMemoryUsage() < sizelimit / 4)
             halflife /= 4;

@@ -716,7 +716,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             cache_node.wait_for_rpc_connection()
 
             # Set a time in the past, so that blocks don't end up in the future
-            cache_node.setmocktime(cache_node.getblockheader(cache_node.getbestblockhash())['time'])
+            cache_node.setmocktime(cache_node.getblockheader(cache_node.getbestblockhash())['time'] // 1000) # // MILLISECOND_TIMESTAMP:
 
             # Create a 199-block-long chain; each of the 4 first nodes
             # gets 25 mature blocks and 25 immature.
@@ -742,7 +742,11 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             os.rmdir(cache_path('wallets'))  # Remove empty wallets dir
             for entry in os.listdir(cache_path()):
                 if entry not in ['chainstate', 'blocks']:  # Only keep chainstate and blocks folder
-                    os.remove(cache_path(entry))
+                    p = cache_path(entry)
+                    if os.path.isdir(p):
+                        shutil.rmtree(p)
+                    else:
+                        os.remove(p)
 
         for i in range(self.num_nodes):
             self.log.debug("Copy cache directory {} to node {}".format(cache_node_dir, i))

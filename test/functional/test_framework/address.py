@@ -14,10 +14,10 @@ from .script import hash256, hash160, sha256, CScript, OP_0
 from .segwit_addr import encode_segwit_address
 from .util import assert_equal, hex_str_to_bytes
 
-ADDRESS_BCRT1_UNSPENDABLE = 'zorksim1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqe9kxtl'
-ADDRESS_BCRT1_UNSPENDABLE_DESCRIPTOR = 'addr(zorksim1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqe9kxtl)#xm6azk0m'
+ADDRESS_BCRT1_UNSPENDABLE = 'zorksim1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq97tvv8'
+ADDRESS_BCRT1_UNSPENDABLE_DESCRIPTOR = 'addr(zorksim1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq97tvv8)#neydlekr'
 # Coins sent to this address can be spent with a witness stack of just OP_TRUE
-ADDRESS_BCRT1_P2WSH_OP_TRUE = 'zorksim1qft5p2uhsdcdc3l2ua4ap5qqfg4pjaqlp250x7us7a8qqhrxrxfsqc6h8ge'
+ADDRESS_BCRT1_P2WSH_OP_TRUE = 'zorksim1qft5p2uhsdcdc3l2ua4ap5qqfg4pjaqlp250x7us7a8qqhrxrxfsqyp2d0p'
 
 
 class AddressType(enum.Enum):
@@ -77,7 +77,7 @@ def base58_to_byte(s):
 
 def keyhash_to_p2pkh(hash, main=False):
     assert len(hash) == 20
-    version = 0 if main else 111
+    version = 80 if main else 111
     return byte_to_base58(hash, version)
 
 def scripthash_to_p2sh(hash, main=False):

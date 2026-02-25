@@ -29,7 +29,7 @@ import socket
 import struct
 import time
 
-import zorkcoin_scrypt
+from kheavyhash import kheavyhash
 from test_framework.siphash import siphash256
 from test_framework.util import hex_str_to_bytes, assert_equal
 
@@ -703,7 +703,7 @@ class CTransaction:
 
 class CBlockHeader:
     __slots__ = ("hash", "hashMerkleRoot", "hashPrevBlock", "nBits", "nNonce",
-                 "nTime", "nVersion", "sha256", "scrypt256")
+                 "nTime", "nVersion", "sha256", "kheavyhash256")
 
     def __init__(self, header=None):
         if header is None:
@@ -717,7 +717,7 @@ class CBlockHeader:
             self.nNonce = header.nNonce
             self.sha256 = header.sha256
             self.hash = header.hash
-            self.scrypt256 = header.scrypt256
+            self.kheavyhash256 = header.kheavyhash256
             self.calc_sha256()
 
     def set_null(self):
@@ -729,27 +729,27 @@ class CBlockHeader:
         self.nNonce = 0
         self.sha256 = None
         self.hash = None
-        self.scrypt256 = None
+        self.kheavyhash256 = None
 
     def deserialize(self, f):
         self.nVersion = struct.unpack("<i", f.read(4))[0]
         self.hashPrevBlock = deser_uint256(f)
         self.hashMerkleRoot = deser_uint256(f)
-        self.nTime = struct.unpack("<I", f.read(4))[0]
+        self.nTime = struct.unpack("<Q", f.read(8))[0]
         self.nBits = struct.unpack("<I", f.read(4))[0]
-        self.nNonce = struct.unpack("<I", f.read(4))[0]
+        self.nNonce = struct.unpack("<Q", f.read(8))[0]
         self.sha256 = None
         self.hash = None
-        self.scrypt256 = None
+        self.kheavyhash256 = None
 
     def serialize(self):
         r = b""
         r += struct.pack("<i", self.nVersion)
         r += ser_uint256(self.hashPrevBlock)
         r += ser_uint256(self.hashMerkleRoot)
-        r += struct.pack("<I", self.nTime)
+        r += struct.pack("<Q", self.nTime)
         r += struct.pack("<I", self.nBits)
-        r += struct.pack("<I", self.nNonce)
+        r += struct.pack("<Q", self.nNonce)
         return r
 
     def calc_sha256(self):
@@ -758,16 +758,45 @@ class CBlockHeader:
             r += struct.pack("<i", self.nVersion)
             r += ser_uint256(self.hashPrevBlock)
             r += ser_uint256(self.hashMerkleRoot)
-            r += struct.pack("<I", self.nTime)
+            r += struct.pack("<Q", self.nTime)
             r += struct.pack("<I", self.nBits)
-            r += struct.pack("<I", self.nNonce)
+            r += struct.pack("<Q", self.nNonce)
             self.sha256 = uint256_from_str(hash256(r))
             self.hash = encode(hash256(r)[::-1], 'hex_codec').decode('ascii')
-            self.scrypt256 = uint256_from_str(zorkcoin_scrypt.getPoWHash(r))
+            
+            # Calculate PoW hash using KHeavyHash (matching C++ GetPoWHash)
+            # C++ uses uint64_t for nTime and nNonce
+            
+            # 1. Create prePow header (with nTime=0, nNonce=0)
+            # Layout: nVersion(4) + hashPrevBlock(32) + hashMerkleRoot(32) + nTime(8) + nBits(4) + nNonce(8) = 88 bytes
+            # Offsets: [0:4=version][4:36=prevblock][36:68=merkle][68:76=time][76:80=bits][80:88=nonce]
+            r_prepow = b""
+            r_prepow += struct.pack("<i", self.nVersion)
+            r_prepow += ser_uint256(self.hashPrevBlock)
+            r_prepow += ser_uint256(self.hashMerkleRoot)
+            r_prepow += struct.pack("<Q", 0)  # nTime = 0 (uint64_t)
+            r_prepow += struct.pack("<I", self.nBits)
+            r_prepow += struct.pack("<Q", 0)  # nNonce = 0 (uint64_t)
+            
+            # 2. Hash the prePow header to get the seed (prePowHash)
+            prePowHash = hash256(r_prepow)
+            # Apply endianness (see KHEAVYHASH_ENDIANNESS.md)
+            # prePowHash is already in internal order from hash256(); use as-is
+            prepow_bytes = prePowHash
+            time_bytes = struct.pack("<Q", self.nTime)   # Little-endian uint64_t
+            nonce_bytes = struct.pack("<Q", self.nNonce) # Little-endian uint64_t
+
+            # 3. Construct 80-byte work order: [32 seed][8 time][32 zero][8 nonce]
+            work_order = prepow_bytes + time_bytes + (b"\x00" * 32) + nonce_bytes
+
+            # 4. Compute kHeavyHash
+            pow_hash = kheavyhash(work_order)
+            # Both Python kheavyhash and C++ return internal order (verified by runtime testing)
+            self.kheavyhash256 = uint256_from_str(pow_hash)
 
     def rehash(self):
         self.sha256 = None
-        self.scrypt256 = None
+        self.kheavyhash256 = None
         self.calc_sha256()
         return self.sha256
 
@@ -780,7 +809,7 @@ class CBlockHeader:
         return isinstance(other, CBlockHeader) and repr(self) == repr(other)
 
 BLOCK_HEADER_SIZE = len(CBlockHeader().serialize())
-assert_equal(BLOCK_HEADER_SIZE, 80)
+assert_equal(BLOCK_HEADER_SIZE, 88)
 
 class CBlock(CBlockHeader):
     __slots__ = ("vtx", "mweb_block")
@@ -842,7 +871,7 @@ class CBlock(CBlockHeader):
     def is_valid(self):
         self.calc_sha256()
         target = uint256_from_compact(self.nBits)
-        if self.scrypt256 > target:
+        if self.kheavyhash256 > target:
             return False
         for tx in self.vtx:
             if not tx.is_valid():
@@ -854,7 +883,7 @@ class CBlock(CBlockHeader):
     def solve(self):
         self.rehash()
         target = uint256_from_compact(self.nBits)
-        while self.scrypt256 > target:
+        while self.kheavyhash256 > target:
             self.nNonce += 1
             self.rehash()
 

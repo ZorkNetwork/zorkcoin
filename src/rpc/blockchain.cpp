@@ -975,8 +975,8 @@ static RPCHelpMan getblockheader()
                             {RPCResult::Type::NUM, "version", "The block version"},
                             {RPCResult::Type::STR_HEX, "versionHex", "The block version formatted in hexadecimal"},
                             {RPCResult::Type::STR_HEX, "merkleroot", "The merkle root"},
-                            {RPCResult::Type::NUM_TIME, "time", "The block time expressed in " + UNIX_EPOCH_TIME},
-                            {RPCResult::Type::NUM_TIME, "mediantime", "The median block time expressed in " + UNIX_EPOCH_TIME},
+                            {RPCResult::Type::NUM_TIME, "time", "The block time expressed in " + UNIX_EPOCH_TIME_MS},
+                            {RPCResult::Type::NUM_TIME, "mediantime", "The median block time expressed in " + UNIX_EPOCH_TIME_MS},
                             {RPCResult::Type::NUM, "nonce", "The nonce"},
                             {RPCResult::Type::STR_HEX, "bits", "The bits"},
                             {RPCResult::Type::NUM, "difficulty", "The difficulty"},
@@ -1083,8 +1083,8 @@ static RPCHelpMan getblock()
                     {RPCResult::Type::STR_HEX, "merkleroot", "The merkle root"},
                     {RPCResult::Type::ARR, "tx", "The transaction ids",
                         {{RPCResult::Type::STR_HEX, "", "The transaction id"}}},
-                    {RPCResult::Type::NUM_TIME, "time",       "The block time expressed in " + UNIX_EPOCH_TIME},
-                    {RPCResult::Type::NUM_TIME, "mediantime", "The median block time expressed in " + UNIX_EPOCH_TIME},
+                    {RPCResult::Type::NUM_TIME, "time",       "The block time expressed in " + UNIX_EPOCH_TIME_MS},
+                    {RPCResult::Type::NUM_TIME, "mediantime", "The median block time expressed in " + UNIX_EPOCH_TIME_MS},
                     {RPCResult::Type::NUM, "nonce", "The nonce"},
                     {RPCResult::Type::STR_HEX, "bits", "The bits"},
                     {RPCResult::Type::NUM, "difficulty", "The difficulty"},
@@ -1170,7 +1170,7 @@ static RPCHelpMan pruneblockchain()
 
     LOCK(cs_main);
 
-    int heightParam = request.params[0].get_int();
+    int64_t heightParam = request.params[0].get_int64(); // MILLISECOND_TIMESTAMP: could be invoked with a timestamp
     if (heightParam < 0)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Negative block height.");
 
@@ -1833,7 +1833,7 @@ static RPCHelpMan getchaintxstats()
                 RPCResult{
                     RPCResult::Type::OBJ, "", "",
                     {
-                        {RPCResult::Type::NUM_TIME, "time", "The timestamp for the final block in the window, expressed in " + UNIX_EPOCH_TIME},
+                        {RPCResult::Type::NUM_TIME, "time", "The timestamp for the final block in the window, expressed in " + UNIX_EPOCH_TIME_MS},
                         {RPCResult::Type::NUM, "txcount", "The total number of transactions in the chain up to that point"},
                         {RPCResult::Type::STR_HEX, "window_final_block_hash", "The hash of the final block in the window"},
                         {RPCResult::Type::NUM, "window_final_block_height", "The height of the final block in the window."},
@@ -1849,7 +1849,7 @@ static RPCHelpMan getchaintxstats()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     const CBlockIndex* pindex;
-    int blockcount = 30 * 24 * 60 * 60 / Params().GetConsensus().nPowTargetSpacing; // By default: 1 month
+    int blockcount = (int)((int64_t)30 * 24 * 60 * 60 * 1000 / Params().GetConsensus().nPowTargetSpacing); // MILLISECOND_TIMESTAMP: By default: 1 month
 
     if (request.params[1].isNull()) {
         LOCK(cs_main);
@@ -1890,9 +1890,9 @@ static RPCHelpMan getchaintxstats()
     ret.pushKV("window_block_count", blockcount);
     if (blockcount > 0) {
         ret.pushKV("window_tx_count", nTxDiff);
-        ret.pushKV("window_interval", nTimeDiff);
+        ret.pushKV("window_interval", nTimeDiff / 1000); // MILLISECOND_TIMESTAMP:
         if (nTimeDiff > 0) {
-            ret.pushKV("txrate", ((double)nTxDiff) / nTimeDiff);
+            ret.pushKV("txrate", ((double)nTxDiff) * 1000.0 / nTimeDiff); // MILLISECOND_TIMESTAMP:
         }
     }
 

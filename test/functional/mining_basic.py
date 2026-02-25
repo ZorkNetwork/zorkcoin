@@ -46,6 +46,10 @@ def assert_template(node, block, expect, rehash=True):
 class MiningTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
+        self.extra_args = [
+            ["-vbparams=mweb:-2:0"], # Disable MWEB
+            ["-vbparams=mweb:-2:0"],
+        ]
         self.setup_clean_chain = True
         self.supports_cli = False
 
@@ -60,10 +64,10 @@ class MiningTest(BitcoinTestFramework):
         assert_equal(mining_info['currentblockweight'], 4000)
 
         self.log.info('test blockversion')
-        self.restart_node(0, extra_args=['-mocktime={}'.format(t), '-blockversion=536870912'])
+        self.restart_node(0, extra_args=['-mocktime={}'.format(t), '-blockversion=536870912', '-vbparams=mweb:-2:0'])
         self.connect_nodes(0, 1)
         assert_equal(536870912, self.nodes[0].getblocktemplate(NORMAL_GBT_REQUEST_PARAMS)['version'])
-        self.restart_node(0, extra_args=['-mocktime={}'.format(t)])
+        self.restart_node(0, extra_args=['-mocktime={}'.format(t), '-vbparams=mweb:-2:0'])
         self.connect_nodes(0, 1)
         assert_equal(VERSIONBITS_TOP_BITS + (1 << VERSIONBITS_DEPLOYMENT_TESTDUMMY_BIT), self.nodes[0].getblocktemplate(NORMAL_GBT_REQUEST_PARAMS)['version'])
         self.restart_node(0)
@@ -181,7 +185,7 @@ class MiningTest(BitcoinTestFramework):
 
         self.log.info("getblocktemplate: Test bad timestamps")
         bad_block = copy.deepcopy(block)
-        bad_block.nTime = 2**31 - 1
+        bad_block.nTime = 2**63 - 1
         assert_template(node, bad_block, 'time-too-new')
         assert_submitblock(bad_block, 'time-too-new', 'time-too-new')
         bad_block.nTime = 0

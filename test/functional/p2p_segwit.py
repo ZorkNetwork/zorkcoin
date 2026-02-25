@@ -223,9 +223,9 @@ class SegWitTest(BitcoinTestFramework):
         self.num_nodes = 3
         # This test tests SegWit both pre and post-activation, so use the normal BIP9 activation.
         self.extra_args = [
-            ["-acceptnonstdtxn=1", "-segwitheight={}".format(SEGWIT_HEIGHT), "-whitelist=noban@127.0.0.1", "-mempoolreplacement=1", "-vbparams=mweb:-2:0", "-par=1"],
-            ["-acceptnonstdtxn=0", "-segwitheight={}".format(SEGWIT_HEIGHT), "-mempoolreplacement=1", "-vbparams=mweb:-2:0"],
-            ["-acceptnonstdtxn=1", "-segwitheight=-1", "-mempoolreplacement=1", "-vbparams=mweb:-2:0"],
+            ["-acceptnonstdtxn=1", "-testactivationheight=segwit@{}".format(SEGWIT_HEIGHT), "-whitelist=noban@127.0.0.1", "-mempoolreplacement=1", "-vbparams=mweb:-2:0", "-par=1"],
+            ["-acceptnonstdtxn=0", "-testactivationheight=segwit@{}".format(SEGWIT_HEIGHT), "-mempoolreplacement=1", "-vbparams=mweb:-2:0"],
+            ["-acceptnonstdtxn=1", "-testactivationheight=segwit@-1", "-mempoolreplacement=1", "-vbparams=mweb:-2:0"],
         ]
         self.supports_cli = False
 
@@ -334,7 +334,7 @@ class SegWitTest(BitcoinTestFramework):
         # Mine a block with an anyone-can-spend coinbase,
         # let it mature, then try to spend it.
 
-        block = self.build_next_block(version=1)
+        block = self.build_next_block(version=VB_TOP_BITS)
         block.solve()
         self.test_node.send_and_ping(msg_no_witness_block(block))  # make sure the block was processed
         txid = block.vtx[0].sha256
@@ -1952,7 +1952,7 @@ class SegWitTest(BitcoinTestFramework):
         resp = self.nodes[0].submitblock(block.serialize().hex())
         assert_equal(resp, 'bad-version(0x00000004)')
 
-        self.restart_node(2, extra_args=["-segwitheight={}".format(SEGWIT_HEIGHT)])
+        self.restart_node(2, extra_args=["-testactivationheight=segwit@{}".format(SEGWIT_HEIGHT)])
         self.connect_nodes(0, 2)
 
         # We reconnect more than 100 blocks, give it plenty of time

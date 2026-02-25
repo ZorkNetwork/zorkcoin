@@ -12,6 +12,7 @@
 #include <protocol.h>
 
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 struct SeedSpec6 {
@@ -40,6 +41,13 @@ struct ChainTxData {
     int64_t nTime;    //!< UNIX timestamp of last known number of transactions
     int64_t nTxCount; //!< total number of transactions between genesis and that timestamp
     double dTxRate;   //!< estimated number of transactions per second after that timestamp
+};
+
+/**
+ * RegTestOptions holds configurations for creating a regtest CChainParams.
+ */
+struct RegTestOptions {
+    std::unordered_map<Consensus::BuriedDeployment, int> activation_heights;
 };
 
 /**

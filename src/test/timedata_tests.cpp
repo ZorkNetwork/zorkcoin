@@ -59,12 +59,12 @@ BOOST_AUTO_TEST_CASE(addtimedata)
     BOOST_CHECK_EQUAL(GetTimeOffset(), 0);
 
     //Part 1: Add large offsets to test a warning message that our clock may be wrong.
-    MultiAddTimeData(3, DEFAULT_MAX_TIME_ADJUSTMENT + 1);
+    MultiAddTimeData(3, (DEFAULT_MAX_TIME_ADJUSTMENT + 1) * 1000); // MILLISECOND_TIMESTAMP:
     // Filter size is 1 + 3 = 4: It is always initialized with a single element (offset 0)
 
     {
         ASSERT_DEBUG_LOG("Please check that your computer's date and time are correct!");
-        MultiAddTimeData(1, DEFAULT_MAX_TIME_ADJUSTMENT + 1); //filter size 5
+        MultiAddTimeData(1, (DEFAULT_MAX_TIME_ADJUSTMENT + 1) * 1000);  // MILLISECOND_TIMESTAMP: filter size 5
     }
 
     BOOST_CHECK(GetWarnings(true).original.find("clock is wrong") != std::string::npos);
@@ -73,19 +73,19 @@ BOOST_AUTO_TEST_CASE(addtimedata)
     BOOST_CHECK_EQUAL(GetTimeOffset(), 0);
 
     // Part 2: Test positive and negative medians by adding more offsets
-    MultiAddTimeData(4, 100); // filter size 9
-    BOOST_CHECK_EQUAL(GetTimeOffset(), 100);
-    MultiAddTimeData(10, -100); //filter size 19
-    BOOST_CHECK_EQUAL(GetTimeOffset(), -100);
+    MultiAddTimeData(4, 100 * 1000);  // MILLISECOND_TIMESTAMP: filter size 9
+    BOOST_CHECK_EQUAL(GetTimeOffset(), 100 * 1000); // MILLISECOND_TIMESTAMP:
+    MultiAddTimeData(10, -100 * 1000);  // MILLISECOND_TIMESTAMP: filter size 19
+    BOOST_CHECK_EQUAL(GetTimeOffset(), -100 * 1000); // MILLISECOND_TIMESTAMP:
 
     // Part 3: Test behaviour when filter has reached maximum number of offsets
     const int MAX_SAMPLES = 200;
     int nfill = (MAX_SAMPLES - 3 - 19) / 2; //89
-    MultiAddTimeData(nfill, 100);
-    MultiAddTimeData(nfill, -100); //filter size MAX_SAMPLES - 3
-    BOOST_CHECK_EQUAL(GetTimeOffset(), -100);
+    MultiAddTimeData(nfill, 100 * 1000); // MILLISECOND_TIMESTAMP:
+    MultiAddTimeData(nfill, -100 * 1000); // MILLISECOND_TIMESTAMP: filter size MAX_SAMPLES - 3
+    BOOST_CHECK_EQUAL(GetTimeOffset(), -100 * 1000); // MILLISECOND_TIMESTAMP:
 
-    MultiAddTimeData(2, 100);
+    MultiAddTimeData(2, 100 * 1000); // MILLISECOND_TIMESTAMP:
     //filter size MAX_SAMPLES -1, median is the initial 0 offset
     //since we added same number of positive/negative offsets
 
@@ -95,7 +95,7 @@ BOOST_AUTO_TEST_CASE(addtimedata)
     // because it is only updated when the number of elements in the filter becomes odd. It was decided
     // not to fix this because it prevents possible attacks. See the comment in AddTimeData() or issue #4521
     // for a more detailed explanation.
-    MultiAddTimeData(2, 100); // filter median is 100 now, but nTimeOffset will not change
+    MultiAddTimeData(2, 100 * 1000); // MILLISECOND_TIMESTAMP: filter median is 100 now, but nTimeOffset will not change
     BOOST_CHECK_EQUAL(GetTimeOffset(), 0);
 
     // We want this test to end with nTimeOffset==0, otherwise subsequent tests of the suite will fail.

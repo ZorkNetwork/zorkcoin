@@ -50,8 +50,8 @@ void AddTimeData(const CNetAddr& ip, int64_t nOffsetSample)
 
     // Add data
     static CMedianFilter<int64_t> vTimeOffsets(BITCOIN_TIMEDATA_MAX_SAMPLES, 0);
-    vTimeOffsets.input(nOffsetSample);
-    LogPrint(BCLog::NET, "added time data, samples %d, offset %+d (%+d minutes)\n", vTimeOffsets.size(), nOffsetSample, nOffsetSample / 60);
+    vTimeOffsets.input(nOffsetSample/1000);
+    LogPrint(BCLog::NET, "added time data, samples %d, offset %+dmS (%+d minutes)\n", vTimeOffsets.size(), nOffsetSample/1000, nOffsetSample / 60);
 
     // There is a known issue here (see issue #4521):
     //
@@ -76,7 +76,7 @@ void AddTimeData(const CNetAddr& ip, int64_t nOffsetSample)
         // Only let other nodes change our time by so much
         int64_t max_adjustment = std::max<int64_t>(0, gArgs.GetArg("-maxtimeadjustment", DEFAULT_MAX_TIME_ADJUSTMENT));
         if (nMedian >= -max_adjustment && nMedian <= max_adjustment) {
-            nTimeOffset = nMedian;
+            nTimeOffset = nMedian * 1000; // MILLISECOND_TIMESTAMP:
         } else {
             nTimeOffset = 0;
 
@@ -102,7 +102,7 @@ void AddTimeData(const CNetAddr& ip, int64_t nOffsetSample)
                 LogPrint(BCLog::NET, "%+d  ", n); /* Continued */
             }
             LogPrint(BCLog::NET, "|  "); /* Continued */
-            LogPrint(BCLog::NET, "nTimeOffset = %+d  (%+d minutes)\n", nTimeOffset, nTimeOffset / 60);
+            LogPrint(BCLog::NET, "nTimeOffset = %+dmS  (%+d minutes)\n", nTimeOffset, nTimeOffset / (60 *1000));
         }
     }
 }

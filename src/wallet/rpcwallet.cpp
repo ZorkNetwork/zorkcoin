@@ -1467,14 +1467,14 @@ static const std::vector<RPCResult> TransactionDescriptionString()
            {RPCResult::Type::STR_HEX, "blockhash", "The block hash containing the transaction."},
            {RPCResult::Type::NUM, "blockheight", "The block height containing the transaction."},
            {RPCResult::Type::NUM, "blockindex", "The index of the transaction in the block that includes it."},
-           {RPCResult::Type::NUM_TIME, "blocktime", "The block time expressed in " + UNIX_EPOCH_TIME + "."},
+           {RPCResult::Type::NUM_TIME, "blocktime", "The block time expressed in " + UNIX_EPOCH_TIME_MS + "."},
            {RPCResult::Type::STR_HEX, "txid", "The transaction id."},
            {RPCResult::Type::ARR, "walletconflicts", "Conflicting transaction ids.",
            {
                {RPCResult::Type::STR_HEX, "txid", "The transaction id."},
            }},
-           {RPCResult::Type::NUM_TIME, "time", "The transaction time expressed in " + UNIX_EPOCH_TIME + "."},
-           {RPCResult::Type::NUM_TIME, "timereceived", "The time received expressed in " + UNIX_EPOCH_TIME + "."},
+           {RPCResult::Type::NUM_TIME, "time", "The transaction time expressed in " + UNIX_EPOCH_TIME_MS + "."},
+           {RPCResult::Type::NUM_TIME, "timereceived", "The time received expressed in " + UNIX_EPOCH_TIME_MS + "."},
            {RPCResult::Type::STR, "comment", "If a comment is associated with the transaction, only present if not empty."},
            {RPCResult::Type::STR, "bip125-replaceable", "(\"yes|no|unknown\") Whether this transaction could be replaced due to BIP125 (replace-by-fee);\n"
                "may be unknown for unconfirmed transactions not in the mempool"}};
@@ -2126,7 +2126,7 @@ static RPCHelpMan walletpassphrase()
 
         pwallet->TopUpKeyPool();
 
-        pwallet->nRelockTime = GetTime() + nSleepTime;
+        pwallet->nRelockTime = GetTime() + nSleepTime * 1000; // MILLISECOND_TIMESTAMP:
         relock_time = pwallet->nRelockTime;
     }
 
@@ -2675,7 +2675,7 @@ static RPCHelpMan getwalletinfo()
         obj.pushKV("keypoolsize_hd_internal",   (int64_t)(pwallet->GetKeyPoolSize() - kpExternalSize));
     }
     if (pwallet->IsCrypted()) {
-        obj.pushKV("unlocked_until", pwallet->nRelockTime);
+        obj.pushKV("unlocked_until", pwallet->nRelockTime / 1000); // MILLISECOND_TIMESTAMP:
     }
     obj.pushKV("paytxfee", ValueFromAmount(pwallet->m_pay_tx_fee.GetFeePerK()));
     obj.pushKV("private_keys_enabled", !pwallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS));

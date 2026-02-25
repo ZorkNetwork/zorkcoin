@@ -12,7 +12,7 @@
 #include <boost/test/unit_test.hpp>
 
 /* Define a virtual block time, one block per 10 minutes after Nov 14 2014, 0:55:36am */
-static int32_t TestTime(int nHeight) { return 1415926536 + 600 * nHeight; }
+static int64_t TestTime(int nHeight) { return (1415926536LL + 600LL * nHeight) * 1000LL; } // MILLISECOND_TIMESTAMP:
 
 static const std::string StateName(ThresholdState state)
 {
@@ -116,7 +116,7 @@ public:
          Reset();
     }
 
-    VersionBitsTester& Mine(unsigned int height, int32_t nTime, int32_t nVersion) {
+    VersionBitsTester& Mine(unsigned int height, uint64_t nTime, int32_t nVersion) {
         while (vpblock.size() < height) {
             CBlockIndex* pindex = new CBlockIndex();
             pindex->nHeight = vpblock.size();
@@ -336,7 +336,7 @@ static void check_computeblockversion_bip8(const Consensus::Params& params, Cons
     BOOST_CHECK(0 <= bit && bit < 32);
     BOOST_CHECK((bit_mask & VERSIONBITS_TOP_MASK) == 0);
 
-    int64_t nTime = 100000;
+    int64_t nTime = 100000 * 1000; // MILLISECOND_TIMESTAMP:
 
     const CBlockIndex* lastBlock = nullptr;
 
@@ -458,7 +458,7 @@ static void check_computeblockversion(const Consensus::Params& params, Consensus
         // then we'll keep mining at nStartTime...
     } else {
         // use a time 1s earlier than start time to check we stay DEFINED
-        --nTime;
+        nTime -= 1000; // MILLISECOND_TIMESTAMP:
 
         // Start generating blocks before nStartTime
         lastBlock = firstChain.Mine(params.nMinerConfirmationWindow, nTime, VERSIONBITS_LAST_OLD_BLOCK_VERSION).Tip();

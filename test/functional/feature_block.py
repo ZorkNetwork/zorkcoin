@@ -82,7 +82,14 @@ class FullBlockTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.setup_clean_chain = True
-        self.extra_args = [['-acceptnonstdtxn=1']]  # This is a consensus block test, we don't care about tx policy
+        self.extra_args = [[
+            '-acceptnonstdtxn=1',                  # This is a consensus block test, we don't care about tx policy
+            '-testactivationheight=bip34@500',     # BIP34 (HEIGHTINCB) at 500
+            '-testactivationheight=dersig@1251',   # BIP66 (DERSIG) at 1251
+            '-testactivationheight=cltv@1351',     # BIP65 (CLTV) at 1351
+            '-testactivationheight=csv@432',       # CSV at 432
+            '-vbparams=mweb:-2:0',                 # Disable MWEB versionbits for this test.
+        ]]
 
     def run_test(self):
         node = self.nodes[0]  # convenience reference to the node
@@ -635,7 +642,7 @@ class FullBlockTest(BitcoinTestFramework):
         self.move_tip(44)
         b47 = self.next_block(47)
         target = uint256_from_compact(b47.nBits)
-        while b47.scrypt256 <= target:
+        while b47.kheavyhash256 <= target:
             # Rehash nonces until an invalid too-high-hash block is found.
             b47.nNonce += 1
             b47.rehash()
@@ -644,7 +651,7 @@ class FullBlockTest(BitcoinTestFramework):
         self.log.info("Reject a block with a timestamp >2 hours in the future")
         self.move_tip(44)
         b48 = self.next_block(48)
-        b48.nTime = int(time.time()) + 60 * 60 * 3
+        b48.nTime = int(time.time() * 1000) + 60 * 60 * 3 * 1000 # // MILLISECOND_TIMESTAMP:
         # Header timestamp has changed. Re-solve the block.
         b48.solve()
         self.send_blocks([b48], False, force_send=True, reject_reason='time-too-new')
@@ -689,7 +696,7 @@ class FullBlockTest(BitcoinTestFramework):
 
         self.log.info("Reject a block with timestamp before MedianTimePast")
         b54 = self.next_block(54, spend=out[15])
-        b54.nTime = b35.nTime - 1
+        b54.nTime = b35.nTime - 1*1000 # // MILLISECOND_TIMESTAMP:
         b54.solve()
         self.send_blocks([b54], False, force_send=True, reject_reason='time-too-old', reconnect=True)
 
@@ -1329,10 +1336,10 @@ class FullBlockTest(BitcoinTestFramework):
     def next_block(self, number, spend=None, additional_coinbase_value=0, script=CScript([OP_TRUE]), *, version=0x20000000):
         if self.tip is None:
             base_block_hash = self.genesis_hash
-            block_time = int(time.time()) + 1
+            block_time = int(time.time()) * 1000 + 1*1000 # // MILLISECOND_TIMESTAMP:
         else:
             base_block_hash = self.tip.sha256
-            block_time = self.tip.nTime + 1
+            block_time = self.tip.nTime + 1*1000 # // MILLISECOND_TIMESTAMP:
         # First create the coinbase
         height = self.block_heights[base_block_hash] + 1
         coinbase = create_coinbase(height, self.coinbase_pubkey)

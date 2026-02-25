@@ -78,7 +78,7 @@ static UniValue GetNetworkHashPS(int lookup, int height) {
     arith_uint256 workDiff = pb->nChainWork - pb0->nChainWork;
     int64_t timeDiff = maxTime - minTime;
 
-    return workDiff.getdouble() / timeDiff;
+    return workDiff.getdouble() * 1000.0 / timeDiff; // MILLISECOND_TIMESTAMP: convert to hashes per second rather than per millisecond
 }
 
 static RPCHelpMan getnetworkhashps()
@@ -578,7 +578,7 @@ static RPCHelpMan getblocktemplate()
                         {RPCResult::Type::NUM, "coinbasevalue", "maximum allowable input to coinbase transaction, including the generation award and transaction fees (in satoshis)"},
                         {RPCResult::Type::STR, "longpollid", "an id to include with a request to longpoll on an update to this template"},
                         {RPCResult::Type::STR, "target", "The hash target"},
-                        {RPCResult::Type::NUM_TIME, "mintime", "The minimum timestamp appropriate for the next block time, expressed in " + UNIX_EPOCH_TIME},
+                        {RPCResult::Type::NUM_TIME, "mintime", "The minimum timestamp appropriate for the next block time, expressed in " + UNIX_EPOCH_TIME_MS},
                         {RPCResult::Type::ARR, "mutable", "list of ways the block template may be changed",
                             {
                                 {RPCResult::Type::STR, "value", "A way the block template may be changed, e.g. 'time', 'transactions', 'prevblock'"},
@@ -587,7 +587,7 @@ static RPCHelpMan getblocktemplate()
                         {RPCResult::Type::NUM, "sigoplimit", "limit of sigops in blocks"},
                         {RPCResult::Type::NUM, "sizelimit", "limit of block size"},
                         {RPCResult::Type::NUM, "weightlimit", "limit of block weight"},
-                        {RPCResult::Type::NUM_TIME, "curtime", "current timestamp in " + UNIX_EPOCH_TIME},
+                        {RPCResult::Type::NUM_TIME, "curtime", "current timestamp in " + UNIX_EPOCH_TIME_MS},
                         {RPCResult::Type::STR, "bits", "compressed target of next block"},
                         {RPCResult::Type::NUM, "height", "The height of the next block"},
                         {RPCResult::Type::STR, "default_witness_commitment", /* optional */ true, "a valid witness commitment for the unmodified block template"},

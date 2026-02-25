@@ -45,16 +45,25 @@ from test_framework.util import (
 )
 
 
+BASE_EXTRA_ARGS = [
+    '-vbparams=mweb:-2:0',
+    '-testactivationheight=bip34@500',
+    '-testactivationheight=dersig@1251',
+    '-testactivationheight=cltv@1351',
+    '-testactivationheight=csv@432',
+]
+
+
 class BlockchainTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 1
         self.supports_cli = False
-        self.extra_args=[['-vbparams=mweb:-2:0']]
+        self.extra_args = [BASE_EXTRA_ARGS]
 
     def run_test(self):
         self.mine_chain()
-        self.restart_node(0, extra_args=['-stopatheight=207', '-prune=1', '-vbparams=mweb:-2:0'])  # Set extra args with pruning after rescan is complete
+        self.restart_node(0, BASE_EXTRA_ARGS + ['-stopatheight=207', '-prune=1'])  # Set extra args with pruning after rescan is complete
 
         self._test_getblockchaininfo()
         self._test_getchaintxstats()
@@ -108,12 +117,12 @@ class BlockchainTest(BitcoinTestFramework):
         assert res['pruned']
         assert not res['automatic_pruning']
 
-        self.restart_node(0, ['-stopatheight=207'])
+        self.restart_node(0, BASE_EXTRA_ARGS + ['-stopatheight=207'])
         res = self.nodes[0].getblockchaininfo()
         # should have exact keys
         assert_equal(sorted(res.keys()), keys)
 
-        self.restart_node(0, ['-stopatheight=207', '-prune=2200', '-vbparams=mweb:-2:0'])
+        self.restart_node(0, BASE_EXTRA_ARGS + ['-stopatheight=207', '-prune=2200'])
         res = self.nodes[0].getblockchaininfo()
         # result should have these additional pruning keys if prune=2200
         assert_equal(sorted(res.keys()), sorted(['pruneheight', 'automatic_pruning', 'prune_target_size'] + keys))
@@ -194,7 +203,7 @@ class BlockchainTest(BitcoinTestFramework):
         b1 = self.nodes[0].getblock(b1_hash)
         b200_hash = self.nodes[0].getblockhash(200)
         b200 = self.nodes[0].getblock(b200_hash)
-        time_diff = b200['mediantime'] - b1['mediantime']
+        time_diff = (b200['mediantime'] - b1['mediantime']) // 1000 # // MILLISECOND_TIMESTAMP:
 
         chaintxstats = self.nodes[0].getchaintxstats()
         assert_equal(chaintxstats['time'], b200['time'])
@@ -351,8 +360,8 @@ class BlockchainTest(BitcoinTestFramework):
             peer.send_and_ping(msg_block(b))
             return b
 
-        b21f = solve_and_send_block(int(b20hash, 16), 21, b20['time'] + 1)
-        b22f = solve_and_send_block(b21f.sha256, 22, b21f.nTime + 1)
+        b21f = solve_and_send_block(int(b20hash, 16), 21, b20['time'] + 1 * 1000) # // MILLISECOND_TIMESTAMP:
+        b22f = solve_and_send_block(b21f.sha256, 22, b21f.nTime + 1 * 1000) # // MILLISECOND_TIMESTAMP:
 
         node.invalidateblock(b22f.hash)
 

@@ -62,6 +62,8 @@ const int CHDChain::VERSION_HD_MWEB;
 const int CHDChain::VERSION_HD_MWEB_WATCH;
 const int CHDChain::CURRENT_VERSION;
 
+const uint32_t COIN_TYPE_VALUE = 240079435;  // coin type from SLIP-0044 for Zork Network
+
 //
 // WalletBatch
 //
@@ -494,14 +496,14 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
 
                     // Extract the index and internal from the path
                     // Path string is m/240079435'/k'/i'
-                    // Path vector is [0', k', i'] (but as ints OR'd with the hardened bit
+                    // Path vector is [240079435', k', i'] (but as ints OR'd with the hardened bit
                     // k == 0 for external, 1 for internal. i is the index
                     if (path.size() != 3) {
                         strErr = "Error reading wallet database: keymeta found with unexpected path";
                         return false;
                     }
-                    if (path[0] != 0x80000000) {
-                        strErr = strprintf("Unexpected path index of 0x%08x (expected 0x80000000) for the element at index 0", path[0]);
+                    if (path[0] != (0x80000000 | COIN_TYPE_VALUE)) {
+                        strErr = strprintf("Unexpected path index of 0x%08x (expected 0x%08x) for the element at index 0", path[0], (0x80000000 | COIN_TYPE_VALUE));
                         return false;
                     }
                     if (path[1] != 0x80000000 && path[1] != (1 | 0x80000000) && path[1] != (100 | 0x80000000)) {

@@ -14,14 +14,14 @@ class MWEBWeightTest(BitcoinTestFramework):
         self.setup_clean_chain = True
         self.rpc_timeout = 120
         self.num_nodes = 3
-        self.extra_args = [["-spendzeroconfchange=0"]] * self.num_nodes
+        self.extra_args = [["-spendzeroconfchange=0", "-vbparams=mweb:0:0:1:1000000"]] * self.num_nodes
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
 
     def run_test(self):
         self.log.info("Create some blocks")
-        self.nodes[0].generate(101)
+        self.nodes[0].generate(289)
 
         self.log.info("Pegin some coins - activate MWEB")
         addr = self.nodes[0].getnewaddress(address_type='mweb')
@@ -37,8 +37,8 @@ class MWEBWeightTest(BitcoinTestFramework):
         self.nodes[2].generate(700)
         self.sync_all()
 
-        # Max number of MWEB transactions in a block (21000/39)
-        tx_limit = 538
+        # Max number of MWEB transactions in a block (MAX_MINE_WEIGHT/39 = 20000/39)
+        tx_limit = 512
 
         self.log.info("Create transactions up to the max block weight")
         addr = self.nodes[0].getnewaddress(address_type='mweb')

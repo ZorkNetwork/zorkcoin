@@ -261,7 +261,7 @@ BOOST_AUTO_TEST_CASE(rpc_ban)
     adr = find_value(o1, "address");
     UniValue banned_until = find_value(o1, "banned_until");
     BOOST_CHECK_EQUAL(adr.get_str(), "127.0.0.0/24");
-    BOOST_CHECK_EQUAL(banned_until.get_int64(), 9907731200); // absolute time check
+    BOOST_CHECK_EQUAL(banned_until.get_int64(), 9907731200*1000); // absolute time check
 
     BOOST_CHECK_NO_THROW(CallRPC(std::string("clearbanned")));
 
@@ -274,7 +274,7 @@ BOOST_AUTO_TEST_CASE(rpc_ban)
     BOOST_CHECK_EQUAL(adr.get_str(), "127.0.0.0/24");
     int64_t now = GetTime();
     BOOST_CHECK(banned_until.get_int64() > now);
-    BOOST_CHECK(banned_until.get_int64()-now <= 200);
+    BOOST_CHECK(banned_until.get_int64()-now <= 200*1000);
 
     // must throw an exception because 127.0.0.1 is in already banned subnet range
     BOOST_CHECK_THROW(r = CallRPC(std::string("setban 127.0.0.1 add")), std::runtime_error);

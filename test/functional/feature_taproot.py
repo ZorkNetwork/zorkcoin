@@ -1330,7 +1330,7 @@ class TaprootTest(BitcoinTestFramework):
             tx.nVersion = random.choice([1, 2, random.randint(-0x80000000, 0x7fffffff)])
             min_sequence = (tx.nVersion != 1 and tx.nVersion != 0) * 0x80000000  # The minimum sequence number to disable relative locktime
             if random.choice([True, False]):
-                tx.nLockTime = random.randrange(LOCKTIME_THRESHOLD, self.lastblocktime - 7200)  # all absolute locktimes in the past
+                tx.nLockTime = random.randrange(LOCKTIME_THRESHOLD, self.lastblocktime // 1000 - 7200)  # all absolute locktimes in the past
             else:
                 tx.nLockTime = random.randrange(self.lastblockheight + 1)  # all block heights in the past
 

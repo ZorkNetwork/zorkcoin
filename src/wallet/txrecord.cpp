@@ -62,7 +62,7 @@ bool WalletTxRecord::UpdateStatusIfNeeded(const uint256& block_hash)
         status.matures_in = blocks_to_maturity;
     }
 
-    const int64_t time_since_epoch = (int64_t)duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
+    const int64_t time_since_epoch = (int64_t)duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     const bool up_to_date = (time_since_epoch - block_time < MAX_BLOCK_TIME_GAP);
     if (up_to_date && !m_wtx->IsFinal()) {
         if (m_wtx->tx->nLockTime < LOCKTIME_THRESHOLD) {

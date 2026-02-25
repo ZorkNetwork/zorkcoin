@@ -152,6 +152,11 @@ class BIP68_112_113Test(BitcoinTestFramework):
             '-whitelist=noban@127.0.0.1',
             '-addresstype=legacy',
             '-par=1',  # Use only one script thread to get the exact reject reason for testing
+            '-testactivationheight=bip34@500',     # BIP34 (HEIGHTINCB) at 500
+            '-testactivationheight=dersig@1251',   # BIP66 (DERSIG) at 1251
+            '-testactivationheight=cltv@1351',     # BIP65 (CLTV) at 1351
+            '-testactivationheight=csv@432',       # CSV at 432
+            '-vbparams=mweb:-2:0',                 # Disable MWEB versionbits for this test.
         ]]
         self.supports_cli = False
 
@@ -163,13 +168,13 @@ class BIP68_112_113Test(BitcoinTestFramework):
         for _ in range(number):
             block = self.create_test_block([])
             test_blocks.append(block)
-            self.last_block_time += 600
+            self.last_block_time += 600 * 1000 # // MILLISECOND_TIMESTAMP:
             self.tip = block.sha256
             self.tipheight += 1
         return test_blocks
 
     def create_test_block(self, txs):
-        block = create_block(self.tip, create_coinbase(self.tipheight + 1), self.last_block_time + 600)
+        block = create_block(self.tip, create_coinbase(self.tipheight + 1), self.last_block_time + 600 * 1000) # // MILLISECOND_TIMESTAMP:
         block.nVersion = 0x20000000
         block.vtx.extend(txs)
         block.hashMerkleRoot = block.calc_merkle_root()
@@ -192,7 +197,7 @@ class BIP68_112_113Test(BitcoinTestFramework):
         self.coinbase_blocks = self.nodes[0].generate(COINBASE_BLOCK_COUNT)  # blocks generated for inputs
         self.nodes[0].setmocktime(0)  # set time back to present so yielded blocks aren't in the future as we advance last_block_time
         self.tipheight = COINBASE_BLOCK_COUNT  # height of the next block to build
-        self.last_block_time = long_past_time
+        self.last_block_time = long_past_time * 1000 # // MILLISECOND_TIMESTAMP:
         self.tip = int(self.nodes[0].getbestblockhash(), 16)
         self.nodeaddress = self.nodes[0].getnewaddress()
 
@@ -235,12 +240,12 @@ class BIP68_112_113Test(BitcoinTestFramework):
         # 1 normal input
         bip113input = send_generic_input_tx(self.nodes[0], self.coinbase_blocks, self.nodeaddress)
 
-        self.nodes[0].setmocktime(self.last_block_time + 600)
+        self.nodes[0].setmocktime((self.last_block_time + 600 * 1000) // 1000) # // MILLISECOND_TIMESTAMP: setmocktime expects seconds
         inputblockhash = self.nodes[0].generate(1)[0]  # 1 block generated for inputs to be in chain at height 431
         self.nodes[0].setmocktime(0)
         self.tip = int(inputblockhash, 16)
         self.tipheight += 1
-        self.last_block_time += 600
+        self.last_block_time += 600 * 1000 # // MILLISECOND_TIMESTAMP:
         assert_equal(len(self.nodes[0].getblock(inputblockhash, True)["tx"]), TESTING_TX_COUNT + 1)
 
         # 2 more version 4 blocks
@@ -291,7 +296,7 @@ class BIP68_112_113Test(BitcoinTestFramework):
 
         success_txs = []
         # BIP113 tx, -1 CSV tx and empty stack CSV tx should succeed
-        bip113tx_v1.nLockTime = self.last_block_time - 600 * 5  # = MTP of prior block (not <) but < time put on current block
+        bip113tx_v1.nLockTime = (self.last_block_time // 1000) - 600 * 5  # = MTP of prior block (not <) but < time put on current block; nLockTime in seconds
         bip113signed1 = sign_transaction(self.nodes[0], bip113tx_v1)
         success_txs.append(bip113signed1)
         success_txs.append(bip112tx_special_v1)
@@ -311,7 +316,7 @@ class BIP68_112_113Test(BitcoinTestFramework):
 
         success_txs = []
         # BIP113 tx, -1 CSV tx and empty stack CSV tx should succeed
-        bip113tx_v2.nLockTime = self.last_block_time - 600 * 5  # = MTP of prior block (not <) but < time put on current block
+        bip113tx_v2.nLockTime = (self.last_block_time // 1000) - 600 * 5  # = MTP of prior block (not <) but < time put on current block; nLockTime in seconds
         bip113signed2 = sign_transaction(self.nodes[0], bip113tx_v2)
         success_txs.append(bip113signed2)
         success_txs.append(bip112tx_special_v2)
@@ -337,16 +342,16 @@ class BIP68_112_113Test(BitcoinTestFramework):
 
         self.log.info("BIP 113 tests")
         # BIP 113 tests should now fail regardless of version number if nLockTime isn't satisfied by new rules
-        bip113tx_v1.nLockTime = self.last_block_time - 600 * 5  # = MTP of prior block (not <) but < time put on current block
+        bip113tx_v1.nLockTime = (self.last_block_time // 1000) - 600 * 5  # = MTP of prior block (not <) but < time put on current block; nLockTime in seconds
         bip113signed1 = sign_transaction(self.nodes[0], bip113tx_v1)
-        bip113tx_v2.nLockTime = self.last_block_time - 600 * 5  # = MTP of prior block (not <) but < time put on current block
+        bip113tx_v2.nLockTime = (self.last_block_time // 1000) - 600 * 5  # = MTP of prior block (not <) but < time put on current block; nLockTime in seconds
         bip113signed2 = sign_transaction(self.nodes[0], bip113tx_v2)
         for bip113tx in [bip113signed1, bip113signed2]:
             self.send_blocks([self.create_test_block([bip113tx])], success=False, reject_reason='bad-txns-nonfinal')
         # BIP 113 tests should now pass if the locktime is < MTP
-        bip113tx_v1.nLockTime = self.last_block_time - 600 * 5 - 1  # < MTP of prior block
+        bip113tx_v1.nLockTime = (self.last_block_time // 1000) - 600 * 5 - 1  # < MTP of prior block; nLockTime in seconds
         bip113signed1 = sign_transaction(self.nodes[0], bip113tx_v1)
-        bip113tx_v2.nLockTime = self.last_block_time - 600 * 5 - 1  # < MTP of prior block
+        bip113tx_v2.nLockTime = (self.last_block_time // 1000) - 600 * 5 - 1  # < MTP of prior block; nLockTime in seconds
         bip113signed2 = sign_transaction(self.nodes[0], bip113tx_v2)
         for bip113tx in [bip113signed1, bip113signed2]:
             self.send_blocks([self.create_test_block([bip113tx])])

@@ -229,7 +229,7 @@ CBlock TestChain100Setup::CreateAndProcessBlock(const std::vector<CMutableTransa
 
 TestChain100Setup::~TestChain100Setup()
 {
-    gArgs.ForceSetArg("-segwitheight", "0");
+    gArgs.ForceSetArg("-testactivationheight", "segwit@0");
 }
 
 CTxMemPoolEntry TestMemPoolEntryHelper::FromTx(const CMutableTransaction& tx)

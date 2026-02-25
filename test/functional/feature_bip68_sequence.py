@@ -33,10 +33,12 @@ class BIP68Test(BitcoinTestFramework):
             [
                 "-acceptnonstdtxn=1",
                 "-peertimeout=9999",  # bump because mocktime might cause a disconnect otherwise
+                "-testactivationheight=csv@432", # CSV at 432
                 "-vbparams=mweb:-2:0",
             ],
             [
                 "-acceptnonstdtxn=0",
+                "-testactivationheight=csv@432", # CSV at 432
                 "-vbparams=mweb:-2:0",
             ],
         ]
@@ -177,8 +179,8 @@ class BIP68Test(BitcoinTestFramework):
                     # Note that if an input has N confirmations, we're going back N blocks
                     # from the tip so that we're looking up MTP of the block
                     # PRIOR to the one the input appears in, as per the BIP68 spec.
-                    orig_time = self.get_median_time_past(utxos[j]["confirmations"])
-                    cur_time = self.get_median_time_past(0) # MTP of the tip
+                    orig_time = self.get_median_time_past(utxos[j]["confirmations"]) // 1000
+                    cur_time = self.get_median_time_past(0) // 1000 # MTP of the tip
 
                     # can only timelock this input if it's not too old -- otherwise use height
                     can_time_lock = True
@@ -325,7 +327,7 @@ class BIP68Test(BitcoinTestFramework):
         # This would cause tx2 to be added back to the mempool, which in turn causes
         # tx3 to be removed.
         for i in range(2):
-            block = create_block(tmpl=tmpl, ntime=cur_time)
+            block = create_block(tmpl=tmpl, ntime=cur_time * 1000)
             block.nVersion = 0x20000000
             block.rehash()
             block.solve()

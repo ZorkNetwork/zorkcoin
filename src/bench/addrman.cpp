@@ -37,7 +37,7 @@ static void CreateAddresses()
 
         CAddress ret(CService(addr, port), NODE_NETWORK);
 
-        ret.nTime = GetAdjustedTime();
+        ret.nTime = GetAdjustedTime() / 1000; // MILLISECOND_TIMESTAMP:
 
         return ret;
     };

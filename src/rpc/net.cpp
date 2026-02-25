@@ -936,7 +936,7 @@ static RPCHelpMan addpeeraddress()
         return obj;
     }
     CAddress address = CAddress({net_addr, port}, ServiceFlags(NODE_NETWORK|NODE_WITNESS));
-    address.nTime = GetAdjustedTime();
+    address.nTime = GetAdjustedTime() / 1000; // MILLISECOND_TIMESTAMP:
     // The source address is set equal to the address. This is equivalent to the peer
     // announcing itself.
     if (!node.connman->AddNewAddresses({address}, address)) {

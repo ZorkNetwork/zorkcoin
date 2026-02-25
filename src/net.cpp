@@ -172,7 +172,7 @@ static std::vector<CAddress> ConvertSeeds(const std::vector<uint8_t>& vSeedsIn)
         CService endpoint;
         s >> endpoint;
         CAddress addr{endpoint, GetDesirableServiceFlags(NODE_NONE)};
-        addr.nTime = GetTime() - rng.randrange(nOneWeek) - nOneWeek;
+        addr.nTime = GetTime() / 1000 - rng.randrange(nOneWeek) - nOneWeek; // MILLISECOND_TIMESTAMP:
         LogPrint(BCLog::NET, "Added hardcoded seed: %s\n", addr.ToString());
         vSeedsOut.push_back(addr);
     }
@@ -191,7 +191,7 @@ CAddress GetLocalAddress(const CNetAddr *paddrPeer, ServiceFlags nLocalServices)
     {
         ret = CAddress(addr, nLocalServices);
     }
-    ret.nTime = GetAdjustedTime();
+    ret.nTime = GetAdjustedTime() / 1000; // MILLISECOND_TIMESTAMP:
     return ret;
 }
 
@@ -1823,7 +1823,7 @@ void CConnman::ThreadDNSAddressSeed()
                 for (const CNetAddr& ip : vIPs) {
                     int nOneDay = 24*3600;
                     CAddress addr = CAddress(CService(ip, Params().GetDefaultPort()), requiredServiceBits);
-                    addr.nTime = GetTime() - 3*nOneDay - rng.randrange(4*nOneDay); // use a random age between 3 and 7 days old
+                    addr.nTime = GetTime() / 1000 - 3*nOneDay - rng.randrange(4*nOneDay); // MILLISECOND_TIMESTAMP: use a random age between 3 and 7 days old
                     vAdd.push_back(addr);
                     found++;
                 }

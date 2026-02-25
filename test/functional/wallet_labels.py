@@ -138,13 +138,13 @@ class WalletLabelsTest(BitcoinTestFramework):
         node.createwallet(wallet_name='watch_only', disable_private_keys=True)
         wallet_watch_only = node.get_wallet_rpc('watch_only')
         BECH32_VALID = {
-            '✔️_VER15_PROG40': 'zorksim10qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqevpw9x',
-            '✔️_VER16_PROG03': 'zorksim1sqqqqqap5g4h',
-            '✔️_VER16_PROB02': 'zorksim1sqqqqfsjxnh',
+            '✔️_VER15_PROG40': 'zorksim1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqrw57lg',   # v0, 20 bytes
+            '✔️_VER16_PROG03': 'zorksim1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq97tvv8',  # v0, 32 bytes
+            '✔️_VER16_PROB02': 'zorksim1pqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0ft95m',  # v1, 32 bytes
         }
         BECH32_INVALID = {
-            '❌_VER15_PROG41': 'bcrt1sqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqajlxj8',
-            '❌_VER16_PROB01': 'bcrt1sqq5r4036',
+            '❌_VER15_PROG41': 'zorksim1sqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqajlxj8',
+            '❌_VER16_PROB01': 'zorksim1sqq5r4036',
         }
         for l in BECH32_VALID:
             ad = BECH32_VALID[l]
