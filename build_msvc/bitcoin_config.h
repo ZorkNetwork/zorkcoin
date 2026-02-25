@@ -18,10 +18,10 @@
 #define CLIENT_VERSION_MAJOR 0
 
 /* Minor version */
-#define CLIENT_VERSION_MINOR 21
+#define CLIENT_VERSION_MINOR 1
 
 /* Build revision */
-#define CLIENT_VERSION_REVISION 3
+#define CLIENT_VERSION_REVISION 2
 
 /* Copyright holder(s) before %s replacement */
 #define COPYRIGHT_HOLDERS "The %s developers"
