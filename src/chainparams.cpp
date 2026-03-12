@@ -5,6 +5,7 @@
 
 #include <chainparams.h>
 
+#include <config/bitcoin-config.h>
 #include <chainparamsseeds.h>
 #include <consensus/merkle.h>
 #include <deploymentinfo.h>
@@ -79,6 +80,7 @@ public:
         consensus.powLimit = uint256S("00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.nPowTargetTimespan = 3.5 * 24 * 60 * 60 * 1000; // 3.5 days (in milliseconds)
         consensus.nPowTargetSpacing = 2.5 * 60 * 1000; // 2.5 minutes (in milliseconds)
+        consensus.nASERTHalfLife = 12 * 60 * 60 * 1000; // 12 hours in milliseconds
         consensus.fPowAllowMinDifficultyBlocks = false;
         consensus.fPowNoRetargeting = false;
         consensus.nRuleChangeActivationThreshold = 6048; // 75% of 8064
@@ -180,7 +182,8 @@ public:
         consensus.powLimit = uint256S("00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.nPowTargetTimespan = 3.5 * 24 * 60 * 60 * 1000; // 3.5 days
         consensus.nPowTargetSpacing = 2.5 * 60 * 1000;
-        consensus.fPowAllowMinDifficultyBlocks = true;
+        consensus.nASERTHalfLife = 12 * 60 * 60 * 1000; // 12 hours in milliseconds
+        consensus.fPowAllowMinDifficultyBlocks = false;
         consensus.fPowNoRetargeting = false;
         consensus.nRuleChangeActivationThreshold = 1512; // 75% for testchains
         consensus.nMinerConfirmationWindow = 2016; // nPowTargetTimespan / nPowTargetSpacing
@@ -306,8 +309,13 @@ public:
         consensus.powLimit = uint256S("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.nPowTargetTimespan = 3.5 * 24 * 60 * 60 * 1000; // 3.5 days
         consensus.nPowTargetSpacing = 2.5 * 60 * 1000;
+        consensus.nASERTHalfLife = 12 * 60 * 60 * 1000; // 12 hours in milliseconds
         consensus.fPowAllowMinDifficultyBlocks = true;
+#if defined(ENABLE_ASERT_REGTEST) && ENABLE_ASERT_REGTEST
+        consensus.fPowNoRetargeting = false; // Enable ASERT retargeting for extended tests
+#else
         consensus.fPowNoRetargeting = true;
+#endif
         consensus.nRuleChangeActivationThreshold = 108; // 75% for testchains
         consensus.nMinerConfirmationWindow = 144; // Faster than normal for regtest (144 instead of 2016)
 

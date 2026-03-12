@@ -3,6 +3,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <config/bitcoin-config.h>
 #include <httpserver.h>
 #include <index/blockfilterindex.h>
 #include <index/txindex.h>
@@ -604,6 +605,26 @@ static RPCHelpMan logging()
     };
 }
 
+static RPCHelpMan getasertregtestbuild()
+{
+    return RPCHelpMan{"getasertregtestbuild",
+                "\nReturns true if this binary was built with --enable-asert-regtest.\n"
+                "The feature_asert_regtest functional test requires that build.\n",
+                {},
+                RPCResult{RPCResult::Type::BOOL, "", "true if built with ASERT regtest support"},
+                RPCExamples{""},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    if (request.fHelp) throw std::runtime_error(self.ToString());
+#if defined(ENABLE_ASERT_REGTEST) && ENABLE_ASERT_REGTEST
+    return UniValue(true);
+#else
+    return UniValue(false);
+#endif
+},
+    };
+}
+
 static RPCHelpMan echo(const std::string& name)
 {
     return RPCHelpMan{name,
@@ -710,6 +731,7 @@ static const CRPCCommand commands[] =
     { "util",               "verifymessage",          &verifymessage,          {"address","signature","message"} },
     { "util",               "signmessagewithprivkey", &signmessagewithprivkey, {"privkey","message"} },
     { "util",               "getindexinfo",           &getindexinfo,           {"index_name"} },
+    { "hidden",             "getasertregtestbuild",   &getasertregtestbuild,   {} },
 
     /* Not shown in help */
     { "hidden",             "setmocktime",            &setmocktime,            {"timestamp"}},

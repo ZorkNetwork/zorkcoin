@@ -166,6 +166,11 @@ AC_ARG_ENABLE([extended-functional-tests],
     [use_extended_functional_tests=$enableval],
     [use_extended_functional_tests=no])
 
+AC_ARG_ENABLE([asert-regtest],
+    AS_HELP_STRING([--enable-asert-regtest],[enable regtest with ASERT retargeting for extended ASERT tests (default no). Other regtest-based tests will NOT work with this build.]),
+    [enable_asert_regtest=$enableval],
+    [enable_asert_regtest=no])
+
 AC_ARG_ENABLE([fuzz],
     AS_HELP_STRING([--enable-fuzz],
     [enable building of fuzz targets (default no). enabling this will disable all other targets]),
@@ -715,6 +720,14 @@ esac
 if test x$use_extended_functional_tests != xno; then
   AC_SUBST(EXTENDED_FUNCTIONAL_TESTS, --extended)
 fi
+
+if test x$enable_asert_regtest = xyes; then
+  AC_DEFINE(ENABLE_ASERT_REGTEST, 1, [Regtest ASERT retargeting for extended tests])
+  ASERT_REGTEST_FLAG="--asert-regtest"
+else
+  ASERT_REGTEST_FLAG=""
+fi
+AC_SUBST(ASERT_REGTEST_FLAG)
 
 if test x$use_lcov = xyes; then
   if test x$LCOV = x; then
@@ -1673,6 +1686,7 @@ AM_CONDITIONAL([ENABLE_SHANI],[test x$enable_shani = xyes])
 AM_CONDITIONAL([ENABLE_ARM_CRC],[test x$enable_arm_crc = xyes])
 AM_CONDITIONAL([USE_ASM],[test x$use_asm = xyes])
 AM_CONDITIONAL([WORDS_BIGENDIAN],[test x$ac_cv_c_bigendian = xyes])
+AM_CONDITIONAL([ENABLE_ASERT_REGTEST],[test x$enable_asert_regtest = xyes])
 
 AC_DEFINE(CLIENT_VERSION_MAJOR, _CLIENT_VERSION_MAJOR, [Major version])
 AC_DEFINE(CLIENT_VERSION_MINOR, _CLIENT_VERSION_MINOR, [Minor version])

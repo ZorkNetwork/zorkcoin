@@ -84,6 +84,12 @@ EXTENDED_SCRIPTS = [
     'feature_dbcrash.py',
 ]
 
+# ASERT regtest tests: run ONLY with --enable-asert-regtest build. Other regtest-based
+# tests will NOT work with that build. Use: test_runner.py --asert-regtest
+ASERT_REGTEST_SCRIPTS = [
+    'feature_asert_regtest.py',
+]
+
 BASE_SCRIPTS = [
     # Scripts that are run by default.
     # Longest test should go first, to favor running tests in parallel
@@ -112,6 +118,7 @@ BASE_SCRIPTS = [
     'wallet_listtransactions.py',
     'wallet_listtransactions.py --descriptors',
     'feature_taproot.py',
+    'feature_asert.py',
     # vv Tests less than 60s vv
     'p2p_sendheaders.py',
     'wallet_importmulti.py --legacy-wallet',
@@ -303,7 +310,7 @@ BASE_SCRIPTS = [
 ]
 
 # Place EXTENDED_SCRIPTS first since it has the 3 longest running tests
-ALL_SCRIPTS = EXTENDED_SCRIPTS + BASE_SCRIPTS
+ALL_SCRIPTS = EXTENDED_SCRIPTS + BASE_SCRIPTS + ASERT_REGTEST_SCRIPTS
 
 NON_SCRIPTS = [
     # These are python files that live in the functional tests directory, but are not test scripts.
@@ -326,6 +333,7 @@ def main():
     parser.add_argument('--ci', action='store_true', help='Run checks and code that are usually only enabled in a continuous integration environment')
     parser.add_argument('--exclude', '-x', help='specify a comma-separated-list of scripts to exclude.')
     parser.add_argument('--extended', action='store_true', help='run the extended test suite in addition to the basic tests')
+    parser.add_argument('--asert-regtest', action='store_true', help='run ASERT regtest tests only (requires build with --enable-asert-regtest). Other regtest-based tests will NOT work with that build.')
     parser.add_argument('--help', '-h', '-?', action='store_true', help='print help text and exit')
     parser.add_argument('--jobs', '-j', type=int, default=4, help='how many test scripts to run in parallel. Default=4.')
     parser.add_argument('--keepcache', '-k', action='store_true', help='the default behavior is to flush the cache directory on startup. --keepcache retains the cache from the previous testrun.')
@@ -373,7 +381,11 @@ def main():
 
     # Build list of tests
     test_list = []
-    if tests:
+    if args.asert_regtest and not tests:
+        # Run only ASERT regtest tests (requires --enable-asert-regtest build).
+        # Other regtest-based tests will NOT work with that build.
+        test_list = list(ASERT_REGTEST_SCRIPTS)
+    elif tests:
         # Individual tests have been specified. Run specified tests that exist
         # in the ALL_SCRIPTS list. Accept names with or without a .py extension.
         # Specified tests can contain wildcards, but in that case the supplied
