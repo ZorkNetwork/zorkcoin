@@ -710,7 +710,7 @@ void MWEBTests::pegOutSendTests()
         WITH_LOCK(Assert(test.m_node.chainman)->GetMutex(), return test.m_node.chainman->ActiveChain()), test.coinbaseKey)};
     const auto notifications = test.m_node.chain->handleNotifications(wallet);
     wallet->SetBroadcastTransactions(true);
-    QVERIFY(!wallet::PegInAndMine(test, *wallet, 10 * COIN).empty());
+    QVERIFY(!wallet::PegInAndMine(test, *wallet, 8 * COIN).empty());
     const auto mine = [&] {
         test.MineMWEBEraBlock();
         test.m_node.validation_signals->SyncWithValidationInterfaceQueue();

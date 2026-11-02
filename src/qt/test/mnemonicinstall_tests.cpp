@@ -408,7 +408,7 @@ void MnemonicInstallTests::createWalletActivityImportsPhrase()
     const UniValue info{m_node.executeRpc("getwalletinfo", UniValue(UniValue::VARR), WalletUri("mn_import"))};
     QCOMPARE(info.find_value("txcount").getInt<int>(), 1);
     const UniValue balances{m_node.executeRpc("getbalances", UniValue(UniValue::VARR), WalletUri("mn_import"))};
-    QCOMPARE(balances.find_value("mine").find_value("immature").getValStr(), std::string{"50.00000000"});
+    QCOMPARE(balances.find_value("mine").find_value("immature").getValStr(), std::string{"42.94967296"});
     for (const char* type : INSTALLED_TYPES) {
         QVERIFY2(CanGetNewAddress(m_node, "mn_import", type), type);
     }

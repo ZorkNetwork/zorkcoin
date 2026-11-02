@@ -23,6 +23,7 @@ from test_framework.messages import (
 )
 from test_framework.mweb_util import (
     FIRST_MWEB_HEIGHT,
+    MWEB_GBT_REQUEST_PARAMS,
     assert_exact_mweb_inputs,
     decode_wallet_tx,
     get_hogex_tx,
@@ -63,7 +64,7 @@ class AuxPoWMWEBTest(BitcoinTestFramework):
 
     def _build_auxpow_mweb_block(self, node):
         """Copy the node's GBT HogEx + MWEB body; attach AuxPoW on a local header."""
-        gbt = node.getblocktemplate(NORMAL_GBT_REQUEST_PARAMS)
+        gbt = node.getblocktemplate(MWEB_GBT_REQUEST_PARAMS)
         assert "mweb" in gbt
         mweb_block = FromHex(MWEBBlock(), gbt["mweb"])
         template_txs = []
@@ -92,7 +93,7 @@ class AuxPoWMWEBTest(BitcoinTestFramework):
     def test_auxpow_without_hogex_rejected(self):
         """AuxPoW-valid coinbase-only block still fails MWEB contextual checks."""
         node = self.nodes[0]
-        gbt = node.getblocktemplate(NORMAL_GBT_REQUEST_PARAMS)
+        gbt = node.getblocktemplate(MWEB_GBT_REQUEST_PARAMS)
         block = CBlock()
         block.nVersion = make_auxpow_version(gbt["version"])
         block.hashPrevBlock = int(gbt["previousblockhash"], 16)
@@ -201,9 +202,9 @@ class AuxPoWMWEBTest(BitcoinTestFramework):
             "pegin": self._send_from(node1, node0.getnewaddress(address_type="mweb"), 4,
                                      [l1_input(funding["pegin"], pegin_src_addr)]),
             "pegout": self._send_from(node1, node0.getnewaddress(address_type="bech32"), 2,
-                                      [{"output_id": oid_a}]),
+                                      [{"mweb_out": oid_a}]),
             "mweb": self._send_from(node1, node0.getnewaddress(address_type="mweb"), 2,
-                                    [{"output_id": oid_b}]),
+                                    [{"mweb_out": oid_b}]),
         }
         segwit_wit = node1.getrawtransaction(spends["segwit"], True)["vin"][0]["txinwitness"]
         assert_equal([len(w) for w in segwit_wit], [len(segwit_wit[0]), 66])
@@ -224,6 +225,7 @@ class AuxPoWMWEBTest(BitcoinTestFramework):
         self.disconnect_nodes(0, 1)
         peer = node1.add_p2p_connection(P2PInterface(), services=P2P_SERVICES_MWEB)
         peer.send_and_ping(msg_sendcmpct(announce=True, version=3))
+        peer.send_and_ping(msg_headers([CBlockHeader(block)]))
         cmpct = HeaderAndShortIDs()
         cmpct.initialize_from_block(block, use_witness=True, version=3, prefill_list=[0, len(block.vtx) - 1])
         assert len(cmpct.header.serialize()) > 88

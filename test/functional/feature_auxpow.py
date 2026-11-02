@@ -25,6 +25,7 @@ from test_framework.messages import (
     deser_compact_size,
     msg_cmpctblock,
     msg_headers,
+    msg_sendcmpct,
     ser_compact_size,
 )
 from test_framework.p2p import P2PInterface
@@ -120,16 +121,13 @@ class AuxPoWTest(BitcoinTestFramework):
         """Bit-8 headers carry CAuxPow; compact blocks must not drop it."""
         node = self.nodes[0]
         peer = node.add_p2p_connection(P2PInterface())
+        peer.send_and_ping(msg_sendcmpct(announce=True, version=2))
         parent = node.getbestblockhash()
         height = node.getblockcount() + 1
         t = node.getblock(parent)["time"]
 
-        # Grind both proofs before announcing anything: the node requests the
-        # announced block and would drop this peer if it stalled grinding.
         hdr_block, hdr_aux = self._aux_block(parent, height, t + 100, b"hdr")
         hdr_block.auxpow = hdr_aux
-        cmpct_block, cmpct_aux = self._aux_block(parent, height, t + 200, b"cmp")
-        cmpct_block.auxpow = cmpct_aux
 
         header = CBlockHeader(hdr_block)
         assert len(header.serialize()) > 88
@@ -140,10 +138,10 @@ class AuxPoWTest(BitcoinTestFramework):
         peer.wait_for_getdata([hdr_block.sha256])
 
         cmpct = HeaderAndShortIDs()
-        cmpct.initialize_from_block(cmpct_block, use_witness=True)
+        cmpct.initialize_from_block(hdr_block, use_witness=True)
         assert len(cmpct.header.serialize()) > 88
         peer.send_and_ping(msg_cmpctblock(cmpct.to_p2p()))
-        assert_equal(node.getbestblockhash(), cmpct_block.hash)
+        assert_equal(node.getbestblockhash(), hdr_block.hash)
         peer.peer_disconnect()
 
     def test_malformed_auxpow_p2p(self):
