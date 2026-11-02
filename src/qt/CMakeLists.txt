@@ -173,6 +173,14 @@ if(ENABLE_WALLET)
       createwalletdialog.h
       editaddressdialog.cpp
       editaddressdialog.h
+      mnemonicinstall.cpp
+      mnemonicinstall.h
+      mnemonicphrasedialog.cpp
+      mnemonicphrasedialog.h
+      mnemonicphraseview.cpp
+      mnemonicphraseview.h
+      mnemonicsetupdialog.cpp
+      mnemonicsetupdialog.h
       openuridialog.cpp
       openuridialog.h
       overviewpage.cpp

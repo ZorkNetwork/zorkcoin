@@ -141,6 +141,18 @@ add_executable(test_bitcoin
   validationinterface_tests.cpp
   versionbits_tests.cpp
   mweb_validation_tests.cpp
+  mweb_mempool_lifecycle_tests.cpp
+  mweb_miner_tests.cpp
+  mweb_admission_tests.cpp
+  mweb_node_tests.cpp
+  mweb_serialization_tests.cpp
+  mweb_chainstate_view_tests.cpp
+  mweb_coins_tests.cpp
+  mweb_mempool_removal_tests.cpp
+  mweb_txdownload_tests.cpp
+  mweb_orphanage_tests.cpp
+  mweb_script_tests.cpp
+  mweb_transport_tests.cpp
   mweb_external_signer_tests.cpp
   mweb_key_io_tests.cpp
   mweb_mempool_market_tests.cpp
@@ -179,6 +191,21 @@ target_json_data_sources(test_bitcoin
   data/tx_invalid.json
   data/tx_valid.json
 )
+if(ENABLE_WALLET)
+  target_json_data_sources(test_bitcoin
+    data/bip39_vectors_chinese_simplified.json
+    data/bip39_vectors_chinese_traditional.json
+    data/bip39_vectors_czech.json
+    data/bip39_vectors_english.json
+    data/bip39_vectors_french.json
+    data/bip39_vectors_italian.json
+    data/bip39_vectors_japanese.json
+    data/bip39_vectors_japanese_trezor.json
+    data/bip39_vectors_korean.json
+    data/bip39_vectors_portuguese.json
+    data/bip39_vectors_spanish.json
+  )
+endif()
 target_raw_data_sources(test_bitcoin NAMESPACE test::data
   data/asmap.raw
 )

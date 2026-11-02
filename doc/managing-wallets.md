@@ -17,6 +17,63 @@ $ bitcoin-cli createwallet "wallet-01"
 
 `bitcoin rpc` can also be substituted for `bitcoin-cli`.
 
+### 1.1.1 Optional BIP39 mnemonic wallets
+
+BIP39 seed phrases are an **optional** way to create the wallet's HD master
+key. Default new wallets still use Bitcoin Core's normal random seed path and
+do not show a mnemonic.
+
+**Graphical interface:** In *File → Create wallet*, check **Mnemonic wallet**.
+After *Create* (and the encryption passphrase, if *Encrypt Wallet* is checked),
+a short wizard opens to either generate a new phrase (write it down once) or
+restore from an existing phrase. Nothing is written to disk until the phrase is
+confirmed; cancelling the wizard creates no wallet. The wallet is then created
+with the phrase installed as its HD master, together with the usual active
+descriptors so you can receive with `getnewaddress`. An encrypted wallet is
+unlocked with the passphrase already entered, for the install only, and is
+locked again afterwards; there is no second passphrase prompt. If the install
+fails, the error names the wallet, which is left blank so it can be removed.
+The app does not store or re-display the mnemonic. Key backup remains wallet
+descriptors and `gethdkeys` (including private descriptors when unlocked).
+
+Use `-mnemonicdefault` to start with the Mnemonic wallet checkbox checked
+(`-nomnemonicdefault` or omitting the option leaves it unchecked).
+
+**RPC:** Create a blank wallet, then add a BIP39 master and create descriptors
+(the RPC alone only stores an inactive `unused(xprv)`, same as `addhdkey`):
+
+```
+$ bitcoin-cli createwallet "wallet-mnemonic" false true
+$ bitcoin-cli -rpcwallet="wallet-mnemonic" addhdkey_mnemonic
+$ bitcoin-cli -rpcwallet="wallet-mnemonic" -named createwalletdescriptor type=bech32 hdkey=<xpub from previous result>
+```
+
+Repeat `createwalletdescriptor` for other address types you need (`legacy`,
+`p2sh-segwit`, `bech32m`), passing the same `hdkey`. Omit `mnemonic` on
+`addhdkey_mnemonic` to generate (the result includes the phrase **once**). Pass
+`mnemonic` to import. Optional arguments: `passphrase` (BIP39 passphrase),
+`wordcount` (12/15/18/21/24 when generating; default 24), `language` (when
+generating; default `english`). See `bitcoin-cli help addhdkey_mnemonic`.
+
+Never log RPC parameters or results that contain a mnemonic. Prefer the GUI on
+shared machines.
+
+**Offline tool:**
+
+```
+$ bitcoin-wallet -wallet="wallet-mnemonic" -mnemonic create
+$ bitcoin-wallet -wallet="wallet-restore" -mnemonic -seedphrase="…" create
+```
+
+Plain `bitcoin-wallet create` without `-mnemonic` is unchanged. With `-mnemonic`,
+omit `-seedphrase` to generate and print the phrase once; use an empty
+`-seedphrase` to prompt; pass words to import. The arguments and phrase are
+checked before the wallet file is created, so an invalid phrase, word count or
+language leaves nothing behind, and a generated phrase is printed only after
+the wallet has been created. The offline tool sets up descriptors like a normal
+`create`, so addresses work immediately.
+See `bitcoin-wallet -help`.
+
 By default, wallets are created in the `wallets` folder of the data directory, which varies by operating system, as shown below. The user can change the default by using the `-datadir` or `-walletdir` initialization parameters.
 
 | Operating System | Default wallet directory                                    |

@@ -9,11 +9,15 @@
 #include <qt/createwalletdialog.h>
 #include <qt/guiconstants.h>
 #include <qt/guiutil.h>
+#include <qt/mnemonicinstall.h>
+#include <qt/mnemonicphrasedialog.h>
+#include <qt/mnemonicsetupdialog.h>
 #include <qt/walletmodel.h>
 
 #include <external_signer.h>
 #include <interfaces/handler.h>
 #include <interfaces/node.h>
+#include <support/cleanse.h>
 #include <util/string.h>
 #include <util/threadnames.h>
 #include <util/translation.h>
@@ -246,6 +250,12 @@ void CreateWalletActivity::askPassphrase()
 
 void CreateWalletActivity::createWallet()
 {
+    m_mnemonic_wallet = m_create_wallet_dialog->isMnemonicWalletChecked();
+    if (m_mnemonic_wallet && !runMnemonicWizard()) {
+        Q_EMIT finished();
+        return;
+    }
+
     showProgressDialog(
         //: Title of window indicating the progress of creation of a new wallet.
         tr("Create Wallet"),
@@ -266,11 +276,13 @@ void CreateWalletActivity::createWallet()
     if (m_create_wallet_dialog->isExternalSignerChecked()) {
         flags |= WALLET_FLAG_EXTERNAL_SIGNER;
     }
+    if (m_mnemonic_wallet) flags |= WALLET_FLAG_BLANK_WALLET;
 
     QTimer::singleShot(500ms, worker(), [this, name, flags] {
         auto wallet{node().walletLoader().createWallet(name, m_passphrase, flags, m_warning_message)};
 
         if (wallet) {
+            if (m_mnemonic_wallet) installMnemonic(**wallet);
             m_wallet_model = m_wallet_controller->getOrCreateWallet(std::move(*wallet));
         } else {
             m_error_message = util::ErrorString(wallet);
@@ -291,6 +303,40 @@ void CreateWalletActivity::finish()
     if (m_wallet_model) Q_EMIT created(m_wallet_model);
 
     Q_EMIT finished();
+}
+
+bool CreateWalletActivity::runMnemonicWizard()
+{
+    while (true) {
+        MnemonicSetupDialog setup(m_parent_widget);
+        setup.setWindowModality(Qt::ApplicationModal);
+        if (setup.exec() != QDialog::Accepted) return false;
+
+        MnemonicPhraseDialog phrase(setup.wordCount(), setup.language(), setup.isCreateMode(), m_parent_widget);
+        phrase.setWindowModality(Qt::ApplicationModal);
+        const int result = phrase.exec();
+        if (result == QDialog::Accepted) {
+            phrase.takeMnemonic(m_mnemonic_phrase, m_mnemonic_passphrase);
+            m_mnemonic_restore = !setup.isCreateMode();
+            return true;
+        }
+        if (result != MnemonicPhraseDialog::Back && !phrase.navigatedBack()) return false;
+    }
+}
+
+void CreateWalletActivity::installMnemonic(interfaces::Wallet& wallet)
+{
+    QString error;
+    if (!InstallMnemonicIntoNewWallet(node(), wallet, m_passphrase, m_mnemonic_phrase, m_mnemonic_passphrase, error, m_mnemonic_restore)) {
+        const QString message = tr("Wallet \"%1\" was created, but seed setup or recovery did not finish: %2\n\n"
+                                   "The wallet may contain installed keys. Keep your seed phrase and resolve the error before using this wallet.")
+                                    .arg(QString::fromStdString(wallet.getWalletName()), error);
+        m_error_message = Untranslated(message.toStdString());
+    }
+    memory_cleanse(m_mnemonic_phrase.data(), m_mnemonic_phrase.size());
+    m_mnemonic_phrase.clear();
+    memory_cleanse(m_mnemonic_passphrase.data(), m_mnemonic_passphrase.size());
+    m_mnemonic_passphrase.clear();
 }
 
 void CreateWalletActivity::create()

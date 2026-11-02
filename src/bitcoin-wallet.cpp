@@ -39,11 +39,18 @@ static void SetupWalletToolArgs(ArgsManager& argsman)
     argsman.AddArg("-datadir=<dir>", "Specify data directory", ArgsManager::ALLOW_ANY | ArgsManager::DISALLOW_NEGATION, OptionsCategory::OPTIONS);
     argsman.AddArg("-wallet=<wallet-name>", "Specify wallet name", ArgsManager::ALLOW_ANY | ArgsManager::NETWORK_ONLY, OptionsCategory::OPTIONS);
     argsman.AddArg("-dumpfile=<file name>", "When used with 'dump', writes out the records to this file. When used with 'createfromdump', loads the records into a new wallet.", ArgsManager::ALLOW_ANY | ArgsManager::DISALLOW_NEGATION, OptionsCategory::COMMAND_OPTIONS);
+    argsman.AddArg("-mnemonic", "Create wallet from a BIP39 mnemonic (with 'create'). Omit -seedphrase to generate; empty -seedphrase prompts; non-empty imports.", ArgsManager::ALLOW_ANY, OptionsCategory::COMMAND_OPTIONS);
+    argsman.AddArg("-seedphrase=<words>", "BIP39 mnemonic sentence for 'create -mnemonic' (omit to generate; empty value prompts). Words may be space/comma/tab/newline separated.", ArgsManager::ALLOW_ANY | ArgsManager::DISALLOW_NEGATION, OptionsCategory::COMMAND_OPTIONS);
+    argsman.AddArg("-wordcount=<n>", "BIP39 word count when generating with -mnemonic (12, 15, 18, 21, or 24; default: 24)", ArgsManager::ALLOW_ANY, OptionsCategory::COMMAND_OPTIONS);
+    argsman.AddArg("-language=<lang>", strprintf("BIP39 language when generating with -mnemonic (default: english). Allowed: %s",
+        // ListEnabledLanguages needs mnemonic lib linked into bitcoin-wallet; keep help static here to avoid include cycle.
+        "english, french, japanese, spanish, chinese_s, chinese_t, italian, korean, czech, portuguese"), ArgsManager::ALLOW_ANY, OptionsCategory::COMMAND_OPTIONS);
+    argsman.AddArg("-passphrase=<pass>", "Optional BIP39 passphrase for 'create -mnemonic' (may contain spaces when quoted)", ArgsManager::ALLOW_ANY | ArgsManager::DISALLOW_NEGATION, OptionsCategory::COMMAND_OPTIONS);
     argsman.AddArg("-debug=<category>", "Output debugging information (default: 0).", ArgsManager::ALLOW_ANY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-printtoconsole", "Send trace/debug info to console (default: 1 when no -debug is true, 0 otherwise).", ArgsManager::ALLOW_ANY, OptionsCategory::DEBUG_TEST);
 
     argsman.AddCommand("info", "Get wallet info");
-    argsman.AddCommand("create", "Create a new descriptor wallet file");
+    argsman.AddCommand("create", "Create a new descriptor wallet file", {"-mnemonic", "-seedphrase", "-wordcount", "-language", "-passphrase"});
     argsman.AddCommand("dump", "Print out all of the wallet key-value records", {"-dumpfile"});
     argsman.AddCommand("createfromdump", "Create new wallet file from dumped records", {"-dumpfile"});
 }

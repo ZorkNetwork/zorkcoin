@@ -18,6 +18,8 @@
 #ifdef ENABLE_WALLET
 #include <qt/test/addressbooktests.h>
 #include <qt/test/mwebtests.h> // MWEB
+#include <qt/test/mnemonicinstall_tests.h>
+#include <qt/test/mnemonicphraseview_tests.h>
 #include <qt/test/wallettests.h>
 #endif // ENABLE_WALLET
 
@@ -104,6 +106,12 @@ int main(int argc, char* argv[])
 
         MWEBTests test7(app.node()); // MWEB
         num_test_failures += QTest::qExec(&test7); // MWEB
+
+        MnemonicPhraseViewTests testA;
+        num_test_failures += QTest::qExec(&testA);
+
+        MnemonicInstallTests testB(app.node());
+        num_test_failures += QTest::qExec(&testB);
 #endif
 
         if (num_test_failures) {

@@ -2,6 +2,18 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or https://opensource.org/license/mit/.
 
+add_library(bitcoin_mnemonic STATIC EXCLUDE_FROM_ALL
+  mnemonic.cpp
+  ../unilib/utf8.cpp
+  ../unilib/uninorms.cpp
+)
+target_link_libraries(bitcoin_mnemonic
+  PRIVATE
+    core_interface
+    bitcoin_crypto
+    bitcoin_util
+)
+
 # Wallet functionality used by bitcoind and bitcoin-wallet executables.
 add_library(bitcoin_wallet STATIC EXCLUDE_FROM_ALL
   ../mweb/mweb_output_match.cpp
@@ -25,11 +37,13 @@ add_library(bitcoin_wallet STATIC EXCLUDE_FROM_ALL
   interfaces.cpp
   load.cpp
   migrate.cpp
+  mnemonic_wallettool.cpp
   receive.cpp
   rpc/addresses.cpp
   rpc/backup.cpp
   rpc/coins.cpp
   rpc/encrypt.cpp
+  rpc/mnemonic.cpp
   rpc/signmessage.cpp
   rpc/spend.cpp
   rpc/transactions.cpp
@@ -46,6 +60,7 @@ add_library(bitcoin_wallet STATIC EXCLUDE_FROM_ALL
 target_link_libraries(bitcoin_wallet
   PRIVATE
     core_interface
+    bitcoin_mnemonic
     bitcoin_common
     libmw
     SQLite3::SQLite3

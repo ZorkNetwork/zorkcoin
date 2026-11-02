@@ -132,10 +132,16 @@ private:
     void askPassphrase();
     void createWallet();
     void finish();
+    bool runMnemonicWizard();
+    void installMnemonic(interfaces::Wallet& wallet);
 
     SecureString m_passphrase;
     CreateWalletDialog* m_create_wallet_dialog{nullptr};
     AskPassphraseDialog* m_passphrase_dialog{nullptr};
+    bool m_mnemonic_wallet{false};
+    bool m_mnemonic_restore{false};
+    SecureString m_mnemonic_phrase;
+    SecureString m_mnemonic_passphrase;
 };
 
 class OpenWalletActivity : public WalletControllerActivity

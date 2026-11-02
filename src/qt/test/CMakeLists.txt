@@ -39,6 +39,8 @@ if(ENABLE_WALLET)
       mwebtests.cpp
       mweb_uri_tests.cpp
       mweb_wallet_tests.cpp
+      mnemonicinstall_tests.cpp
+      mnemonicphraseview_tests.cpp
       wallettests.cpp
       ../../wallet/test/wallet_test_fixture.cpp
   )

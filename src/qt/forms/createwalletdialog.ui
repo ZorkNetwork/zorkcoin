@@ -154,6 +154,16 @@
        </widget>
       </item>
       <item>
+       <widget class="QCheckBox" name="mnemonic_wallet_checkbox">
+        <property name="toolTip">
+         <string>Create a wallet from a BIP39 seed phrase. You generate or import a mnemonic first; the wallet is created once the phrase is confirmed.</string>
+        </property>
+        <property name="text">
+         <string>Mnemonic wallet</string>
+        </property>
+       </widget>
+      </item>
+      <item>
        <widget class="QCheckBox" name="external_signer_checkbox">
         <property name="toolTip">
          <string>Use an external signing device such as a hardware wallet. Configure the external signer script in wallet preferences first.</string>
@@ -196,6 +206,7 @@
   <tabstop>encrypt_wallet_checkbox</tabstop>
   <tabstop>disable_privkeys_checkbox</tabstop>
   <tabstop>blank_wallet_checkbox</tabstop>
+  <tabstop>mnemonic_wallet_checkbox</tabstop>
   <tabstop>external_signer_checkbox</tabstop>
  </tabstops>
  <resources/>

@@ -9,6 +9,7 @@
 #include <util/fs.h>
 #include <util/translation.h>
 #include <wallet/dump.h>
+#include <wallet/mnemonic_wallettool.h>
 #include <wallet/wallet.h>
 #include <wallet/walletutil.h>
 
@@ -38,7 +39,7 @@ static void WalletCreate(CWallet* wallet_instance, uint64_t wallet_creation_flag
     wallet_instance->TopUpKeyPool();
 }
 
-static std::shared_ptr<CWallet> MakeWallet(const std::string& name, const fs::path& path, DatabaseOptions options)
+static std::shared_ptr<CWallet> MakeWallet(const std::string& name, const fs::path& path, DatabaseOptions options, bool setup_descriptors = true)
 {
     DatabaseStatus status;
     bilingual_str error;
@@ -71,7 +72,9 @@ static std::shared_ptr<CWallet> MakeWallet(const std::string& name, const fs::pa
         return nullptr;
     }
 
-    if (options.require_create) WalletCreate(wallet_instance.get(), options.create_flags);
+    if (options.require_create && setup_descriptors) {
+        WalletCreate(wallet_instance.get(), options.create_flags);
+    }
 
     return wallet_instance;
 }
@@ -100,6 +103,9 @@ bool ExecuteWalletToolFunc(const ArgsManager& args, const std::string& command)
             return false;
         }
     }
+    if (!ValidateMnemonicWalletToolArgs(args)) {
+        return false;
+    }
     if ((command == "create" || command == "createfromdump") && !args.IsArgSet("-wallet")) {
         tfm::format(std::cerr, "Wallet name must be provided when creating a new wallet.\n");
         return false;
@@ -123,8 +129,14 @@ bool ExecuteWalletToolFunc(const ArgsManager& args, const std::string& command)
         options.create_flags |= WALLET_FLAG_DESCRIPTORS;
         options.require_format = DatabaseFormat::SQLITE;
 
-        const std::shared_ptr<CWallet> wallet_instance = MakeWallet(name, path, options);
+        const bool mnemonic = args.GetBoolArg("-mnemonic", false);
+        CExtKey master_key;
+        SecureString generated_phrase;
+        if (mnemonic && !DeriveMasterFromMnemonicArgs(args, master_key, generated_phrase)) return false;
+
+        const std::shared_ptr<CWallet> wallet_instance = MakeWallet(name, path, options, /*setup_descriptors=*/!mnemonic);
         if (wallet_instance) {
+            if (mnemonic) WalletCreateFromMnemonic(*wallet_instance, options.create_flags, master_key, generated_phrase);
             WalletShowInfo(wallet_instance.get());
             wallet_instance->Close();
         }

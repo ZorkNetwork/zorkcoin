@@ -434,6 +434,74 @@ class ToolWalletTest(BitcoinTestFramework):
         self.assert_raises_tool_error("Wallet name cannot be empty", "-wallet=", "-dumpfile=wallet.dump", "createfromdump")
         assert not (self.nodes[0].wallets_path / "wallet.dat").exists()
 
+    def test_mnemonic_create(self):
+        self.log.info("Test bitcoin-wallet create -mnemonic")
+        # -seedphrase without -mnemonic is an error
+        self.assert_raises_tool_error(
+            "-seedphrase/-wordcount/-language/-passphrase require -mnemonic",
+            "-wallet=bad_seed",
+            "-seedphrase=abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+            "create",
+        )
+        assert not (self.nodes[0].wallets_path / "bad_seed").exists()
+
+        # Generate a 12-word mnemonic wallet
+        p = self.bitcoin_wallet_process("-wallet=mnem_gen", "-mnemonic", "-wordcount=12", "create")
+        stdout, stderr = p.communicate()
+        assert_equal(p.poll(), 0)
+        assert "Generated BIP39 mnemonic" in stdout
+        assert "WARNING" in stderr
+        # Find the mnemonic line (12 words)
+        mnemonic_line = None
+        for ln in stdout.splitlines():
+            parts = ln.split()
+            if len(parts) == 12 and all(w.isalpha() for w in parts):
+                mnemonic_line = ln
+                break
+        assert mnemonic_line is not None
+
+        # Import known mnemonic
+        known = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        p = self.bitcoin_wallet_process("-wallet=mnem_imp", "-mnemonic", f"-seedphrase={known}", "create")
+        stdout, stderr = p.communicate()
+        assert_equal(p.poll(), 0)
+        assert "Generated BIP39 mnemonic" not in stdout
+        assert "Topping up keypool" in stdout
+
+        # Empty -seedphrase prompts; feed phrase on stdin
+        p = self.bitcoin_wallet_process("-wallet=mnem_prompt", "-mnemonic", "-seedphrase=", "create")
+        stdout, stderr = p.communicate(input=known + "\n")
+        assert_equal(p.poll(), 0)
+        assert "Topping up keypool" in stdout
+
+        # Bad generate args
+        self.assert_raises_tool_error(
+            "-wordcount must be one of",
+            "-wallet=mnem_bad_wc",
+            "-mnemonic",
+            "-wordcount=13",
+            "create",
+        )
+        assert not (self.nodes[0].wallets_path / "mnem_bad_wc").exists()
+        self.assert_raises_tool_error(
+            "Unknown -language",
+            "-wallet=mnem_bad_lang",
+            "-mnemonic",
+            "-language=klingon",
+            "create",
+        )
+        assert not (self.nodes[0].wallets_path / "mnem_bad_lang").exists()
+
+        # An invalid phrase is rejected before any wallet file is created
+        self.assert_raises_tool_error(
+            "invalid mnemonic",
+            "-wallet=mnem_bad_phrase",
+            "-mnemonic",
+            f"-seedphrase={' '.join(['abandon'] * 12)}",
+            "create",
+        )
+        assert not (self.nodes[0].wallets_path / "mnem_bad_phrase").exists()
+
     def run_test(self):
         self.wallet_path = self.nodes[0].wallets_path / self.default_wallet_name / self.wallet_data_filename
         self.test_invalid_tool_commands_and_args()
@@ -447,6 +515,7 @@ class ToolWalletTest(BitcoinTestFramework):
         self.test_dump_very_large_records()
         self.test_no_create_legacy()
         self.test_no_create_unnamed()
+        self.test_mnemonic_create()
 
 
 if __name__ == '__main__':

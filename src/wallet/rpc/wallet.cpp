@@ -1114,6 +1114,9 @@ RPCMethod walletpassphrasechange();
 RPCMethod walletlock();
 RPCMethod encryptwallet();
 
+// mnemonic
+RPCMethod addhdkey_mnemonic();
+
 // spend
 RPCMethod sendtoaddress();
 RPCMethod sendmany();
@@ -1147,6 +1150,7 @@ std::span<const CRPCCommand> GetWalletRPCCommands()
         {"wallet", &abandontransaction},
         {"wallet", &abortrescan},
         {"wallet", &addhdkey},
+        {"wallet", &addhdkey_mnemonic},
         {"wallet", &backupwallet},
         {"wallet", &bumpfee},
         {"wallet", &psbtbumpfee},

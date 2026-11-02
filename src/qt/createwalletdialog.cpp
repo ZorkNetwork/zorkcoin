@@ -4,12 +4,14 @@
 
 #include <bitcoin-build-config.h> // IWYU pragma: keep
 
+#include <common/args.h>
 #include <interfaces/node.h>
 #include <qt/createwalletdialog.h>
 #include <qt/forms/ui_createwalletdialog.h>
 
 #include <qt/guiutil.h>
 
+#include <QCheckBox>
 #include <QPushButton>
 
 CreateWalletDialog::CreateWalletDialog(QWidget* parent) :
@@ -83,6 +85,26 @@ CreateWalletDialog::CreateWalletDialog(QWidget* parent) :
         }
     });
 
+    connect(ui->mnemonic_wallet_checkbox, &QCheckBox::toggled, [this](bool checked) {
+        // Unchecking the seed phrase option restores the options it locked.
+        if (!checked) {
+            const bool encrypt{ui->encrypt_wallet_checkbox->isChecked()};
+            ui->blank_wallet_checkbox->setEnabled(!ui->disable_privkeys_checkbox->isChecked() && !ui->external_signer_checkbox->isChecked());
+            ui->disable_privkeys_checkbox->setEnabled(!encrypt && !ui->blank_wallet_checkbox->isChecked() && !ui->external_signer_checkbox->isChecked());
+#ifdef ENABLE_EXTERNAL_SIGNER
+            ui->external_signer_checkbox->setEnabled(m_has_signers && !encrypt);
+#endif
+        }
+    });
+
+    for (QCheckBox* box : {ui->encrypt_wallet_checkbox, ui->disable_privkeys_checkbox, ui->blank_wallet_checkbox,
+                           ui->mnemonic_wallet_checkbox, ui->external_signer_checkbox}) {
+        connect(box, &QCheckBox::toggled, this, &CreateWalletDialog::updateMnemonicOption);
+    }
+
+    ui->mnemonic_wallet_checkbox->setChecked(gArgs.GetBoolArg("-mnemonicdefault", false));
+    updateMnemonicOption();
+
 #ifndef ENABLE_EXTERNAL_SIGNER
         //: "External signing" means using devices such as hardware wallets.
         ui->external_signer_checkbox->setToolTip(tr("Compiled without external signing support (required for external signing)"));
@@ -100,6 +122,10 @@ CreateWalletDialog::~CreateWalletDialog()
 void CreateWalletDialog::setSigners(const std::vector<std::unique_ptr<interfaces::ExternalSigner>>& signers)
 {
     m_has_signers = !signers.empty();
+    if (ui->mnemonic_wallet_checkbox->isChecked()) {
+        updateMnemonicOption();
+        return;
+    }
     if (m_has_signers) {
         ui->external_signer_checkbox->setEnabled(true);
         ui->external_signer_checkbox->setChecked(true);
@@ -138,7 +164,26 @@ bool CreateWalletDialog::isMakeBlankWalletChecked() const
     return ui->blank_wallet_checkbox->isChecked();
 }
 
+bool CreateWalletDialog::isMnemonicWalletChecked() const
+{
+    return ui->mnemonic_wallet_checkbox->isChecked();
+}
+
 bool CreateWalletDialog::isExternalSignerChecked() const
 {
     return ui->external_signer_checkbox->isChecked();
+}
+
+void CreateWalletDialog::updateMnemonicOption()
+{
+    // A seed phrase needs private keys, and is installed into a wallet that is
+    // otherwise blank, so it excludes the blank, no-private-keys and signer options.
+    ui->mnemonic_wallet_checkbox->setEnabled(!ui->disable_privkeys_checkbox->isChecked() &&
+                                             !ui->blank_wallet_checkbox->isChecked() &&
+                                             !ui->external_signer_checkbox->isChecked());
+    if (ui->mnemonic_wallet_checkbox->isChecked()) {
+        ui->blank_wallet_checkbox->setEnabled(false);
+        ui->disable_privkeys_checkbox->setEnabled(false);
+        ui->external_signer_checkbox->setEnabled(false);
+    }
 }

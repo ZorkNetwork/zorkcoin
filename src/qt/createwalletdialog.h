@@ -35,11 +35,14 @@ public:
     bool isEncryptWalletChecked() const;
     bool isDisablePrivateKeysChecked() const;
     bool isMakeBlankWalletChecked() const;
+    bool isMnemonicWalletChecked() const;
     bool isExternalSignerChecked() const;
 
 private:
     Ui::CreateWalletDialog *ui;
     bool m_has_signers = false;
+
+    void updateMnemonicOption();
 };
 
 #endif // BITCOIN_QT_CREATEWALLETDIALOG_H
