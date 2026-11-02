@@ -234,8 +234,8 @@ BasicTestingSetup::BasicTestingSetup(const ChainType chainType, TestOpts opts)
     gArgs.ForceSetArg("-natpmp", "0"); // NATPMP sends packets to the router.
 
     // Height-1 Bitcoin launch lock cannot be satisfied in unit tests (needs
-    // ~one current Bitcoin block of SHA256d). Production MAIN still enables it.
-    if (chainType == ChainType::MAIN) {
+    // ~one current Bitcoin block of SHA256d). Production MAIN and TESTNET still enable it.
+    if (chainType == ChainType::MAIN || chainType == ChainType::TESTNET) {
         DisableBtcLaunchLockForUnitTests();
     }
 

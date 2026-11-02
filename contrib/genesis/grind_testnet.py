@@ -35,15 +35,17 @@ GENESIS_PUBKEY = bytes.fromhex(
     "24588d0429a6a46d555360b9f3b83a60a6c49895a62abad18fd8182c0009492308"
 )
 OPRET = b"Space.com 31/Oct/2026 SpaceX celebrates Halloween with early-morning Falcon 9 launch from California"
-NTIME = 1_793_484_390_400
+# Testnet launch instant: 2026-11-01 21:24:36.480 UTC == 0x1A199000000
+NTIME = 1_793_568_276_480
+SIGNET_NTIME = 1_793_484_390_400
 NVERSION = 0x20000000
 REWARD = 1 << 32
 MINER_INFO = b"/Genesis Fifty-Niner/"
 EXTRA_NONCE = bytes.fromhex("4361726C")
 
 NETWORKS = {
-    "testnet": {"comment": b"ad astra per aspera", "nbits": 0x1D15198E},
-    "signet": {"comment": b"signature based network", "nbits": 0x1E0FFFF0},
+    "testnet": {"comment": b"ad astra per aspera", "nbits": 0x1D15198E, "ntime": NTIME},
+    "signet": {"comment": b"signature based network", "nbits": 0x1E0FFFF0, "ntime": SIGNET_NTIME},
 }
 
 
@@ -63,12 +65,12 @@ def txid_int(tx: CTransaction) -> int:
     return uint256_from_str(hash256(tx.serialize_without_witness()))
 
 
-def make_header(merkle: int, nbits: int, nonce: int = 0) -> CBlockHeader:
+def make_header(merkle: int, nbits: int, ntime: int = NTIME, nonce: int = 0) -> CBlockHeader:
     header = CBlockHeader()
     header.nVersion = NVERSION
     header.hashPrevBlock = 0
     header.hashMerkleRoot = merkle
-    header.nTime = NTIME
+    header.nTime = ntime
     header.nBits = nbits
     header.nNonce = nonce
     return header
@@ -109,7 +111,7 @@ def main() -> None:
     print(f"network={args.network}")
     print(f"scriptSig={bytes(tx.vin[0].scriptSig).hex()}")
     print(f"merkle={merkle:064x}")
-    header = make_header(merkle, spec["nbits"])
+    header = make_header(merkle, spec["nbits"], spec["ntime"])
     print(f"unsolved header hex:\n{header.serialize().hex()}")
     util = args.util or os.environ.get("ZORKCOIN_UTIL", "")
     if args.python_grind or os.environ.get("ZORK_GENESIS_PYTHON_GRIND") == "1":

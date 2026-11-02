@@ -1,10 +1,17 @@
-# Mainnet block 1 launch lock
+# Block 1 Bitcoin launch lock
 
-**T0 (launch instant):** 2026-11-21 21:25:29.728 UTC — mainnet genesis `nTime = 1795296329728`. See `ZORKCOIN_LAUNCH_OPS_CHECKLIST.md` for ceremony timing.
+Height 1 on **mainnet** and **testnet** requires a qualifying embedded Bitcoin header in the coinbase. Regtest and testnet4 leave the lock disabled.
 
-Release binaries may ship before T0. **Consensus still rejects mainnet block 1** until the coinbase carries a qualifying embedded Bitcoin header (see below).
+| Network | Genesis / T0 | Lock `min_unix_time` | `nbits_floor` |
+|---|---|---|---|
+| Mainnet | 2026-11-21 21:25:29.728 UTC (`nTime = 1795296329728` / `0x1A200000000`) | `1795296330` (first whole second after genesis) | `0x1702353d` |
+| Testnet | 2026-11-01 21:24:36.480 UTC (`nTime = 1793568276480` / `0x1A199000000`) | `1793568277` (first whole second after genesis) | `0x1702353d` |
 
-**Product rule:** Mainnet block 1 must not exist before launch on the intended path. Height 1 is gated on a **copied** Bitcoin mainnet block header — taken from public sources after T0, not mined for Zorkcoin. Zork miners embed those 80 bytes in the block 1 coinbase and mine block 1 with kHeavyHash as usual.
+See `src/kernel/genesis_mainnet.h` and `src/kernel/genesis_testnet.h` for the pinned genesis and launch-lock constants.
+
+Release binaries may ship before the lock second. **Consensus still rejects height 1** until the coinbase carries a qualifying embedded Bitcoin header (see below).
+
+**Product rule:** Block 1 must not exist before the lock instant on the intended path. Height 1 is gated on a **copied** Bitcoin mainnet block header — taken from public sources after the lock second, not mined for Zorkcoin. Zork miners embed those 80 bytes in the block 1 coinbase and mine block 1 with kHeavyHash as usual.
 
 **Launch practice vs what nodes enforce**
 
@@ -32,7 +39,7 @@ Nodes validate the embedded bytes only. They do not connect to Bitcoin during sy
 
 ## Launch procedure (operators)
 
-1. **T0:** Publish mainnet genesis with the fixed `nTime` (`ZORKCOIN_GENESIS_UPDATE.md`).
+1. **T0:** Publish genesis with the fixed `nTime` (`src/kernel/genesis_mainnet.h` / `src/kernel/genesis_testnet.h`).
 2. **Observe Bitcoin:** Wait until Bitcoin mainnet produces a block whose header satisfies the timestamp and difficulty rules below. Copy the 80-byte header from a source you trust — for example:
 
    ```bash
@@ -51,7 +58,7 @@ Height **2 and above** use the normal coinbase rules; the launch lock applies on
 
 ## Coinbase payload
 
-Mainnet only, for any block whose parent is genesis (height 1, including competing block-1 candidates).
+Mainnet and testnet, for any block whose parent is genesis (height 1, including competing block-1 candidates).
 
 Exactly one 0-value `OP_RETURN` in the coinbase. The witness Merkle commitment is a separate `OP_RETURN` and is ignored by this rule:
 
@@ -83,9 +90,9 @@ All checks use only the bytes in the `OP_RETURN`. No HTTP, RPC, or live lookup t
 
 ### 1. Timestamp
 
-`nTime = ReadLE32(header + 68)` must be **≥ 1795296330** (2026-11-21 21:25:30 UTC) — the first whole Bitcoin second strictly after genesis.
+`nTime = ReadLE32(header + 68)` must be **≥** the network’s pinned `min_unix_time` (mainnet `1795296330`, testnet `1793568277`).
 
-Headers copied from real post-T0 Bitcoin blocks satisfy this. A header claiming an earlier time is rejected.
+Headers copied from real Bitcoin blocks at or after that instant satisfy this. A header claiming an earlier time is rejected.
 
 ### 2. Difficulty floor (`nBits`, decoded)
 
@@ -121,7 +128,7 @@ Bitcoin’s double-SHA256, not kHeavyHash. A header copied from a real Bitcoin b
 
 After the header is public, **block 1’s kHeavyHash work** is the mining race — standard PoW, same as later heights (with ASERT on the Zork header).
 
-Pinned constants (`BTC_LAUNCH_MIN_UNIX`, `BTC_LAUNCH_NBITS_FLOOR`) live in `src/kernel/genesis_mainnet.h` and can be audited before T0.
+Pinned constants live in `src/kernel/genesis_mainnet.h` (`BTC_LAUNCH_*`) and `src/kernel/genesis_testnet.h` (`BTC_LAUNCH_TESTNET_*`) and can be audited before the lock second.
 
 ---
 
@@ -136,7 +143,7 @@ Pinned constants (`BTC_LAUNCH_MIN_UNIX`, `BTC_LAUNCH_NBITS_FLOOR`) live in `src/
 **What consensus does not prove**
 
 - That the header is on Bitcoin’s best chain at validation time (membership would need heavy proofs or non-deterministic fetches). Launch practice uses headers from the public Bitcoin chain; nodes treat the blob as self-contained evidence of timestamp, difficulty, and PoW.
-- That operators waited for wall-clock T0 before copying (social launch discipline). Consensus enforces `nTime ≥ 1795296330`, not human ceremony timing.
+- That operators waited for wall-clock T0 before copying (social launch discipline). Consensus enforces `nTime ≥ min_unix_time`, not human ceremony timing.
 
 **Offline grind (out of band):** A party could grind an 80-byte blob that passes the three checks without copying a live Bitcoin block. That is costly (floor work) and **not** part of launch practice. The product rule is observe-and-copy after T0, not pre-stockpile before T0.
 
@@ -148,7 +155,7 @@ Pinned constants (`BTC_LAUNCH_MIN_UNIX`, `BTC_LAUNCH_NBITS_FLOOR`) live in `src/
 
 - Checker: `src/consensus/btc_launch_lock.cpp`
 - Enforced in `CheckBlock` when `hashPrevBlock == genesis`
-- Params: `Consensus::Params::btc_launch_lock` (mainnet only)
+- Params: `Consensus::Params::btc_launch_lock` (enabled on mainnet and testnet)
 - Assembler: `-btclaunchheader` (optional; embeds the OP_RETURN in the in-tree template at height 1)
 
-Unit tests on `MAIN` disable this lock (`DisableBtcLaunchLockForUnitTests`); mainnet production enables it. Rehearsal before T0 uses regtest or historical header hex for drill only — not a pre-launch stockpile.
+Unit tests on `MAIN` and `TESTNET` disable this lock (`DisableBtcLaunchLockForUnitTests`); production mainnet and testnet enable it. Rehearsal before the lock second uses regtest or historical header hex for drill only — not a pre-launch stockpile.

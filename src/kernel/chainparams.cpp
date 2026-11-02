@@ -5,6 +5,7 @@
 
 #include <kernel/chainparams.h>
 #include <kernel/genesis_mainnet.h>
+#include <kernel/genesis_testnet.h>
 
 #include <consensus/amount.h>
 #include <consensus/merkle.h>
@@ -354,13 +355,17 @@ public:
         m_assumed_blockchain_size = 4;
         m_assumed_chain_state_size = 1;
 
-        static const char* const testnet_ltc_opreturn =
-            "Space.com 31/Oct/2026 SpaceX celebrates Halloween with early-morning Falcon 9 launch from California";
-        genesis = CreateZorkNetworkGenesisBlock(1793484390400ULL, 405094034ULL, 0x1d15198e, 0x20000000UL, static_cast<CAmount>(1LL << 32), "ad astra per aspera", testnet_ltc_opreturn);
+        genesis = CreateZorkNetworkGenesisBlock(TESTNET_GENESIS_NTIME, TESTNET_GENESIS_NONCE, TESTNET_GENESIS_NBITS, TESTNET_GENESIS_NVERSION, TESTNET_GENESIS_REWARD, TESTNET_GENESIS_MINER_COMMENT, TESTNET_GENESIS_LTC_OPRETURN);
         consensus.hashGenesisBlock = genesis.GetHash();
-        assert(consensus.hashGenesisBlock == uint256{"a36bd8817c32e78b2f63e6bfa3bf1d7dca870e54706bde5609822ce60a9b767d"});
-        assert(genesis.hashMerkleRoot == uint256{"037598f1d4801ccb0f839bde41437ae1e2c81e18a89b5dcb2324756d4a4b74d1"});
+        assert(consensus.hashGenesisBlock == uint256{TESTNET_GENESIS_HASH});
+        assert(genesis.hashMerkleRoot == uint256{TESTNET_GENESIS_MERKLE});
         consensus.BIP34Hash = consensus.hashGenesisBlock;
+
+        if (opts.btc_launch_lock) {
+            consensus.btc_launch_lock.enabled = true;
+            consensus.btc_launch_lock.min_unix_time = BTC_LAUNCH_TESTNET_MIN_UNIX;
+            consensus.btc_launch_lock.nbits_floor = BTC_LAUNCH_TESTNET_NBITS_FLOOR;
+        }
 
         vFixedSeeds.clear();
         vSeeds.clear();

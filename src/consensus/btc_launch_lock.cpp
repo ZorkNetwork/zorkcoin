@@ -123,11 +123,11 @@ bool CheckBtcLaunchLock(const CTransaction& coinbase, const Consensus::BtcLaunch
 
     if (matches == 0) {
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-btc-lock-missing",
-                             "mainnet block 1 coinbase is missing the Bitcoin launch-lock OP_RETURN");
+                             "height-1 coinbase is missing the Bitcoin launch-lock OP_RETURN");
     }
     if (matches > 1) {
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-btc-lock-duplicate",
-                             "mainnet block 1 coinbase has more than one Bitcoin launch-lock OP_RETURN");
+                             "height-1 coinbase has more than one Bitcoin launch-lock OP_RETURN");
     }
     if (lock_out->nValue != 0) {
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-btc-lock-value",

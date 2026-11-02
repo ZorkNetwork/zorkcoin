@@ -177,6 +177,8 @@ public:
 
     struct TestNetOptions {
         DeploymentOptions dep_opts{};
+        /** When false, testnet height-1 Bitcoin launch lock is omitted (unit tests). */
+        bool btc_launch_lock{true};
     };
 
     static std::unique_ptr<const CChainParams> RegTest(const RegTestOptions& options);

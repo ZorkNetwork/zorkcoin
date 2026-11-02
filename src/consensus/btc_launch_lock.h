@@ -39,7 +39,7 @@ bool CheckBtcLaunchLockHeader(std::span<const unsigned char> header80, uint32_t 
                               uint32_t nbits_floor, BlockValidationState& state);
 
 /**
- * Mainnet height-1 coinbase must contain exactly one 0-value launch-lock
+ * When enabled, height-1 coinbase must contain exactly one 0-value launch-lock
  * output. Other OP_RETURN outputs (e.g. the witness commitment) are ignored.
  */
 bool CheckBtcLaunchLock(const CTransaction& coinbase, const Consensus::BtcLaunchLock& lock,

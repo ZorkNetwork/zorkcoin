@@ -236,7 +236,7 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
         const auto header = TryParseHex<unsigned char>(header_hex);
         if (!header || header->size() != BTC_LAUNCH_HEADER_SIZE) {
             throw std::runtime_error(
-                "mainnet block 1 requires -btclaunchheader=<160-char hex of an 80-byte Bitcoin header>");
+                "height-1 block requires -btclaunchheader=<160-char hex of an 80-byte Bitcoin header>");
         }
         CTxOut lock_out;
         lock_out.nValue = 0;

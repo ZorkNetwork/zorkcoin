@@ -149,6 +149,7 @@ std::unique_ptr<const CChainParams> CreateChainParams(const ArgsManager& args, c
     case ChainType::TESTNET: {
         auto opts = CChainParams::TestNetOptions{};
         ReadTestNetArgs(args, opts);
+        if (g_disable_btc_launch_lock_for_tests) opts.btc_launch_lock = false;
         return CChainParams::TestNet(opts);
     }
     case ChainType::TESTNET4: {

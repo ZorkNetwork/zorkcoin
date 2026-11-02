@@ -8,6 +8,7 @@
 #include <consensus/validation.h>
 #include <kernel/chainparams.h>
 #include <kernel/genesis_mainnet.h>
+#include <kernel/genesis_testnet.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
 #include <test/util/setup_common.h>
@@ -31,6 +32,18 @@ static const char EASY_BTC_HEADER_HEX[] =
     "010000000000000000000000000000000000000000000000000000000000000000000000"
     "00000000000000000000000000000000000000000000000000000000000000004a0c026b"
     "ffff7f2002000000";
+
+// Ground SHA256d header at nBits 0x207fffff, nTime 1793568277 (BTC_LAUNCH_TESTNET_MIN_UNIX), nonce 0.
+static const char EASY_TESTNET_BOUNDARY_OK_HEX[] =
+    "010000000000000000000000000000000000000000000000000000000000000000000000"
+    "000000000000000000000000000000000000000000000000000000000000000015aee76a"
+    "ffff7f2000000000";
+
+// Ground SHA256d header at nBits 0x207fffff, nTime 1793568276 (BTC_LAUNCH_TESTNET_MIN_UNIX - 1), nonce 0.
+static const char EASY_TESTNET_BOUNDARY_EARLY_HEX[] =
+    "010000000000000000000000000000000000000000000000000000000000000000000000"
+    "000000000000000000000000000000000000000000000000000000000000000014aee76a"
+    "ffff7f2000000000";
 
 static std::vector<unsigned char> HeaderFromHex(const char* hex)
 {
@@ -60,6 +73,42 @@ BOOST_AUTO_TEST_CASE(mainnet_pins)
     BOOST_CHECK_EQUAL(lock.min_unix_time, BTC_LAUNCH_MIN_UNIX);
     BOOST_CHECK_EQUAL(BTC_LAUNCH_NBITS_FLOOR, 0x1702353du);
     BOOST_CHECK_EQUAL(BTC_LAUNCH_MIN_UNIX, 1795296330u);
+}
+
+BOOST_AUTO_TEST_CASE(testnet_pins)
+{
+    const auto chainParams = CChainParams::TestNet();
+    const auto& lock = chainParams->GetConsensus().btc_launch_lock;
+    BOOST_CHECK(lock.enabled);
+    BOOST_CHECK_EQUAL(lock.nbits_floor, BTC_LAUNCH_TESTNET_NBITS_FLOOR);
+    BOOST_CHECK_EQUAL(lock.min_unix_time, BTC_LAUNCH_TESTNET_MIN_UNIX);
+    BOOST_CHECK_EQUAL(BTC_LAUNCH_TESTNET_NBITS_FLOOR, 0x1702353du);
+    BOOST_CHECK_EQUAL(BTC_LAUNCH_TESTNET_MIN_UNIX, 1793568277u);
+
+    CChainParams::TestNetOptions disabled_opts{};
+    disabled_opts.btc_launch_lock = false;
+    const auto disabledParams = CChainParams::TestNet(disabled_opts);
+    BOOST_CHECK(!disabledParams->GetConsensus().btc_launch_lock.enabled);
+}
+
+BOOST_AUTO_TEST_CASE(real_header_meets_floor_but_too_early_for_testnet)
+{
+    const auto header = HeaderFromHex(REAL_BTC_HEADER_HEX);
+    BlockValidationState state;
+    BOOST_CHECK(!CheckBtcLaunchLockHeader(header, BTC_LAUNCH_TESTNET_MIN_UNIX, BTC_LAUNCH_TESTNET_NBITS_FLOOR, state));
+    BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-btc-lock-time");
+}
+
+BOOST_AUTO_TEST_CASE(testnet_min_unix_time_boundary)
+{
+    const auto exact = HeaderFromHex(EASY_TESTNET_BOUNDARY_OK_HEX);
+    BlockValidationState ok_state;
+    BOOST_CHECK(CheckBtcLaunchLockHeader(exact, BTC_LAUNCH_TESTNET_MIN_UNIX, /*nbits_floor=*/0x207fffff, ok_state));
+
+    const auto one_sec_early = HeaderFromHex(EASY_TESTNET_BOUNDARY_EARLY_HEX);
+    BlockValidationState early_state;
+    BOOST_CHECK(!CheckBtcLaunchLockHeader(one_sec_early, BTC_LAUNCH_TESTNET_MIN_UNIX, /*nbits_floor=*/0x207fffff, early_state));
+    BOOST_CHECK_EQUAL(early_state.GetRejectReason(), "bad-btc-lock-time");
 }
 
 BOOST_AUTO_TEST_CASE(script_roundtrip)
