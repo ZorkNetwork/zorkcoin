@@ -18,6 +18,7 @@
 #include <script/script.h>
 #include <script/verify_flags.h>
 #include <uint256.h>
+#include <util/bip32.h>
 #include <util/chaintype.h>
 #include <util/log.h>
 #include <util/strencodings.h>

@@ -58,6 +58,7 @@ public:
     /// Initialize with the given time.
     explicit FakeNodeClock(NodeSeconds init_time) { set(init_time); }
     explicit FakeNodeClock(std::chrono::seconds init_time) { set(init_time); }
+    explicit FakeNodeClock(std::chrono::milliseconds init_time) { set(init_time); }
     explicit FakeNodeClock(NodeMilliseconds init_time)
     {
         set(std::chrono::time_point_cast<std::chrono::seconds>(init_time));
@@ -79,6 +80,7 @@ public:
     }
     void set(std::chrono::seconds t) { set(NodeSeconds{t}); }
     void set(std::chrono::milliseconds t) { set(NodeSeconds{std::chrono::duration_cast<std::chrono::seconds>(t)}); }
+    void set(NodeMilliseconds t) { set(std::chrono::time_point_cast<std::chrono::seconds>(t)); }
 
     /// Change mocktime by the given duration delta.
     template <class Rep, class Period>

@@ -1393,7 +1393,7 @@ BOOST_AUTO_TEST_CASE(btck_set_mock_time_tests)
 
     Block block{hex_string_to_byte_vec(REGTEST_BLOCK_DATA[0])};
     BlockHeader header{block.GetHeader()};
-    const std::chrono::seconds block_time{header.Timestamp()};
+    const std::chrono::seconds block_time{header.Timestamp() / 1000};
 
     // With the time set 3h before the header, the kernel must see the header as >2h in the future and reject it
     KernelMockTime mock_time{block_time - std::chrono::hours{3}};

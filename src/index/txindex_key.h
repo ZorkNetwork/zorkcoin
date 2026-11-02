@@ -45,7 +45,7 @@ constexpr uint8_t DB_TXINDEX{'t'};
 inline constexpr std::array<std::byte, 0> EMPTY_VALUE{};
 
 //! Serialized size of a block header, the offset of the first byte after it.
-constexpr uint32_t BLOCK_HEADER_SIZE{80};
+constexpr uint32_t BLOCK_HEADER_SIZE{88};
 
 //! The location of a transaction: the sequence number of the block that contains it
 //! and the transaction's serialized byte offset from the start of that block

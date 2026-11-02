@@ -459,7 +459,7 @@ class MWEBPSBTTest(BitcoinTestFramework):
     def test_decodepsbt_fees(self, sender, receiver):
         """decodepsbt reports the whole fee across both layers, and omits it when an input amount is unknown."""
         l1_coin = next(coin for coin in sender.listunspent() if 'vout' in coin)
-        mweb_coin = next(coin for coin in sender.listunspent() if 'output_id' in coin and coin['amount'] >= 2)
+        mweb_coin = next(coin for coin in sender.listunspent() if 'output_id' in coin and coin['amount'] > Decimal('1.1'))
         l1_input = {'txid': l1_coin['txid'], 'vout': l1_coin['vout']}
         mweb_input = {'mweb_out': mweb_coin['output_id']}
         l1_output = {receiver.getnewaddress(address_type='bech32'): Decimal('1')}
