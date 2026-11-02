@@ -11,6 +11,7 @@
 #include <dbwrapper.h>
 #include <flatfile.h>
 #include <hash.h>
+#include <ios>
 #include <kernel/blockmanager_opts.h>
 #include <kernel/chainparams.h>
 #include <kernel/messagestartchars.h>
@@ -97,7 +98,15 @@ void BlockTreeDB::WriteBatchSync(const std::vector<std::pair<int, const CBlockFi
     }
     batch.Write(DB_LAST_BLOCK, nLastFile);
     for (const CBlockIndex* bi : blockinfo) {
-        batch.Write(std::make_pair(DB_BLOCK_INDEX, bi->GetBlockHash()), CDiskBlockIndex{bi});
+        if (!bi->HasCompleteAuxPow()) {
+            LogWarning("Skipping block index write for %s: auxpow bit set without header extension", bi->GetBlockHash().ToString());
+            continue;
+        }
+        try {
+            batch.Write(std::make_pair(DB_BLOCK_INDEX, bi->GetBlockHash()), CDiskBlockIndex{bi});
+        } catch (const std::ios_base::failure& e) {
+            LogWarning("Skipping block index write for %s: serialize failed (%s)", bi->GetBlockHash().ToString(), e.what());
+        }
     }
     WriteBatch(batch, true);
 }
@@ -144,12 +153,17 @@ bool BlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, s
                 pindexNew->nNonce         = diskindex.nNonce;
                 pindexNew->nStatus        = diskindex.nStatus;
                 pindexNew->nTx            = diskindex.nTx;
+                pindexNew->nAuxPowSize    = diskindex.nAuxPowSize;
+                pindexNew->auxpow         = diskindex.auxpow;
                 // MWEB: restore extension block index fields
                 pindexNew->mweb_header    = diskindex.mweb_header;
                 pindexNew->hogex_hash     = diskindex.hogex_hash;
                 pindexNew->mweb_amount    = diskindex.mweb_amount;
 
-                if (!CheckProofOfWork(pindexNew->GetBlockPoWHash(), pindexNew->nBits, consensusParams)) {
+                // AuxPoW headers do not carry native kHeavyHash; peer PoW was
+                // checked on the AuxPoW header extension when the header was accepted.
+                if (!auxpow::IsAuxPow(pindexNew->nVersion) &&
+                    !CheckProofOfWork(pindexNew->GetBlockPoWHash(), pindexNew->nBits, consensusParams)) {
                     LogError("%s: CheckProofOfWork failed: %s\n", __func__, pindexNew->ToString());
                     return false;
                 }
@@ -1097,8 +1111,14 @@ bool BlockManager::ReadBlock(CBlock& block, const FlatFilePos& pos, const std::o
 
     const auto block_hash{block.GetHash()};
 
-    // Check the header
-    if (!CheckProofOfWork(block.GetPoWHash(), block.nBits, GetConsensus())) {
+    // Check the header. AuxPoW blocks skip native kHeavyHash; peer PoW was
+    // verified in CheckAuxPow when the header was first accepted.
+    if (auxpow::IsAuxPow(block.nVersion)) {
+        if (!block.auxpow.has_value()) {
+            LogError("AuxPoW bit set but header extension missing at %s while reading block", pos.ToString());
+            return false;
+        }
+    } else if (!CheckProofOfWork(block.GetPoWHash(), block.nBits, GetConsensus())) {
         LogError("Errors in block header at %s while reading block", pos.ToString());
         return false;
     }

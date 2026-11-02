@@ -867,7 +867,7 @@ class CTransaction:
 
 class CBlockHeader:
     __slots__ = ("hashMerkleRoot", "hashPrevBlock", "nBits", "nNonce",
-                 "nTime", "nVersion")
+                 "nTime", "nVersion", "auxpow")
 
     def __init__(self, header=None):
         if header is None:
@@ -879,6 +879,7 @@ class CBlockHeader:
             self.nTime = header.nTime
             self.nBits = header.nBits
             self.nNonce = header.nNonce
+            self.auxpow = getattr(header, "auxpow", None)
 
     def set_null(self):
         self.nVersion = 4
@@ -887,6 +888,7 @@ class CBlockHeader:
         self.nTime = 0
         self.nBits = 0
         self.nNonce = 0
+        self.auxpow = None
 
     def deserialize(self, f):
         self.nVersion = int.from_bytes(f.read(4), "little", signed=True)
@@ -895,9 +897,17 @@ class CBlockHeader:
         self.nTime = int.from_bytes(f.read(8), "little")
         self.nBits = int.from_bytes(f.read(4), "little")
         self.nNonce = int.from_bytes(f.read(8), "little")
+        if (self.nVersion & 0x100) != 0:
+            from test_framework.auxpow import deserialize_auxpow
+            self.auxpow = deserialize_auxpow(f)
+        else:
+            self.auxpow = None
 
     def serialize(self):
-        return self._serialize_header()
+        r = self._serialize_header()
+        if (self.nVersion & 0x100) != 0 and self.auxpow is not None:
+            r += self.auxpow
+        return r
 
     def _serialize_header(self):
         r = b""

@@ -64,6 +64,10 @@ add_executable(test_bitcoin
   kaspa_tx_tests.cpp
   kaspa_merkle_tests.cpp
   kaspa_pow_tests.cpp
+  auxpow_ser_tests.cpp
+  auxpow_check_tests.cpp
+  auxpow_chain_tests.cpp
+  auxpow_reject_tests.cpp
   logging_tests.cpp
   mempool_tests.cpp
   mempool_fee_estimator_tests.cpp
@@ -215,6 +219,18 @@ endif()
 target_raw_data_sources(test_bitcoin NAMESPACE test::data
   data/asmap.raw
 )
+
+# The Kaspa goldens live outside src/test/data, so target_raw_data_sources()
+# cannot place their header on the test include path.
+set(kaspa_goldens_source ${PROJECT_SOURCE_DIR}/test/data/auxpow/kaspa_goldens.txt)
+set(kaspa_goldens_header ${CMAKE_CURRENT_BINARY_DIR}/data/auxpow/kaspa_goldens.txt.h)
+add_custom_command(
+  OUTPUT ${kaspa_goldens_header}
+  COMMAND ${CMAKE_COMMAND} -DRAW_SOURCE_PATH=${kaspa_goldens_source} -DHEADER_PATH=${kaspa_goldens_header} -DRAW_NAMESPACE=test::data -P ${PROJECT_SOURCE_DIR}/cmake/script/GenerateHeaderFromRaw.cmake
+  DEPENDS ${kaspa_goldens_source} ${PROJECT_SOURCE_DIR}/cmake/script/GenerateHeaderFromRaw.cmake
+  VERBATIM
+)
+target_sources(test_bitcoin PRIVATE ${kaspa_goldens_header})
 
 add_windows_application_manifest(test_bitcoin)
 

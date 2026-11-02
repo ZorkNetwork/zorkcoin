@@ -148,6 +148,9 @@ BASE_SCRIPTS = [
     'feature_maxuploadtarget.py',
     'feature_assumeutxo.py',
     'mweb_assumeutxo_fetch.py',
+    'feature_auxpow.py',
+    'feature_auxpow_headers_presync.py',
+    'feature_auxpow_mweb.py',
     'mempool_updatefromblock.py',
     'mempool_persist.py',
     # vv Tests less than 60s vv

@@ -85,6 +85,9 @@ add_library(bitcoin_consensus STATIC EXCLUDE_FROM_ALL
   auxpow/kaspa_tx.cpp
   auxpow/kaspa_merkle.cpp
   auxpow/kaspa_pow.cpp
+  auxpow/auxpow.cpp
+  auxpow/check.cpp
+  auxpow/chainwork.cpp
 )
 target_link_libraries(bitcoin_consensus
   PRIVATE

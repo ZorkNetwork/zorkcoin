@@ -163,6 +163,28 @@ struct Params {
     /** MWEB: Frozen MWEB output IDs that may not be spent. */
     std::vector<uint256> frozen_mweb_output_ids;
 
+    /**
+     * Kaspa AuxPoW consensus parameters (grouped for merge-safety).
+     * When fGenesisActive is true, AuxPoW is permitted from genesis alongside native PoW.
+     */
+    struct AuxPow {
+        bool fGenesisActive{false};
+        /** Dogecoin-style chain ID, carried in the low 16 bits of an AuxPoW block's nNonce. */
+        uint16_t nChainId{0};
+        /** AuxPoW must be at least this many times harder than native ASERT target. */
+        uint32_t nFloorMultiplier{4};
+        /** AuxPoW must be at least this many times harder than Kaspa peer header bits. */
+        uint32_t nKaspaMultiplier{3000};
+        /** Hard cap on serialized ZorkKaspaAuxPow / CAuxPow header-extension size. */
+        uint32_t nMaxSerializedSize{1280};
+        uint32_t nMaxPeerHeaderSize{720};
+        uint32_t nMaxCoinbaseTxSize{400};
+        uint32_t nMaxTxMerkleBranchHashes{8};
+        uint32_t nMaxChainMerkleBranchHashes{5};
+        /** Chain-work size-discount reference: W * REF / (REF + S). */
+        uint32_t nChainWorkRef{8192};
+    } auxpow;
+
     int DeploymentHeight(BuriedDeployment dep) const
     {
         switch (dep) {

@@ -15,6 +15,7 @@
 #include <util/hasher.h>
 
 #include <deque>
+#include <memory>
 #include <stdexcept>
 #include <vector>
 
@@ -26,6 +27,8 @@ struct CompressedHeader {
     uint64_t nTime{0};
     uint32_t nBits{0};
     uint64_t nNonce{0};
+    /** Heap-allocated so native CompressedHeader stays small; present iff bit 8. */
+    std::unique_ptr<auxpow::CAuxPow> auxpow;
 
     CompressedHeader()
     {
@@ -39,7 +42,15 @@ struct CompressedHeader {
           nBits{header.nBits},
           nNonce{header.nNonce}
     {
+        if (header.auxpow.has_value()) {
+            auxpow = std::make_unique<auxpow::CAuxPow>(*header.auxpow);
+        }
     }
+
+    CompressedHeader(CompressedHeader&&) noexcept = default;
+    CompressedHeader& operator=(CompressedHeader&&) noexcept = default;
+    CompressedHeader(const CompressedHeader&) = delete;
+    CompressedHeader& operator=(const CompressedHeader&) = delete;
 
     CBlockHeader GetFullHeader(const uint256& hash_prev_block) const
     {
@@ -50,6 +61,9 @@ struct CompressedHeader {
         ret.nTime = nTime;
         ret.nBits = nBits;
         ret.nNonce = nNonce;
+        if (auxpow) {
+            ret.auxpow = *auxpow;
+        }
         return ret;
     };
 };

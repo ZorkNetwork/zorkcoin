@@ -206,6 +206,17 @@ public:
         consensus.mweb_extradata_feature_activation_height = 0;
         consensus.mweb_kernel_lock_height_grandfather = 0;
 
+        consensus.auxpow.fGenesisActive = true;
+        consensus.auxpow.nChainId = 0x4b5a; // nNonce wire bytes "ZKAuxPoW"
+        consensus.auxpow.nFloorMultiplier = 4;
+        consensus.auxpow.nKaspaMultiplier = 3000;
+        consensus.auxpow.nMaxSerializedSize = 1280;
+        consensus.auxpow.nMaxPeerHeaderSize = 720;
+        consensus.auxpow.nMaxCoinbaseTxSize = 400;
+        consensus.auxpow.nMaxTxMerkleBranchHashes = 8;
+        consensus.auxpow.nMaxChainMerkleBranchHashes = 5;
+        consensus.auxpow.nChainWorkRef = 8192;
+
         consensus.nMinimumChainWork = uint256{};
         consensus.defaultAssumeValid = uint256{};
 
@@ -316,6 +327,17 @@ public:
         consensus.mweb_extradata_feature_activation_height = 0;
         consensus.mweb_kernel_lock_height_grandfather = 0;
 
+        consensus.auxpow.fGenesisActive = true;
+        consensus.auxpow.nChainId = 0x545a; // nNonce wire bytes "ZTAuxPoW"
+        consensus.auxpow.nFloorMultiplier = 4;
+        consensus.auxpow.nKaspaMultiplier = 3000;
+        consensus.auxpow.nMaxSerializedSize = 1280;
+        consensus.auxpow.nMaxPeerHeaderSize = 720;
+        consensus.auxpow.nMaxCoinbaseTxSize = 400;
+        consensus.auxpow.nMaxTxMerkleBranchHashes = 8;
+        consensus.auxpow.nMaxChainMerkleBranchHashes = 5;
+        consensus.auxpow.nChainWorkRef = 8192;
+
         consensus.nMinimumChainWork = uint256{};
         consensus.defaultAssumeValid = uint256{};
 
@@ -418,6 +440,17 @@ public:
         consensus.mweb_pegout_feature_activation_height = 0;
         consensus.mweb_extradata_feature_activation_height = 0;
         consensus.mweb_kernel_lock_height_grandfather = 0;
+
+        consensus.auxpow.fGenesisActive = true;
+        consensus.auxpow.nChainId = 0x545a; // nNonce wire bytes "ZTAuxPoW" (testnet4 shares test chain ID)
+        consensus.auxpow.nFloorMultiplier = 4;
+        consensus.auxpow.nKaspaMultiplier = 3000;
+        consensus.auxpow.nMaxSerializedSize = 1280;
+        consensus.auxpow.nMaxPeerHeaderSize = 720;
+        consensus.auxpow.nMaxCoinbaseTxSize = 400;
+        consensus.auxpow.nMaxTxMerkleBranchHashes = 8;
+        consensus.auxpow.nMaxChainMerkleBranchHashes = 5;
+        consensus.auxpow.nChainWorkRef = 8192;
 
         consensus.nMinimumChainWork = uint256{};
         consensus.defaultAssumeValid = uint256{};
@@ -560,6 +593,17 @@ public:
         consensus.mweb_extradata_feature_activation_height = 0;
         consensus.mweb_kernel_lock_height_grandfather = 0;
 
+        consensus.auxpow.fGenesisActive = true;
+        consensus.auxpow.nChainId = 0x535a; // nNonce wire bytes "ZSAuxPoW"
+        consensus.auxpow.nFloorMultiplier = 4;
+        consensus.auxpow.nKaspaMultiplier = 3000;
+        consensus.auxpow.nMaxSerializedSize = 1280;
+        consensus.auxpow.nMaxPeerHeaderSize = 720;
+        consensus.auxpow.nMaxCoinbaseTxSize = 400;
+        consensus.auxpow.nMaxTxMerkleBranchHashes = 8;
+        consensus.auxpow.nMaxChainMerkleBranchHashes = 5;
+        consensus.auxpow.nChainWorkRef = 8192;
+
         // message start is defined as the first 4 bytes of the sha256d of the block script
         HashWriter h{};
         h << consensus.signet_challenge;
@@ -661,6 +705,17 @@ public:
         consensus.mweb_pegout_feature_activation_height = 0;
         consensus.mweb_extradata_feature_activation_height = 0;
         consensus.mweb_kernel_lock_height_grandfather = 0;
+
+        consensus.auxpow.fGenesisActive = true;
+        consensus.auxpow.nChainId = 0x525a; // nNonce wire bytes "ZRAuxPoW"
+        consensus.auxpow.nFloorMultiplier = 4;
+        consensus.auxpow.nKaspaMultiplier = 3000;
+        consensus.auxpow.nMaxSerializedSize = 1280;
+        consensus.auxpow.nMaxPeerHeaderSize = 720;
+        consensus.auxpow.nMaxCoinbaseTxSize = 400;
+        consensus.auxpow.nMaxTxMerkleBranchHashes = 8;
+        consensus.auxpow.nMaxChainMerkleBranchHashes = 5;
+        consensus.auxpow.nChainWorkRef = 8192;
 
         genesis = CreateGenesisBlock(1296688602ULL * 1000, 1, 0x207fffff, 1, 50 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();

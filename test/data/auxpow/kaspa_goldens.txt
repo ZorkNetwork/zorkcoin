@@ -1,0 +1,55 @@
+# Kaspa AuxPoW golden vectors
+#
+# Generated from upstream rusty-kaspa for C++ cross-checks.
+# upstream: rusty-kaspa
+# commit: a41a333b08848f41bf737b72592e463a6011b8ac
+#
+# Hash hex encodings are raw byte order (Kaspa Hash Display), not
+# Bitcoin uint256S display-endian. Load with ParseHex into a byte
+# buffer, then copy into uint256 without reversing.
+
+# Kaspa AuxPoW goldens
+# upstream=rusty-kaspa
+# commit=a41a333b08848f41bf737b72592e463a6011b8ac
+
+header_version=2
+header_pre_pow_hash=3a43e4da7749ef6071df024308306846a1c5d7acfbeb9c6df76363e3f940df0b
+header_hash=dc4426bec5c022cee4f05c1983b2aa56b3d91138d3419cfab2654f1a0078c1e8
+header_timestamp=1700000000000
+header_bits=0x1e0ffff0
+header_nonce=42
+header_pow_ok=false
+header_pow=50106193971344715558557565365943215977409648944040274997976330295233357120760
+powhash_in=2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a
+powhash_ts=5435345234
+powhash_nonce=432432432
+powhash_out=2fb72b63dd0dd0d82b00cd9f83d4eca0710b7eb8c05966888f39ebc578978abf
+heavyhash_in=2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a
+heavyhash_out=ad4ded01225705fea9aa043dd0a4e22ca28068bb41d5c6e06d35ca507d5656c7
+matrix_heavy_of_powhash=5a5bcd6e352eb8c87c80d0f0574a45a5fcc3d5755660ac120dc9893684c19be6
+coinbase_tx_hash=85a2bc47826ae53354783eb2d16d013a8432da8a32f3350d42e38c42767b3877
+coinbase_payload_hex=0100000000000000f4010000000000000000200000000000000000000000000000000000000000000000000000000000000000fabe6d6d00000000000011110000000000000000000000000000000000000000000000000100000000000000
+coinbase_payload_len=95
+merkle_single=85a2bc47826ae53354783eb2d16d013a8432da8a32f3350d42e38c42767b3877
+merkle_two=29bad7e6df870b3924055095dc73c84dea97c336afdc43509875a2e7f215f6c6
+merkle_two_right=c9e29784564c269ce2faaffd3487cb4684383018ace11133de082dce4bb88b0b
+merkle_three=821a868d3cee000841efb2b5aae1ffd66a422c17e78b3098820926e54dcb4bba
+merkle_three_leaf3=0da0dd3a051b62a5c7460dd0517c7120b11698d3cbd3de7314374857f1873e92
+merkle_zero=0000000000000000000000000000000000000000000000000000000000000000
+blue_work_123456_preimage_hash=5ec9f4461d33f3040a7be72d0f24e5243c08c777a326cc9a213cef1f1df48d53
+blue_work_123456_manual=5ec9f4461d33f3040a7be72d0f24e5243c08c777a326cc9a213cef1f1df48d53
+
+# Synthetic header inputs used to produce the above hashes:
+# version=2
+# parents_by_level expanded: [[Hash::from_u64_word(1)]]
+# hash_merkle_root=from_u64_word(2)
+# accepted_id_merkle_root=from_u64_word(3)
+# utxo_commitment=from_u64_word(4)
+# timestamp=1700000000000
+# bits=0x1e0ffff0
+# nonce=42
+# daa_score=100
+# blue_work=0
+# blue_score=50
+# pruning_point=from_u64_word(5)
+# Hash::from_u64_word(n) = LE u64 in the last 8 bytes (words [0,0,0,n]), rest zero.

@@ -16,7 +16,9 @@
 
 uint256 CBlockHeader::GetHash() const
 {
-    return (HashWriter{} << *this).GetHash();
+    HashWriter hw{};
+    SerializeHashedFields(hw);
+    return hw.GetHash();
 }
 
 uint256 CBlockHeader::GetPoWHash() const
@@ -25,7 +27,9 @@ uint256 CBlockHeader::GetPoWHash() const
     std::span<const unsigned char> time{reinterpret_cast<const unsigned char*>(&nTime), sizeof(uint64_t)};
     std::span<const unsigned char> nonce{reinterpret_cast<const unsigned char*>(&nNonce), sizeof(uint64_t)};
 
-    const uint256 prePowHash = GetPrePowBlockHeader().GetHash();
+    HashWriter pre{};
+    GetPrePowBlockHeader().SerializeHashedFields(pre);
+    const uint256 prePowHash = pre.GetHash();
     KHeavyHash work{prePowHash};
     work.Write(prePowHash).Write(time).Write(uint256::ZERO).Write(nonce);
     work.Finalize(output);
@@ -54,6 +58,5 @@ CTransactionRef CBlock::GetHogEx() const noexcept
         assert(!vtx.back()->vout.empty());
         return vtx.back();
     }
-
     return nullptr;
 }

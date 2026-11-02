@@ -11,8 +11,12 @@
 #include <uint256.h>
 #include <util/time.h>
 #include <mweb/mweb_models.h> // MWEB
+#include <auxpow/auxpow.h>
+#include <auxpow/version.h>
 
 #include <cstdint>
+#include <ios>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -34,13 +38,45 @@ public:
     uint64_t nTime;
     uint32_t nBits;
     uint64_t nNonce;
+    /** Present iff auxpow::IsAuxPow(nVersion). Not part of GetHash()/GetPoWHash(). */
+    std::optional<auxpow::CAuxPow> auxpow;
 
     CBlockHeader()
     {
         SetNull();
     }
 
-    SERIALIZE_METHODS(CBlockHeader, obj) { READWRITE(obj.nVersion, obj.hashPrevBlock, obj.hashMerkleRoot, obj.nTime, obj.nBits, obj.nNonce); }
+    /** 88-byte hashed fields only. The AuxPoW header extension is never part of this preimage. */
+    template <typename Stream>
+    void SerializeHashedFields(Stream& s) const
+    {
+        s << nVersion << hashPrevBlock << hashMerkleRoot << nTime << nBits << nNonce;
+    }
+
+    template <typename Stream>
+    void Serialize(Stream& s) const
+    {
+        SerializeHashedFields(s);
+        if (auxpow::IsAuxPow(nVersion)) {
+            if (!auxpow.has_value()) {
+                throw std::ios_base::failure("auxpow bit set but header extension missing");
+            }
+            s << *auxpow;
+        }
+    }
+
+    template <typename Stream>
+    void Unserialize(Stream& s)
+    {
+        s >> nVersion >> hashPrevBlock >> hashMerkleRoot >> nTime >> nBits >> nNonce;
+        if (auxpow::IsAuxPow(nVersion)) {
+            auxpow::CAuxPow ext;
+            s >> ext;
+            auxpow = std::move(ext);
+        } else {
+            auxpow.reset();
+        }
+    }
 
     void SetNull()
     {
@@ -50,11 +86,18 @@ public:
         nTime = 0;
         nBits = 0;
         nNonce = 0;
+        auxpow.reset();
     }
 
     bool IsNull() const
     {
         return (nBits == 0);
+    }
+
+    /** Bit 8 requires a present CAuxPow; native headers are always complete. */
+    bool HasCompleteAuxPow() const
+    {
+        return !auxpow::IsAuxPow(nVersion) || auxpow.has_value();
     }
 
     uint256 GetHash() const;

@@ -23,6 +23,7 @@
 #include <flatfile.h>
 #include <headerssync.h>
 #include <index/blockfilterindex.h>
+#include <ios>
 #include <kernel/types.h>
 #include <logging.h>
 #include <merkleblock.h>
@@ -831,7 +832,11 @@ private:
     template <typename... Args>
     void MakeAndPushMessage(CNode& node, std::string msg_type, Args&&... args) const
     {
-        m_connman.PushMessage(&node, NetMsg::Make(std::move(msg_type), std::forward<Args>(args)...));
+        try {
+            m_connman.PushMessage(&node, NetMsg::Make(msg_type, std::forward<Args>(args)...));
+        } catch (const std::ios_base::failure& e) {
+            LogWarning("Dropping outbound %s to peer=%d: serialize failed (%s)", msg_type, node.GetId(), e.what());
+        }
     }
     template <typename... Args>
     [[maybe_unused]] void MakeAndPushFeature(CNode& node, std::string_view feature_id, Args&&... args) const
@@ -5034,6 +5039,10 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
         LogDebug(BCLog::NET, "getheaders %d to %s from peer=%d\n", (pindex ? pindex->nHeight : -1), hashStop.IsNull() ? "end" : hashStop.ToString(), pfrom.GetId());
         for (; pindex; pindex = m_chainman.ActiveChain().Next(*pindex))
         {
+            if (!pindex->HasCompleteAuxPow()) {
+                LogWarning("Skipping getheaders entry %s: auxpow bit set without header extension", pindex->GetBlockHash().ToString());
+                break;
+            }
             vHeaders.emplace_back(pindex->GetBlockHeader());
             if (--nLimit <= 0 || pindex->GetBlockHash() == hashStop)
                 break;
@@ -6622,6 +6631,11 @@ bool PeerManagerImpl::SendMessages(CNode& node)
                         break;
                     }
                     pBestIndex = pindex;
+                    if (!pindex->HasCompleteAuxPow()) {
+                        LogWarning("Reverting block announcement of %s to inv: auxpow bit set without header extension", pindex->GetBlockHash().ToString());
+                        fRevertToInv = true;
+                        break;
+                    }
                     if (fFoundStartingHeader) {
                         // add this to the headers message
                         vHeaders.emplace_back(pindex->GetBlockHeader());
@@ -6651,7 +6665,11 @@ bool PeerManagerImpl::SendMessages(CNode& node)
                     {
                         LOCK(m_most_recent_block_mutex);
                         if (m_most_recent_block_hash == pBestIndex->GetBlockHash()) {
-                            cached_cmpctblock_msg = NetMsg::Make(NetMsgType::CMPCTBLOCK, CmpctBlockSerParams()(*m_most_recent_compact_block)); // MWEB
+                            try {
+                                cached_cmpctblock_msg = NetMsg::Make(NetMsgType::CMPCTBLOCK, CmpctBlockSerParams()(*m_most_recent_compact_block)); // MWEB
+                            } catch (const std::ios_base::failure& e) {
+                                LogWarning("Dropping outbound cmpctblock to peer=%d: serialize failed (%s)", node.GetId(), e.what());
+                            }
                         }
                     }
                     if (!cached_cmpctblock_msg.has_value()) {

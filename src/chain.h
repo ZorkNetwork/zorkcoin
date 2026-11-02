@@ -7,6 +7,7 @@
 #define BITCOIN_CHAIN_H
 
 #include <arith_uint256.h>
+#include <auxpow/version.h>
 #include <consensus/params.h>
 #include <mw/models/block/header.h> // MWEB
 #include <flatfile.h>
@@ -20,6 +21,8 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <ios>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -148,6 +151,10 @@ public:
     uint64_t nTime{0};
     uint32_t nBits{0};
     uint64_t nNonce{0};
+    /** Serialized AuxPoW header-extension size; 0 if native or missing. */
+    uint32_t nAuxPowSize{0};
+    /** AuxPoW header extension; present when bit 8 is set and the header was accepted. */
+    std::optional<auxpow::CAuxPow> auxpow;
 
     //! MWEB data (only populated when BLOCK_HAVE_MWEB is set)
     mw::Header::CPtr mweb_header{nullptr};
@@ -167,8 +174,12 @@ public:
           hashMerkleRoot{block.hashMerkleRoot},
           nTime{block.nTime},
           nBits{block.nBits},
-          nNonce{block.nNonce}
+          nNonce{block.nNonce},
+          auxpow{block.auxpow}
     {
+        if (block.auxpow.has_value()) {
+            nAuxPowSize = static_cast<uint32_t>(auxpow::GetSerializeSizeAuxPow(*block.auxpow));
+        }
     }
 
     FlatFilePos GetBlockPos() const EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
@@ -203,7 +214,14 @@ public:
         block.nTime = nTime;
         block.nBits = nBits;
         block.nNonce = nNonce;
+        block.auxpow = auxpow;
         return block;
+    }
+
+    /** Bit 8 requires a present CAuxPow; native index entries are always complete. */
+    bool HasCompleteAuxPow() const
+    {
+        return !auxpow::IsAuxPow(nVersion) || auxpow.has_value();
     }
 
     uint256 GetBlockHash() const
@@ -319,10 +337,10 @@ protected:
 arith_uint256 GetBitsProof(uint32_t bits);
 
 /** Compute how much work a block index entry corresponds to. */
-inline arith_uint256 GetBlockProof(const CBlockIndex& block) { return GetBitsProof(block.nBits); }
+arith_uint256 GetBlockProof(const CBlockIndex& block);
 
-/** Compute how much work a block header corresponds to. */
-inline arith_uint256 GetBlockProof(const CBlockHeader& header) { return GetBitsProof(header.nBits); }
+/** Compute how much work a block header corresponds to (AuxPoW uses the real extension size, or 0 if missing). */
+arith_uint256 GetBlockProof(const CBlockHeader& header);
 
 /** Return the time it would take to redo the work difference between from and to, assuming the current hashrate corresponds to the difficulty at tip, in milliseconds. */
 int64_t GetBlockProofEquivalentTime(const CBlockIndex& to, const CBlockIndex& from, const CBlockIndex& tip, const Consensus::Params&);
@@ -381,6 +399,18 @@ public:
         READWRITE(obj.nTime);
         READWRITE(obj.nBits);
         READWRITE(obj.nNonce);
+        if (auxpow::IsAuxPow(obj.nVersion)) {
+            READWRITE(obj.nAuxPowSize);
+            auxpow::CAuxPow ext;
+            SER_WRITE(obj, {
+                if (!obj.auxpow.has_value()) {
+                    throw std::ios_base::failure("auxpow bit set but header extension missing on disk");
+                }
+                ext = *obj.auxpow;
+            });
+            READWRITE(ext);
+            SER_READ(obj, { obj.auxpow = std::move(ext); });
+        }
     }
 
     uint256 ConstructBlockHash() const

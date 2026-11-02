@@ -4,6 +4,9 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <chain.h>
+#include <auxpow/auxpow.h>
+#include <auxpow/chainwork.h>
+#include <auxpow/version.h>
 #include <tinyformat.h>
 #include <util/check.h>
 
@@ -130,6 +133,24 @@ arith_uint256 GetBitsProof(uint32_t bits)
     // as bnTarget+1, it is equal to ((2**256 - bnTarget - 1) / (bnTarget+1)) + 1,
     // or ~bnTarget / (bnTarget+1) + 1.
     return (~bnTarget / (bnTarget + 1)) + 1;
+}
+
+arith_uint256 GetBlockProof(const CBlockIndex& block)
+{
+    if (auxpow::IsAuxPow(block.nVersion)) {
+        if (block.nAuxPowSize == 0) return 0;
+        return auxpow::GetAuxPowBlockProof(block.nBits, block.nAuxPowSize);
+    }
+    return GetBitsProof(block.nBits);
+}
+
+arith_uint256 GetBlockProof(const CBlockHeader& header)
+{
+    if (auxpow::IsAuxPow(header.nVersion)) {
+        if (!header.auxpow.has_value()) return 0;
+        return auxpow::GetAuxPowBlockProof(header.nBits, static_cast<uint32_t>(auxpow::GetSerializeSizeAuxPow(*header.auxpow)));
+    }
+    return GetBitsProof(header.nBits);
 }
 
 int64_t GetBlockProofEquivalentTime(const CBlockIndex& to, const CBlockIndex& from, const CBlockIndex& tip, const Consensus::Params& params)

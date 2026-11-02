@@ -8,6 +8,9 @@
 #include <validation.h>
 
 #include <arith_uint256.h>
+#include <auxpow/auxpow.h>
+#include <auxpow/check.h>
+#include <auxpow/version.h>
 #include <chain.h>
 #include <checkqueue.h>
 #include <clientversion.h>
@@ -4241,6 +4244,18 @@ void ChainstateManager::ReceivedBlockTransactions(const CBlock& block, CBlockInd
 
 static bool CheckBlockHeader(const CBlockHeader& block, BlockValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW = true)
 {
+    // Bit 8 requires a verified AuxPoW header extension. Do not skip PoW and
+    // do not credit work without CheckAuxPow on that extension.
+    if (fCheckPOW && auxpow::IsAuxPow(block.nVersion)) {
+        if (!block.auxpow.has_value()) {
+            return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "bad-auxpow-missing", "auxpow bit set but header extension missing");
+        }
+        std::string err;
+        if (!auxpow::CheckAuxPow(block, *block.auxpow, consensusParams, &err)) {
+            return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "bad-auxpow", err);
+        }
+        return true;
+    }
     // Check proof of work matches claimed amount
     if (fCheckPOW && !CheckProofOfWork(block.GetPoWHash(), block.nBits, consensusParams))
         return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "high-hash", "proof of work failed");
@@ -4340,6 +4355,10 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
     // redundant with the call in AcceptBlockHeader.
     if (!CheckBlockHeader(block, state, consensusParams, fCheckPOW))
         return false;
+
+    if (auxpow::IsAuxPow(block.nVersion) != block.auxpow.has_value()) {
+        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-auxpow-flag", "auxpow bit/header-extension mismatch");
+    }
 
     // Signet only: check block solution
     if (consensusParams.signet_blocks && fCheckPOW && !CheckSignetBlockSolution(block, consensusParams)) {
@@ -4448,8 +4467,13 @@ void ChainstateManager::GenerateCoinbaseCommitment(CBlock& block, const CBlockIn
 
 bool HasValidProofOfWork(std::span<const CBlockHeader> headers, const Consensus::Params& consensusParams)
 {
-    return std::ranges::all_of(headers,
-                               [&](const auto& header) { return CheckProofOfWork(header.GetPoWHash(), header.nBits, consensusParams); });
+    return std::ranges::all_of(headers, [&](const auto& header) {
+        if (auxpow::IsAuxPow(header.nVersion)) {
+            if (!header.auxpow.has_value()) return false;
+            return auxpow::CheckAuxPow(header, *header.auxpow, consensusParams);
+        }
+        return CheckProofOfWork(header.GetPoWHash(), header.nBits, consensusParams);
+    });
 }
 
 bool IsBlockMutated(const CBlock& block, bool check_witness_root)
@@ -4642,6 +4666,14 @@ bool ChainstateManager::AcceptBlockHeader(const CBlockHeader& block, BlockValida
                 return state.Invalid(BlockValidationResult::BLOCK_CACHED_INVALID, "duplicate-invalid",
                                      strprintf("block %s was previously marked invalid", hash.ToString()));
             }
+            // Identity is the 88-byte hash; chainwork uses CAuxPow size. Pin the first verified extension.
+            if (auxpow::IsAuxPow(block.nVersion)) {
+                if (!block.auxpow.has_value() || !pindex->auxpow.has_value() ||
+                    !auxpow::AuxPowEqual(*pindex->auxpow, *block.auxpow)) {
+                    return state.Invalid(BlockValidationResult::BLOCK_MUTATED, "bad-auxpow-mismatch",
+                                         "auxpow header extension does not match first-seen proof");
+                }
+            }
             return true;
         }
 
@@ -4751,6 +4783,18 @@ bool ChainstateManager::AcceptBlock(const std::shared_ptr<const CBlock>& pblock,
 
     if (!accepted_header)
         return false;
+
+    if (auxpow::IsAuxPow(block.nVersion) && block.auxpow.has_value()) {
+        if (!pindex->auxpow.has_value()) {
+            pindex->auxpow = block.auxpow;
+            pindex->nAuxPowSize = static_cast<uint32_t>(auxpow::GetSerializeSizeAuxPow(*block.auxpow));
+            pindex->nChainWork = (pindex->pprev ? pindex->pprev->nChainWork : 0) + GetBlockProof(*pindex);
+            m_blockman.m_dirty_blockindex.insert(pindex);
+        } else if (!auxpow::AuxPowEqual(*pindex->auxpow, *block.auxpow)) {
+            return state.Invalid(BlockValidationResult::BLOCK_MUTATED, "bad-auxpow-mismatch",
+                                 "auxpow header extension does not match first-seen proof");
+        }
+    }
 
     // Check all requested blocks that we do not already have for validity and
     // save them to disk. Skip processing of unrequested blocks as an anti-DoS

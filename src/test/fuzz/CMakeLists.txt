@@ -9,6 +9,7 @@ add_executable(fuzz
   addrman.cpp
   asmap.cpp
   asmap_direct.cpp
+  auxpow.cpp
   autofile.cpp
   banman.cpp
   base_encode_decode.cpp
