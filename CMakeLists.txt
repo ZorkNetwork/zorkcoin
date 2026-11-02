@@ -9,12 +9,21 @@ project(libsecp256k1
   # backwards-compatible and therefore at most increase the minor version.
   VERSION 0.8.1
   DESCRIPTION "Optimized C library for ECDSA signatures and secret/public key operations on curve secp256k1."
-  HOMEPAGE_URL "https://github.com/bitcoin-core/secp256k1"
+  HOMEPAGE_URL "https://github.com/adgl-enterprises/secp256k1"
   LANGUAGES C
 )
 enable_testing()
 include(CTestUseLaunchers) # Allow users to set CTEST_USE_LAUNCHERS in custom `ctest -S` scripts.
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
+
+# BEGIN ZKP
+set(${PROJECT_NAME}_ZKP_VERSION 4)
+if(${PROJECT_NAME}_ZKP_VERSION EQUAL 0)
+  set(${PROJECT_NAME}_PACKAGE_VERSION "${PROJECT_VERSION}-zkp")
+else()
+  set(${PROJECT_NAME}_PACKAGE_VERSION "${PROJECT_VERSION}-zkp.${${PROJECT_NAME}_ZKP_VERSION}")
+endif()
+# END ZKP
 
 # The library version is based on libtool versioning of the ABI. The set of
 # rules for updating the version can be found here:
@@ -53,6 +62,14 @@ option(SECP256K1_ENABLE_MODULE_SCHNORRSIG "Enable schnorrsig module." ON)
 option(SECP256K1_ENABLE_MODULE_MUSIG "Enable musig module." ON)
 option(SECP256K1_ENABLE_MODULE_ELLSWIFT "Enable ElligatorSwift module." ON)
 option(SECP256K1_ENABLE_MODULE_SILENTPAYMENTS "Enable Silent Payments module." ON)
+
+# BEGIN ZKP
+option(SECP256K1_ENABLE_MODULE_GENERATOR "Enable NUMS generator module." ON)
+option(SECP256K1_ENABLE_MODULE_COMMITMENT "Enable Pedersen commitments module." ON)
+option(SECP256K1_ENABLE_MODULE_BULLETPROOF "Enable bulletproofs module." ON)
+option(SECP256K1_ENABLE_MODULE_AGGSIG "Enable aggsig module." ON)
+option(SECP256K1_ENABLE_MODULE_SCHNORRSIG_MW "Enable Mimblewimble Schnorr module." ON)
+# END ZKP
 
 option(SECP256K1_USE_EXTERNAL_DEFAULT_CALLBACKS "Enable external default callback functions." OFF)
 if(SECP256K1_USE_EXTERNAL_DEFAULT_CALLBACKS)
@@ -291,6 +308,13 @@ message("  schnorrsig .......................... ${SECP256K1_ENABLE_MODULE_SCHNO
 message("  musig ............................... ${SECP256K1_ENABLE_MODULE_MUSIG}")
 message("  ElligatorSwift ...................... ${SECP256K1_ENABLE_MODULE_ELLSWIFT}")
 message("  Silent Payments ..................... ${SECP256K1_ENABLE_MODULE_SILENTPAYMENTS}")
+# BEGIN ZKP
+message("  generator ........................... ${SECP256K1_ENABLE_MODULE_GENERATOR}")
+message("  commitment .......................... ${SECP256K1_ENABLE_MODULE_COMMITMENT}")
+message("  bulletproof ......................... ${SECP256K1_ENABLE_MODULE_BULLETPROOF}")
+message("  aggsig .............................. ${SECP256K1_ENABLE_MODULE_AGGSIG}")
+message("  schnorrsig-mw ....................... ${SECP256K1_ENABLE_MODULE_SCHNORRSIG_MW}")
+# END ZKP
 message("Parameters:")
 message("  ecmult window size .................. ${SECP256K1_ECMULT_WINDOW_SIZE}")
 message("  ecmult gen table size ............... ${SECP256K1_ECMULT_GEN_KB} KiB")

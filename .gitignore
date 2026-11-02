@@ -1,6 +1,8 @@
 bench
 bench_ecmult
 bench_internal
+bench_bulletproof
+bench_generator
 noverify_tests
 tests
 exhaustive_tests

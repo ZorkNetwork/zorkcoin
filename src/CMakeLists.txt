@@ -54,6 +54,52 @@ if(SECP256K1_ENABLE_MODULE_ECDH)
   set_property(TARGET secp256k1 APPEND PROPERTY PUBLIC_HEADER ${PROJECT_SOURCE_DIR}/include/secp256k1_ecdh.h)
 endif()
 
+# BEGIN ZKP
+if(SECP256K1_ENABLE_MODULE_SCHNORRSIG_MW)
+  if(NOT SECP256K1_ENABLE_MODULE_GENERATOR)
+    message(FATAL_ERROR "Module dependency error: schnorrsig-mw requires generator.")
+  endif()
+  add_compile_definitions(ENABLE_MODULE_SCHNORRSIG_MW=1)
+  set_property(TARGET secp256k1 APPEND PROPERTY PUBLIC_HEADER ${PROJECT_SOURCE_DIR}/include/secp256k1_schnorrsig_mw.h)
+endif()
+
+if(SECP256K1_ENABLE_MODULE_AGGSIG)
+  if(NOT SECP256K1_ENABLE_MODULE_GENERATOR)
+    message(FATAL_ERROR "Module dependency error: aggsig requires generator.")
+  endif()
+  add_compile_definitions(ENABLE_MODULE_AGGSIG=1)
+  set_property(TARGET secp256k1 APPEND PROPERTY PUBLIC_HEADER ${PROJECT_SOURCE_DIR}/include/secp256k1_aggsig.h)
+endif()
+
+if(SECP256K1_ENABLE_MODULE_BULLETPROOF)
+  if(NOT SECP256K1_ENABLE_MODULE_COMMITMENT)
+    message(FATAL_ERROR "Module dependency error: bulletproof requires commitment.")
+  endif()
+  if(NOT SECP256K1_ENABLE_MODULE_GENERATOR)
+    message(FATAL_ERROR "Module dependency error: bulletproof requires generator.")
+  endif()
+  add_compile_definitions(ENABLE_MODULE_BULLETPROOF=1)
+  set_property(TARGET secp256k1 APPEND PROPERTY PUBLIC_HEADER ${PROJECT_SOURCE_DIR}/include/secp256k1_bulletproofs.h)
+endif()
+
+if(SECP256K1_ENABLE_MODULE_COMMITMENT)
+  if(NOT SECP256K1_ENABLE_MODULE_GENERATOR)
+    message(FATAL_ERROR "Module dependency error: commitment requires generator.")
+  endif()
+  add_compile_definitions(ENABLE_MODULE_COMMITMENT=1)
+  set_property(TARGET secp256k1 APPEND PROPERTY PUBLIC_HEADER ${PROJECT_SOURCE_DIR}/include/secp256k1_commitment.h)
+endif()
+
+if(SECP256K1_ENABLE_MODULE_GENERATOR)
+  add_compile_definitions(ENABLE_MODULE_GENERATOR=1)
+  set_property(TARGET secp256k1 APPEND PROPERTY PUBLIC_HEADER
+    ${PROJECT_SOURCE_DIR}/include/secp256k1_generator.h
+    ${PROJECT_SOURCE_DIR}/include/secp256k1_scratch.h
+    ${PROJECT_SOURCE_DIR}/include/secp256k1_zkp.h
+  )
+endif()
+# END ZKP
+
 add_library(secp256k1_precomputed OBJECT EXCLUDE_FROM_ALL
   precomputed_ecmult.c
   precomputed_ecmult_gen.c
@@ -117,6 +163,16 @@ if(SECP256K1_BUILD_BENCHMARK)
   target_link_libraries(bench_internal secp256k1_precomputed secp256k1_asm)
   add_executable(bench_ecmult bench_ecmult.c)
   target_link_libraries(bench_ecmult secp256k1_precomputed secp256k1_asm)
+  # BEGIN ZKP
+  if(SECP256K1_ENABLE_MODULE_GENERATOR)
+    add_executable(bench_generator bench_generator.c)
+    target_link_libraries(bench_generator secp256k1)
+  endif()
+  if(SECP256K1_ENABLE_MODULE_BULLETPROOF)
+    add_executable(bench_bulletproof bench_bulletproof.c)
+    target_link_libraries(bench_bulletproof secp256k1)
+  endif()
+  # END ZKP
 endif()
 
 if(SECP256K1_BUILD_TESTS)
