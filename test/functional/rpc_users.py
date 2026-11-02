@@ -38,7 +38,7 @@ class HTTPBasicsTest(BitcoinTestFramework):
         self.num_nodes = 2
 
     def conf_setup(self):
-        #Append rpcauth to bitcoin.conf before initialization
+        #Append rpcauth to zorkcoin.conf before initialization
         self.rtpassword = "cA773lm788buwYe4g4WT+05pKyNruVKjQ25x3n0DQcM="
         rpcauth = "rpcauth=rt:93648e835a54c573682c2eb19f882535$7681e9c5b74bdd85e78166031d2058e1069b3ed7ed967c93fc63abba06f31144"
 
@@ -61,11 +61,11 @@ class HTTPBasicsTest(BitcoinTestFramework):
         self.password = lines[3]
 
         self.stop_nodes()
-        with open(self.nodes[0].datadir_path / "bitcoin.conf", "a") as f:
+        with open(self.nodes[0].datadir_path / "zorkcoin.conf", "a") as f:
             f.write(rpcauth + "\n")
             f.write(rpcauth2 + "\n")
             f.write(rpcauth3 + "\n")
-        with open(self.nodes[1].datadir_path / "bitcoin.conf", "a") as f:
+        with open(self.nodes[1].datadir_path / "zorkcoin.conf", "a") as f:
             f.write("rpcuser={}\n".format(self.rpcuser))
             f.write("rpcpassword={}\n".format(self.rpcpassword))
         self.start_nodes()

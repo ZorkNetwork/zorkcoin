@@ -22,7 +22,7 @@ void MWEBTests::mwebUriTests()
 
     SendCoinsRecipient info(address, QStringLiteral("mweb-label"), 0, QStringLiteral("mweb-msg"));
     const QString uri = GUIUtil::formatBitcoinURI(info);
-    QVERIFY(uri.startsWith(QStringLiteral("bitcoin:") + address.toUpper()));
+    QVERIFY(uri.startsWith(QStringLiteral("zorkcoin:") + address.toUpper()));
 
     SendCoinsRecipient parsed;
     QVERIFY(GUIUtil::parseBitcoinURI(uri, &parsed));
@@ -35,10 +35,10 @@ void MWEBTests::mwebUriTests()
     QCOMPARE(validator.validate(parsed.address, pos), QValidator::Acceptable);
     const bech32::DecodeResult dec = bech32::Decode(address.toStdString(), bech32::CharLimit::MWEB);
     QVERIFY(dec.encoding == bech32::Encoding::BECH32);
-    for (const std::string hrp : {"ltcmweb", "tmweb", "rmweb", "bc1m", "tb1m"}) {
+    for (const std::string hrp : {"ltcmweb", "mweb", "rmweb", "bc1m", "tb1m", "bcrt1m"}) {
         const QString foreign = QString::fromStdString(bech32::Encode(bech32::Encoding::BECH32, hrp, dec.data));
         SendCoinsRecipient foreign_parsed;
-        QVERIFY(GUIUtil::parseBitcoinURI(QStringLiteral("bitcoin:") + foreign, &foreign_parsed));
+        QVERIFY(GUIUtil::parseBitcoinURI(QStringLiteral("zorkcoin:") + foreign, &foreign_parsed));
         QCOMPARE(foreign_parsed.address, foreign);
         QCOMPARE(validator.validate(foreign_parsed.address, pos), QValidator::Invalid);
     }

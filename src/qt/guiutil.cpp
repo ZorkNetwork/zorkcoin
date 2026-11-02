@@ -111,15 +111,15 @@ static std::string DummyAddress(const CChainParams &params)
     std::string addr;
     switch (params.GetChainType()) {
     case ChainType::MAIN:
-        addr = "bc1p35yvjel7srp783ztf8v6jdra7dhfzk5jaun8xz2qp6ws7z80n4tq2jku9f";
+        addr = "zork1p35yvjel7srp783ztf8v6jdra7dhfzk5jaun8xz2qp6ws7z80n4tqa6qnlg";
         break;
     case ChainType::SIGNET:
     case ChainType::TESTNET:
     case ChainType::TESTNET4:
-        addr = "tb1p35yvjel7srp783ztf8v6jdra7dhfzk5jaun8xz2qp6ws7z80n4tqa6qnlg";
+        addr = "zorktest1p35yvjel7srp783ztf8v6jdra7dhfzk5jaun8xz2qp6ws7z80n4tq2jku9f";
         break;
     case ChainType::REGTEST:
-        addr = "bcrt1p35yvjel7srp783ztf8v6jdra7dhfzk5jaun8xz2qp6ws7z80n4tqsr2427";
+        addr = "zorksim1p35yvjel7srp783ztf8v6jdra7dhfzk5jaun8xz2qp6ws7z80n4tqsr2427";
         break;
     } // no default case, so the compiler can warn about missing cases
     assert(!addr.empty());
@@ -135,7 +135,7 @@ void setupAddressWidget(QValidatedLineEdit *widget, QWidget *parent)
     widget->setFont(fixedPitchFont());
     // We don't want translators to use own addresses in translations
     // and this is the only place, where this address is supplied.
-    widget->setPlaceholderText(QObject::tr("Enter a Bitcoin address (e.g. %1)").arg(
+    widget->setPlaceholderText(QObject::tr("Enter a Zorkcoin address (e.g. %1)").arg(
         QString::fromStdString(DummyAddress(Params()))));
     widget->setValidator(new BitcoinAddressEntryValidator(parent));
     widget->setCheckValidator(new BitcoinAddressCheckValidator(parent));
@@ -149,7 +149,7 @@ void AddButtonShortcut(QAbstractButton* button, const QKeySequence& shortcut)
 bool parseBitcoinURI(const QUrl &uri, SendCoinsRecipient *out)
 {
     // return if URI is not valid or is no bitcoin: URI
-    if(!uri.isValid() || uri.scheme() != QString("bitcoin"))
+    if(!uri.isValid() || uri.scheme() != QString("zorkcoin"))
         return false;
 
     SendCoinsRecipient rv;
@@ -214,7 +214,7 @@ QString formatBitcoinURI(const SendCoinsRecipient &info)
     bool bech_32 = info.address.startsWith(QString::fromStdString(Params().Bech32HRP() + "1"))
         || info.address.startsWith(mweb_hrp);
 
-    QString ret = QString("bitcoin:%1").arg(bech_32 ? info.address.toUpper() : info.address);
+    QString ret = QString("zorkcoin:%1").arg(bech_32 ? info.address.toUpper() : info.address);
     int paramCount = 0;
 
     if (info.amount)
@@ -524,15 +524,15 @@ fs::path static StartupShortcutPath()
 {
     ChainType chain = gArgs.GetChainType();
     if (chain == ChainType::MAIN)
-        return GetSpecialFolderPath(CSIDL_STARTUP) / "Bitcoin.lnk";
+        return GetSpecialFolderPath(CSIDL_STARTUP) / "Zorkcoin.lnk";
     if (chain == ChainType::TESTNET) // Remove this special case when testnet CBaseChainParams::DataDir() is incremented to "testnet4"
-        return GetSpecialFolderPath(CSIDL_STARTUP) / "Bitcoin (testnet).lnk";
-    return GetSpecialFolderPath(CSIDL_STARTUP) / fs::u8path(strprintf("Bitcoin (%s).lnk", ChainTypeToString(chain)));
+        return GetSpecialFolderPath(CSIDL_STARTUP) / "Zorkcoin (testnet).lnk";
+    return GetSpecialFolderPath(CSIDL_STARTUP) / fs::u8path(strprintf("Zorkcoin (%s).lnk", ChainTypeToString(chain)));
 }
 
 bool GetStartOnSystemStartup()
 {
-    // check for Bitcoin*.lnk
+    // check for Zorkcoin*.lnk
     return fs::exists(StartupShortcutPath());
 }
 
@@ -607,8 +607,8 @@ fs::path static GetAutostartFilePath()
 {
     ChainType chain = gArgs.GetChainType();
     if (chain == ChainType::MAIN)
-        return GetAutostartDir() / "bitcoin.desktop";
-    return GetAutostartDir() / fs::u8path(strprintf("bitcoin-%s.desktop", ChainTypeToString(chain)));
+        return GetAutostartDir() / "zorkcoin.desktop";
+    return GetAutostartDir() / fs::u8path(strprintf("zorkcoin-%s.desktop", ChainTypeToString(chain)));
 }
 
 bool GetStartOnSystemStartup()
@@ -649,13 +649,13 @@ bool SetStartOnSystemStartup(bool fAutoStart)
         if (!optionFile.good())
             return false;
         ChainType chain = gArgs.GetChainType();
-        // Write a bitcoin.desktop file to the autostart directory:
+        // Write a zorkcoin.desktop file to the autostart directory:
         optionFile << "[Desktop Entry]\n";
         optionFile << "Type=Application\n";
         if (chain == ChainType::MAIN)
-            optionFile << "Name=Bitcoin\n";
+            optionFile << "Name=Zorkcoin\n";
         else
-            optionFile << strprintf("Name=Bitcoin (%s)\n", ChainTypeToString(chain));
+            optionFile << strprintf("Name=Zorkcoin (%s)\n", ChainTypeToString(chain));
         optionFile << "Exec=" << pszExePath << strprintf(" -min -chain=%s\n", ChainTypeToString(chain));
         optionFile << "Terminal=false\n";
         optionFile << "Hidden=false\n";

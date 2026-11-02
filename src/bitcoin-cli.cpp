@@ -154,7 +154,7 @@ static void SetupCliArgs(ArgsManager& argsman)
     argsman.AddArg("-generate",
                    strprintf("Generate blocks, equivalent to RPC getnewaddress followed by RPC generatetoaddress. Optional positional integer "
                              "arguments are number of blocks to generate (default: %s) and maximum iterations to try (default: %s), equivalent to "
-                             "RPC generatetoaddress nblocks and maxtries arguments. Example: bitcoin-cli -generate 4 1000",
+                             "RPC generatetoaddress nblocks and maxtries arguments. Example: zorkcoin-cli -generate 4 1000",
                              DEFAULT_NBLOCKS, DEFAULT_MAX_TRIES),
                    ArgsManager::ALLOW_ANY, OptionsCategory::CLI_COMMANDS);
     argsman.AddArg("-addrinfo", "Get the number of addresses known to the node, per network and total.", ArgsManager::ALLOW_ANY, OptionsCategory::CLI_COMMANDS);
@@ -216,15 +216,15 @@ static int AppInitRPC(int argc, char* argv[])
             strUsage += FormatParagraph(LicenseInfo());
         } else {
             strUsage += "\n"
-                "The bitcoin-cli utility provides a command line interface to interact with a " CLIENT_NAME " RPC server.\n"
+                "The zorkcoin-cli utility provides a command line interface to interact with a " CLIENT_NAME " RPC server.\n"
                 "\nIt can be used to query network information, manage wallets, create or broadcast transactions, and control the " CLIENT_NAME " server.\n"
                 "\nUse the \"help\" command to list all commands. Use \"help <command>\" to show help for that command.\n"
                 "The -named option allows you to specify parameters using the key=value format, eliminating the need to pass unused positional parameters.\n"
                 "\n"
-                "Usage: bitcoin-cli [options] <command> [params]\n"
-                "or:    bitcoin-cli [options] -named <command> [name=value]...\n"
-                "or:    bitcoin-cli [options] help\n"
-                "or:    bitcoin-cli [options] help <command>\n"
+                "Usage: zorkcoin-cli [options] <command> [params]\n"
+                "or:    zorkcoin-cli [options] -named <command> [name=value]...\n"
+                "or:    zorkcoin-cli [options] help\n"
+                "or:    zorkcoin-cli [options] help <command>\n"
                 "\n";
             strUsage += "\n" + gArgs.GetHelpMessage();
         }
@@ -291,7 +291,7 @@ struct AddrinfoRequestHandler : BaseRequestHandler {
     {
         if (!reply["error"].isNull()) {
             if (reply["error"]["code"].getInt<int>() == RPC_METHOD_NOT_FOUND) {
-                throw std::runtime_error("-addrinfo requires bitcoind v26.0 or later which supports getaddrmaninfo RPC. Please upgrade your node or use bitcoin-cli from the same version.");
+                throw std::runtime_error("-addrinfo requires zorkcoind v26.0 or later which supports getaddrmaninfo RPC. Please upgrade your node or use zorkcoin-cli from the same version.");
             }
             return reply;
         }
@@ -491,15 +491,15 @@ public:
                 n = *res;
                 m_details_level = std::min(n, NETINFO_MAX_LEVEL);
             } else {
-                throw std::runtime_error(strprintf("invalid -netinfo level argument: %s\nFor more information, run: bitcoin-cli -netinfo help", args.at(0)));
+                throw std::runtime_error(strprintf("invalid -netinfo level argument: %s\nFor more information, run: zorkcoin-cli -netinfo help", args.at(0)));
             }
             if (args.size() > 1) {
                 if (std::string_view s{args.at(1)}; n && (s == "o" || s == "outonly")) {
                     m_outbound_only_selected = true;
                 } else if (n) {
-                    throw std::runtime_error(strprintf("invalid -netinfo outonly argument: %s\nFor more information, run: bitcoin-cli -netinfo help", s));
+                    throw std::runtime_error(strprintf("invalid -netinfo outonly argument: %s\nFor more information, run: zorkcoin-cli -netinfo help", s));
                 } else {
-                    throw std::runtime_error(strprintf("invalid -netinfo outonly argument: %s\nThe outonly argument is only valid for a level greater than 0 (the first argument). For more information, run: bitcoin-cli -netinfo help", s));
+                    throw std::runtime_error(strprintf("invalid -netinfo outonly argument: %s\nThe outonly argument is only valid for a level greater than 0 (the first argument). For more information, run: zorkcoin-cli -netinfo help", s));
                 }
             }
         }
@@ -517,7 +517,7 @@ public:
 
         const UniValue& networkinfo{batch[ID_NETWORKINFO]["result"]};
         if (networkinfo["version"].getInt<int>() < 209900) {
-            throw std::runtime_error("-netinfo requires bitcoind server to be running v0.21.0 and up");
+            throw std::runtime_error("-netinfo requires zorkcoind server to be running v0.21.0 and up");
         }
         const int64_t time_now{TicksSinceEpoch<std::chrono::seconds>(CliClock::now())};
 
@@ -742,17 +742,17 @@ public:
         "* The local addresses table lists each local address broadcast by the node, the port, and the score.\n\n"
         "Examples:\n\n"
         "Peer counts table of reachable networks and list of local addresses\n"
-        "> bitcoin-cli -netinfo\n\n"
+        "> zorkcoin-cli -netinfo\n\n"
         "The same, preceded by a peers listing without address and version columns\n"
-        "> bitcoin-cli -netinfo 1\n\n"
+        "> zorkcoin-cli -netinfo 1\n\n"
         "Full dashboard\n"
-        + strprintf("> bitcoin-cli -netinfo %d\n\n", NETINFO_MAX_LEVEL) +
+        + strprintf("> zorkcoin-cli -netinfo %d\n\n", NETINFO_MAX_LEVEL) +
         "Full dashboard, but with outbound peers only\n"
-        + strprintf("> bitcoin-cli -netinfo %d outonly\n\n", NETINFO_MAX_LEVEL) +
+        + strprintf("> zorkcoin-cli -netinfo %d outonly\n\n", NETINFO_MAX_LEVEL) +
         "Full live dashboard, adjust --interval or --no-title as needed (Linux)\n"
-        + strprintf("> watch --interval 1 --no-title bitcoin-cli -netinfo %d\n\n", NETINFO_MAX_LEVEL) +
+        + strprintf("> watch --interval 1 --no-title zorkcoin-cli -netinfo %d\n\n", NETINFO_MAX_LEVEL) +
         "See this help\n"
-        "> bitcoin-cli -netinfo help\n"};
+        "> zorkcoin-cli -netinfo help\n"};
 };
 
 /** Process RPC generatetoaddress request. */
@@ -806,10 +806,10 @@ static std::optional<UniValue> CallIPC(BaseRequestHandler* rh, const std::string
         throw std::runtime_error("-rpcconnect and -ipcconnect options cannot both be enabled");
     }
 
-    std::unique_ptr<interfaces::Init> local_init{interfaces::MakeBasicInit("bitcoin-cli")};
+    std::unique_ptr<interfaces::Init> local_init{interfaces::MakeBasicInit("zorkcoin-cli")};
     if (!local_init || !local_init->ipc()) {
         if (ipcconnect == "auto") return {}; // Use HTTP if -ipcconnect=auto is set and there is no IPC support.
-        throw std::runtime_error("bitcoin-cli was not built with IPC support");
+        throw std::runtime_error("zorkcoin-cli was not built with IPC support");
     }
 
     std::unique_ptr<interfaces::Init> node_init;
@@ -1229,8 +1229,8 @@ static UniValue CallRPC(BaseRequestHandler* rh, const std::string& strMethod, co
     } catch (const CConnectionFailed& e) {
         const std::string formatted_error{*e.what() ? strprintf(" (%s)", e.what()) : ""};
         throw CConnectionFailed(strprintf("Error while attempting to communicate with server %s:%d%s\n\n"
-                    "Make sure the bitcoind server is running and that you are connecting to the correct RPC port.\n"
-                    "Use \"bitcoin-cli -help\" for more info.",
+                    "Make sure the zorkcoind server is running and that you are connecting to the correct RPC port.\n"
+                    "Use \"zorkcoin-cli -help\" for more info.",
                     host, port, formatted_error));
     }
 
@@ -1343,7 +1343,7 @@ static void ParseError(const UniValue& error, std::string& strPrint, int& nRet)
         }
         if (err_code.isNum() && err_code.getInt<int>() == RPC_WALLET_NOT_SPECIFIED) {
             strPrint += " Or for the CLI, specify the \"-rpcwallet=<walletname>\" option before the command";
-            strPrint += " (run \"bitcoin-cli -h\" for help or \"bitcoin-cli listwallets\" to see which wallets are currently loaded).";
+            strPrint += " (run \"zorkcoin-cli -h\" for help or \"zorkcoin-cli listwallets\" to see which wallets are currently loaded).";
         }
     } else {
         strPrint = "error: " + error.write();

@@ -31,7 +31,7 @@ static CAmount GetReceived(const CWallet& wallet, const UniValue& params, bool b
         // Get the address
         CTxDestination dest = DecodeDestination(params[0].get_str());
         if (!IsValidDestination(dest)) {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid Bitcoin address");
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid Zorkcoin address");
         }
         addresses.emplace_back(dest);
     }
@@ -96,7 +96,7 @@ RPCMethod getreceivedbyaddress()
         "getreceivedbyaddress",
         "Returns the total amount received by the given address in transactions with at least minconf confirmations.\n",
                 {
-                    {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "The bitcoin address for transactions."},
+                    {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "The zorkcoin address for transactions."},
                     {"minconf", RPCArg::Type::NUM, RPCArg::Default{1}, "Only include transactions confirmed at least this many times."},
                     {"include_immature_coinbase", RPCArg::Type::BOOL, RPCArg::Default{false}, "Include immature coinbase transactions."},
                 },
@@ -518,9 +518,9 @@ RPCMethod listunspent()
                 {
                     {"minconf", RPCArg::Type::NUM, RPCArg::Default{1}, "The minimum confirmations to filter"},
                     {"maxconf", RPCArg::Type::NUM, RPCArg::Default{9999999}, "The maximum confirmations to filter"},
-                    {"addresses", RPCArg::Type::ARR, RPCArg::Default{UniValue::VARR}, "The bitcoin addresses to filter",
+                    {"addresses", RPCArg::Type::ARR, RPCArg::Default{UniValue::VARR}, "The zorkcoin addresses to filter",
                         {
-                            {"address", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "bitcoin address"},
+                            {"address", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "zorkcoin address"},
                         },
                     },
                     {"include_unsafe", RPCArg::Type::BOOL, RPCArg::Default{true}, "Include outputs that are not safe to spend\n"
@@ -541,9 +541,9 @@ RPCMethod listunspent()
                         {RPCResult::Type::OBJ, "", "",
                         {
                             {RPCResult::Type::STR_HEX, "txid", "the transaction id"},
-                            {RPCResult::Type::NUM, "vout", /*optional=*/true, "the vout value (L1 outputs only; omitted for MWEB coins, matching Litecoin Core)"},
+                            {RPCResult::Type::NUM, "vout", /*optional=*/true, "the vout value (L1 outputs only; omitted for MWEB coins)"},
                             {RPCResult::Type::STR_HEX, "output_id", /*optional=*/true, "MWEB output id (MWEB coins only; use with send options.inputs)"},
-                            {RPCResult::Type::STR, "address", /*optional=*/true, "the bitcoin address"},
+                            {RPCResult::Type::STR, "address", /*optional=*/true, "the zorkcoin address"},
                             {RPCResult::Type::STR, "label", /*optional=*/true, "The associated label, or \"\" for the default label"},
                             {RPCResult::Type::STR_HEX, "scriptPubKey", /*optional=*/true, "the output script (L1 outputs only)"},
                             {RPCResult::Type::STR_AMOUNT, "amount", "the transaction output amount in " + CURRENCY_UNIT},
@@ -595,7 +595,7 @@ RPCMethod listunspent()
             const UniValue& input = inputs[idx];
             CTxDestination dest = DecodeDestination(input.get_str());
             if (!IsValidDestination(dest)) {
-                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, std::string("Invalid Bitcoin address: ") + input.get_str());
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, std::string("Invalid Zorkcoin address: ") + input.get_str());
             }
             if (!destinations.insert(dest).second) {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, std::string("Invalid parameter, duplicated address: ") + input.get_str());

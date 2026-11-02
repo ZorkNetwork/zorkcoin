@@ -11,25 +11,25 @@ from test_framework.util import (
     assert_raises_rpc_error,
 )
 
-BECH32_VALID = 'bcrt1qtmp74ayg7p24uslctssvjm06q5phz4yrxucgnv'
-BECH32_VALID_UNKNOWN_WITNESS = 'bcrt1p424qxxyd0r'
-BECH32_VALID_CAPITALS = 'BCRT1QPLMTZKC2XHARPPZDLNPAQL78RSHJ68U33RAH7R'
-BECH32_VALID_MULTISIG = 'bcrt1qdg3myrgvzw7ml9q0ejxhlkyxm7vl9r56yzkfgvzclrf4hkpx9yfqhpsuks'
+BECH32_VALID = 'zorksim1qtmp75a5c7p26uslctq9k77322plpy25329p2n3'
+BECH32_VALID_UNKNOWN_WITNESS = 'zorksim1pqyqsy2yfvl'
+BECH32_VALID_CAPITALS = 'ZORKSIM1QTMP75A5C7P26USLCTQ9K77322PLPY25329P2N3'
+BECH32_VALID_MULTISIG = 'zorksim1q0yjnqzs0nxzpesqmzfv006q9fwgu833xme5kuu60tuan72n77j8q5t3rjx'
 
-BECH32_INVALID_BECH32 = 'bcrt1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqdmchcc'
-BECH32_INVALID_BECH32M = 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7k35mrzd'
-BECH32_INVALID_VERSION = 'bcrt130xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqynjegk'
-BECH32_INVALID_SIZE = 'bcrt1s0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7v8n0nx0muaewav25430mtr'
-BECH32_INVALID_V0_SIZE = 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kqqq5k3my'
+BECH32_INVALID_BECH32 = 'zorksim1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqer0zsd'
+BECH32_INVALID_BECH32M = 'zorksim1qw508d6qejxtdg4y5r3zarvary0c5xw7klvnhj0'
+BECH32_INVALID_VERSION = 'zorksim130xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqst9vqr'
+BECH32_INVALID_SIZE = 'zorksim1sqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq7g9fz9'
+BECH32_INVALID_V0_SIZE = 'zorksim1qqp0v86nknrc9ttjrlpvqkmm69fg8uy32jy5dq0xf'
 BECH32_INVALID_PREFIX = 'bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7k7grplx'
-BECH32_TOO_LONG = 'bcrt1q049edschfnwystcqnsvyfpj23mpsg3jcedq9xv049edschfnwystcqnsvyfpj23mpsg3jcedq9xv049edschfnwystcqnsvyfpj23m'
-BECH32_ONE_ERROR = 'bcrt1q049edschfnwystcqnsvyfpj23mpsg3jcedq9xv'
-BECH32_ONE_ERROR_CAPITALS = 'BCRT1QPLMTZKC2XHARPPZDLNPAQL78RSHJ68U32RAH7R'
-BECH32_TWO_ERRORS = 'bcrt1qax9suht3qv95sw33xavx8crpxduefdrsvgsklu' # should be bcrt1qax9suht3qv95sw33wavx8crpxduefdrsvgsklx
-BECH32_NO_SEPARATOR = 'bcrtq049ldschfnwystcqnsvyfpj23mpsg3jcedq9xv'
-BECH32_INVALID_CHAR = 'bcrt1q04oldschfnwystcqnsvyfpj23mpsg3jcedq9xv'
-BECH32_MULTISIG_TWO_ERRORS = 'bcrt1qdg3myrgvzw7ml8q0ejxhlkyxn7vl9r56yzkfgvzclrf4hkpx9yfqhpsuks'
-BECH32_WRONG_VERSION = 'bcrt1ptmp74ayg7p24uslctssvjm06q5phz4yrxucgnv'
+BECH32_TOO_LONG = 'zorksim1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
+BECH32_ONE_ERROR = 'zorksim1qvmp75a5c7p26uslctq9k77322plpy25329p2n3'
+BECH32_ONE_ERROR_CAPITALS = 'ZORKSIM1QVMP75A5C7P26USLCTQ9K77322PLPY25329P2N3'
+BECH32_TWO_ERRORS = 'zorksim1qtmp75a4c7p26uslcvq9k77322plpy25329p2n3'
+BECH32_NO_SEPARATOR = 'zorksimqtmp75a5c7p26uslctq9k77322plpy25329p2n3'
+BECH32_INVALID_CHAR = 'zorksim1btmp75a5c7p26uslctq9k77322plpy25329p2n3'
+BECH32_MULTISIG_TWO_ERRORS = 'zorksim1q0yjnqzs0nxzzesqmzfv00mq9fwgu833xme5kuu60tuan72n77j8q5t3rjx'
+BECH32_WRONG_VERSION = 'zorksim1ptmp75a5c7p26uslctq9k77322plpy25329p2n3'
 
 BASE58_VALID = 'mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn'
 BASE58_INVALID_PREFIX = '17VZNX1SN5NtKa8UQFxwQbFeFc3iqRYhem'
@@ -70,12 +70,12 @@ class InvalidAddressErrorMessageTest(BitcoinTestFramework):
         self.check_invalid(BECH32_INVALID_V0_SIZE, "Invalid Bech32 v0 address program size (21 bytes), per BIP141")
         self.check_invalid(BECH32_TOO_LONG, 'Bech32 string too long', [90])
         self.check_invalid(BECH32_ONE_ERROR, 'Invalid Bech32 checksum', [9])
-        self.check_invalid(BECH32_TWO_ERRORS, 'Invalid Bech32 checksum', [22, 43])
-        self.check_invalid(BECH32_ONE_ERROR_CAPITALS, 'Invalid Bech32 checksum', [38])
+        self.check_invalid(BECH32_TWO_ERRORS, 'Invalid Bech32 checksum', [15, 25])
+        self.check_invalid(BECH32_ONE_ERROR_CAPITALS, 'Invalid Bech32 checksum', [9])
         self.check_invalid(BECH32_NO_SEPARATOR, 'Missing separator')
         self.check_invalid(BECH32_INVALID_CHAR, 'Invalid Base 32 character', [8])
-        self.check_invalid(BECH32_MULTISIG_TWO_ERRORS, 'Invalid Bech32 checksum', [19, 30])
-        self.check_invalid(BECH32_WRONG_VERSION, 'Invalid Bech32 checksum', [5])
+        self.check_invalid(BECH32_MULTISIG_TWO_ERRORS, 'Invalid Bech32 checksum', [20, 30])
+        self.check_invalid(BECH32_WRONG_VERSION, 'Invalid Bech32 checksum', [8])
 
         # Valid Bech32
         self.check_valid(BECH32_VALID)
@@ -100,7 +100,7 @@ class InvalidAddressErrorMessageTest(BitcoinTestFramework):
 
         if not self.options.usecli:
             # Missing arg returns the help text
-            assert_raises_rpc_error(-1, "Return information about the given bitcoin address.", node.validateaddress)
+            assert_raises_rpc_error(-1, "Return information about the given zorkcoin address.", node.validateaddress)
             # Explicit None is not allowed for required parameters
             assert_raises_rpc_error(-3, "JSON value of type null is not of expected type string", node.validateaddress, None)
 

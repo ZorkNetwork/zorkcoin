@@ -564,7 +564,7 @@ RPCMethod listtransactions()
                     {
                         {RPCResult::Type::OBJ, "", "", Cat(Cat<std::vector<RPCResult>>(
                         {
-                            {RPCResult::Type::STR, "address",  /*optional=*/true, "The bitcoin address of the transaction (not returned if the output does not have an address, e.g. OP_RETURN null data)."},
+                            {RPCResult::Type::STR, "address",  /*optional=*/true, "The zorkcoin address of the transaction (not returned if the output does not have an address, e.g. OP_RETURN null data)."},
                             {RPCResult::Type::STR, "category", "The transaction category.\n"
                                 "\"send\"                  Transactions sent.\n"
                                 "\"receive\"               Non-coinbase transactions received.\n"
@@ -987,7 +987,7 @@ static std::vector<RPCResult> ListSinceBlockTxFields()
 {
     return Cat<std::vector<RPCResult>>(
         {
-            {RPCResult::Type::STR, "address", /*optional=*/true, "The bitcoin address of the transaction (not returned if the output does not have an address, e.g. OP_RETURN null data)."},
+            {RPCResult::Type::STR, "address", /*optional=*/true, "The zorkcoin address of the transaction (not returned if the output does not have an address, e.g. OP_RETURN null data)."},
             {RPCResult::Type::STR, "category", "The transaction category.\n"
                 "\"send\"                  Transactions sent.\n"
                 "\"receive\"               Non-coinbase transactions received.\n"
@@ -1158,7 +1158,7 @@ RPCMethod gettransaction()
                         {
                             {RPCResult::Type::OBJ, "", "",
                             {
-                                {RPCResult::Type::STR, "address", /*optional=*/true, "The bitcoin address involved in the transaction."},
+                                {RPCResult::Type::STR, "address", /*optional=*/true, "The zorkcoin address involved in the transaction."},
                                 {RPCResult::Type::STR, "category", "The transaction category.\n"
                                     "\"send\"                  Transactions sent.\n"
                                     "\"receive\"               Non-coinbase transactions received.\n"

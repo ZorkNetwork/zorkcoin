@@ -7,7 +7,7 @@
  */
 // Boost.Test's SIGSTKSZ alternate stack can be smaller than Linux requires on musl.
 #define BOOST_TEST_DISABLE_ALT_STACK
-#define BOOST_TEST_MODULE Bitcoin Core Test Suite
+#define BOOST_TEST_MODULE Zorkcoin Core Test Suite
 
 #include <boost/test/included/unit_test.hpp>
 

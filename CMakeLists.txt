@@ -26,7 +26,7 @@ get_directory_property(precious_variables CACHE_VARIABLES)
 #=============================
 # Project / Package metadata
 #=============================
-set(CLIENT_NAME "Bitcoin Core")
+set(CLIENT_NAME "Zorkcoin Core")
 set(CLIENT_VERSION_MAJOR 32)
 set(CLIENT_VERSION_MINOR 0)
 set(CLIENT_VERSION_BUILD 0)
@@ -50,10 +50,10 @@ set(CMAKE_TRY_COMPILE_PLATFORM_VARIABLES
   CMAKE_CXX_LINK_EXECUTABLE
 )
 
-project(BitcoinCore
+project(ZorkcoinCore
   VERSION ${CLIENT_VERSION_MAJOR}.${CLIENT_VERSION_MINOR}.${CLIENT_VERSION_BUILD}
-  DESCRIPTION "Bitcoin client software"
-  HOMEPAGE_URL "https://bitcoincore.org/"
+  DESCRIPTION "Zorkcoin client software"
+  HOMEPAGE_URL "https://www.zorkcoin.com/"
   LANGUAGES NONE
 )
 
@@ -64,7 +64,7 @@ endif()
 
 set(COPYRIGHT_HOLDERS "The %s developers")
 set(COPYRIGHT_HOLDERS_FINAL "The ${CLIENT_NAME} developers")
-set(CLIENT_BUGREPORT "https://github.com/bitcoin/bitcoin/issues")
+set(CLIENT_BUGREPORT "https://github.com/zorkcoin/zorkcoin/issues")
 
 #=============================
 # Language setup
@@ -651,25 +651,25 @@ message("\n")
 message("Configure summary")
 message("=================")
 message("Executables:")
-message("  bitcoin ............................. ${BUILD_BITCOIN_BIN}")
-message("  bitcoind ............................ ${BUILD_DAEMON}")
+message("  zorkcoin ............................ ${BUILD_BITCOIN_BIN}")
+message("  zorkcoind ........................... ${BUILD_DAEMON}")
 if(BUILD_DAEMON AND ENABLE_IPC)
   set(bitcoin_daemon_status ON)
 else()
   set(bitcoin_daemon_status OFF)
 endif()
 message("  bitcoin-node (multiprocess) ......... ${bitcoin_daemon_status}")
-message("  bitcoin-qt (GUI) .................... ${BUILD_GUI}")
+message("  zorkcoin-qt (GUI) ................... ${BUILD_GUI}")
 if(BUILD_GUI AND ENABLE_IPC)
   set(bitcoin_gui_status ON)
 else()
   set(bitcoin_gui_status OFF)
 endif()
 message("  bitcoin-gui (GUI, multiprocess) ..... ${bitcoin_gui_status}")
-message("  bitcoin-cli ......................... ${BUILD_CLI}")
-message("  bitcoin-tx .......................... ${BUILD_TX}")
-message("  bitcoin-util ........................ ${BUILD_UTIL}")
-message("  bitcoin-wallet ...................... ${BUILD_WALLET_TOOL}")
+message("  zorkcoin-cli ........................ ${BUILD_CLI}")
+message("  zorkcoin-tx ......................... ${BUILD_TX}")
+message("  zorkcoin-util ....................... ${BUILD_UTIL}")
+message("  zorkcoin-wallet ..................... ${BUILD_WALLET_TOOL}")
 message("  bitcoin-chainstate (experimental) ... ${BUILD_UTIL_CHAINSTATE}")
 message("  libbitcoinkernel (experimental) ..... ${BUILD_KERNEL_LIB}")
 message("  kernel-test (experimental) .......... ${BUILD_KERNEL_TEST}")
@@ -692,9 +692,9 @@ message("  USDT tracing ........................ ${WITH_USDT}")
 message("  QR code (GUI) ....................... ${WITH_QRENCODE}")
 message("  DBus (GUI) .......................... ${WITH_DBUS}")
 message("Tests:")
-message("  test_bitcoin ........................ ${BUILD_TESTS}")
-message("  test_bitcoin-qt ..................... ${BUILD_GUI_TESTS}")
-message("  bench_bitcoin ....................... ${BUILD_BENCH}")
+message("  test_zorkcoin ....................... ${BUILD_TESTS}")
+message("  test_zorkcoin-qt .................... ${BUILD_GUI_TESTS}")
+message("  bench_zorkcoin ...................... ${BUILD_BENCH}")
 message("  fuzz binary ......................... ${BUILD_FUZZ_BINARY}")
 message("")
 if(CMAKE_CROSSCOMPILING)

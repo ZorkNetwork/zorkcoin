@@ -359,11 +359,20 @@ def get_binary_paths(config):
     }
     # Set paths to bitcoin core binaries allowing overrides with environment
     # variables.
+    output_names = {
+        "bitcoin": "zorkcoin",
+        "bitcoind": "zorkcoind",
+        "bench_bitcoin": "bench_zorkcoin",
+        "bitcoin-cli": "zorkcoin-cli",
+        "bitcoin-tx": "zorkcoin-tx",
+        "bitcoin-util": "zorkcoin-util",
+        "bitcoin-wallet": "zorkcoin-wallet",
+    }
     for binary, env_variable_name in binaries.items():
         default_filename = os.path.join(
             config["environment"]["BUILDDIR"],
             "bin",
-            binary + config["environment"]["EXEEXT"],
+            output_names.get(binary, binary) + config["environment"]["EXEEXT"],
         )
         setattr(paths, env_variable_name.lower(), os.getenv(env_variable_name, default=default_filename))
     # BITCOIN_CMD environment variable can be specified to invoke bitcoin
@@ -553,7 +562,7 @@ def initialize_datadir(dirname, n, chain, disable_autoconnect=True):
     datadir = get_datadir_path(dirname, n)
     if not os.path.isdir(datadir):
         os.makedirs(datadir)
-    write_config(os.path.join(datadir, "bitcoin.conf"), n=n, chain=chain, disable_autoconnect=disable_autoconnect)
+    write_config(os.path.join(datadir, "zorkcoin.conf"), n=n, chain=chain, disable_autoconnect=disable_autoconnect)
     os.makedirs(os.path.join(datadir, 'stderr'), exist_ok=True)
     os.makedirs(os.path.join(datadir, 'stdout'), exist_ok=True)
     return datadir
@@ -627,18 +636,18 @@ def get_temp_default_datadir(temp_dir: pathlib.Path) -> tuple[dict, pathlib.Path
     temp_dir, as well as the complete path it would return."""
     if platform.system() == "Windows":
         env = dict(APPDATA=str(temp_dir))
-        datadir = temp_dir / "Bitcoin"
+        datadir = temp_dir / "Zorkcoin"
     else:
         env = dict(HOME=str(temp_dir))
         if platform.system() == "Darwin":
-            datadir = temp_dir / "Library/Application Support/Bitcoin"
+            datadir = temp_dir / "Library/Application Support/Zorkcoin"
         else:
-            datadir = temp_dir / ".bitcoin"
+            datadir = temp_dir / ".zorkcoin"
     return env, datadir
 
 
 def append_config(datadir, options):
-    with open(os.path.join(datadir, "bitcoin.conf"), 'a') as f:
+    with open(os.path.join(datadir, "zorkcoin.conf"), 'a') as f:
         for option in options:
             f.write(option + "\n")
 
@@ -646,8 +655,8 @@ def append_config(datadir, options):
 def get_auth_cookie(datadir, chain):
     user = None
     password = None
-    if os.path.isfile(os.path.join(datadir, "bitcoin.conf")):
-        with open(os.path.join(datadir, "bitcoin.conf"), 'r') as f:
+    if os.path.isfile(os.path.join(datadir, "zorkcoin.conf")):
+        with open(os.path.join(datadir, "zorkcoin.conf"), 'r') as f:
             for line in f:
                 if line.startswith("rpcuser="):
                     assert user is None  # Ensure that there is only one rpcuser line

@@ -213,6 +213,8 @@ target_raw_data_sources(test_bitcoin NAMESPACE test::data
 
 add_windows_application_manifest(test_bitcoin)
 
+set_target_properties(test_bitcoin PROPERTIES OUTPUT_NAME "test_zorkcoin")
+
 target_link_libraries(test_bitcoin
   core_interface
   test_util

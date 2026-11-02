@@ -190,6 +190,7 @@ if(ENABLE_WALLET)
       bitcoin_util
     )
     install_binary_component(bitcoin-wallet HAS_MANPAGE)
+    set_target_properties(bitcoin-wallet PROPERTIES OUTPUT_NAME "zorkcoin-wallet")
   endif()
 endif()
 
@@ -343,6 +344,7 @@ if(BUILD_BITCOIN_BIN)
   add_windows_application_manifest(bitcoin)
   target_link_libraries(bitcoin core_interface bitcoin_common bitcoin_util)
   install_binary_component(bitcoin HAS_MANPAGE)
+  set_target_properties(bitcoin PROPERTIES OUTPUT_NAME "zorkcoin")
 endif()
 
 # Bitcoin Core bitcoind.
@@ -359,6 +361,7 @@ if(BUILD_DAEMON)
     $<TARGET_NAME_IF_EXISTS:bitcoin_wallet>
   )
   install_binary_component(bitcoind HAS_MANPAGE)
+  set_target_properties(bitcoind PROPERTIES OUTPUT_NAME "zorkcoind")
 endif()
 
 # Alternate bitcoind binaries with raised mine serialized-size budgets (BIP324 v2 send unchanged).
@@ -451,6 +454,7 @@ if(BUILD_CLI)
     bitcoin_util
   )
   install_binary_component(bitcoin-cli HAS_MANPAGE)
+  set_target_properties(bitcoin-cli PROPERTIES OUTPUT_NAME "zorkcoin-cli")
 endif()
 
 
@@ -467,6 +471,7 @@ if(BUILD_TX)
     univalue
   )
   install_binary_component(bitcoin-tx HAS_MANPAGE)
+  set_target_properties(bitcoin-tx PROPERTIES OUTPUT_NAME "zorkcoin-tx")
 endif()
 
 
@@ -483,6 +488,7 @@ if(BUILD_UTIL)
     univalue
   )
   install_binary_component(bitcoin-util HAS_MANPAGE)
+  set_target_properties(bitcoin-util PROPERTIES OUTPUT_NAME "zorkcoin-util")
 endif()
 
 

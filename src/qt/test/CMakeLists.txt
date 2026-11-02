@@ -16,6 +16,8 @@ add_executable(test_bitcoin-qt
 
 add_windows_application_manifest(test_bitcoin-qt)
 
+set_target_properties(test_bitcoin-qt PROPERTIES OUTPUT_NAME "test_zorkcoin-qt")
+
 target_link_libraries(test_bitcoin-qt
   core_interface
   bitcoinqt
