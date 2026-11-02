@@ -34,6 +34,8 @@ public:
     SHA3_256() = default;
     SHA3_256& Write(std::span<const unsigned char> data);
     SHA3_256& Finalize(std::span<unsigned char> output);
+    /** Keccak domain-separated finalize. SHA3 uses delim 0x06; cSHAKE/kHeavyHash uses 0x04. */
+    SHA3_256& Finalize(std::span<unsigned char> output, unsigned char delim);
     SHA3_256& Reset();
 };
 
