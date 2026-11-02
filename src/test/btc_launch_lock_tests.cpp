@@ -5,14 +5,17 @@
 #include <chainparams.h>
 #include <consensus/amount.h>
 #include <consensus/btc_launch_lock.h>
+#include <consensus/merkle.h>
 #include <consensus/validation.h>
 #include <kernel/chainparams.h>
 #include <kernel/genesis_mainnet.h>
 #include <kernel/genesis_testnet.h>
+#include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
 #include <test/util/setup_common.h>
 #include <util/strencodings.h>
+#include <validation.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -198,6 +201,55 @@ BOOST_AUTO_TEST_CASE(coinbase_exactly_one_zero_value)
         BlockValidationState state;
         BOOST_CHECK(CheckBtcLaunchLock(MakeCoinbaseWith({witness, good}), lock, state));
         BOOST_CHECK_EQUAL(*GetBtcLaunchLockOutputIndex(MakeCoinbaseWith({witness, good})), 2);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(template_without_header_vs_submitted_block)
+{
+    const auto chainParams = CChainParams::TestNet();
+    const auto& consensus = chainParams->GetConsensus();
+
+    CBlock block;
+    block.nVersion = 0x20000000;
+    block.hashPrevBlock = consensus.hashGenesisBlock;
+    block.nTime = TESTNET_GENESIS_NTIME + 1000;
+    block.nBits = TESTNET_GENESIS_NBITS;
+    block.nNonce = 0;
+
+    CMutableTransaction cb;
+    cb.vin.resize(1);
+    cb.vin[0].prevout.SetNull();
+    cb.vin[0].scriptSig = CScript() << 1 << OP_0;
+    cb.vout.resize(1);
+    cb.vout[0].nValue = 50 * COIN;
+    cb.vout[0].scriptPubKey = CScript() << OP_TRUE;
+    block.vtx.push_back(MakeTransactionRef(cb));
+    block.hashMerkleRoot = BlockMerkleRoot(block);
+
+    // Unmined template check (!fCheckPOW && !fCheckMerkleRoot) passes without -btclaunchheader.
+    {
+        BlockValidationState state;
+        BOOST_CHECK(CheckBlock(block, state, consensus, /*fCheckPOW=*/false, /*fCheckMerkleRoot=*/false));
+    }
+
+    // Proposal / submission check (fCheckMerkleRoot=true) rejects missing launch-lock OP_RETURN.
+    {
+        BlockValidationState state;
+        BOOST_CHECK(!CheckBlock(block, state, consensus, /*fCheckPOW=*/false, /*fCheckMerkleRoot=*/true));
+        BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-btc-lock-missing");
+    }
+
+    // If a template embeds an invalid launch-lock output, even the unmined template check rejects it.
+    CTxOut early_out;
+    early_out.nValue = 0;
+    early_out.scriptPubKey = BuildBtcLaunchLockScript(HeaderFromHex(REAL_BTC_HEADER_HEX));
+    cb.vout.push_back(early_out);
+    block.vtx[0] = MakeTransactionRef(cb);
+    block.hashMerkleRoot = BlockMerkleRoot(block);
+    {
+        BlockValidationState state;
+        BOOST_CHECK(!CheckBlock(block, state, consensus, /*fCheckPOW=*/false, /*fCheckMerkleRoot=*/false));
+        BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-btc-lock-time");
     }
 }
 

@@ -50,7 +50,7 @@ Nodes validate the embedded bytes only. They do not connect to Bitcoin during sy
 
 3. **Build Zork block 1:** Put that header in the height-1 coinbase `OP_RETURN` (format below). Mine with kHeavyHash.
 
-Optional: `-btclaunchheader=<160 hex>` when using Zorkcoin Core’s in-tree block template (`CreateNewBlock` at height 1). Pools that assemble their own coinbase can embed the same output without that flag; consensus inspects the submitted block, not how it was built.
+Optional: `-btclaunchheader=<160 hex>` when using Zorkcoin Core’s in-tree block template (`CreateNewBlock` at height 1) to embed the output automatically. If `-btclaunchheader` is omitted or empty, `CreateNewBlock` still returns a height-1 template without the output so external miners/pools can insert the output into the coinbase themselves. If `-btclaunchheader` is set to an invalid value, the node exits at startup with an error.
 
 Height **2 and above** use the normal coinbase rules; the launch lock applies only at height 1.
 

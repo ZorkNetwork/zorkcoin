@@ -233,15 +233,17 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
 
     if (nHeight == 1 && chainparams.GetConsensus().btc_launch_lock.enabled) {
         const std::string header_hex{gArgs.GetArg("-btclaunchheader", "")};
-        const auto header = TryParseHex<unsigned char>(header_hex);
-        if (!header || header->size() != BTC_LAUNCH_HEADER_SIZE) {
-            throw std::runtime_error(
-                "height-1 block requires -btclaunchheader=<160-char hex of an 80-byte Bitcoin header>");
+        if (!header_hex.empty()) {
+            const auto header = TryParseHex<unsigned char>(header_hex);
+            if (!header || header->size() != BTC_LAUNCH_HEADER_SIZE) {
+                throw std::runtime_error(
+                    "Invalid -btclaunchheader: must be 160 hex characters (80-byte Bitcoin block header)");
+            }
+            CTxOut lock_out;
+            lock_out.nValue = 0;
+            lock_out.scriptPubKey = BuildBtcLaunchLockScript(*header);
+            coinbaseTx.vout.push_back(lock_out);
         }
-        CTxOut lock_out;
-        lock_out.nValue = 0;
-        lock_out.scriptPubKey = BuildBtcLaunchLockScript(*header);
-        coinbaseTx.vout.push_back(lock_out);
     }
 
     // Start the coinbase scriptSig with the block height as required by BIP34.

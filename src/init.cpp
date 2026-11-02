@@ -19,7 +19,9 @@
 #include <common/messages.h>
 #include <common/system.h>
 #include <compat/compat.h>
+#include <consensus/btc_launch_lock.h>
 #include <consensus/params.h>
+#include <consensus/validation.h>
 #include <crypto/hex_base.h>
 #include <dbwrapper.h>
 #include <httprpc.h>
@@ -1210,6 +1212,20 @@ bool AppInitParameterInteraction(const ArgsManager& args)
         }
         if (args.IsArgSet("-vbparams")) {
             return InitError(_("The -vbparams option may not be used on mainnet."));
+        }
+    }
+
+    if (const std::string btc_header_hex{args.GetArg("-btclaunchheader", "")}; !btc_header_hex.empty()) {
+        const auto header = TryParseHex<unsigned char>(btc_header_hex);
+        if (!header || header->size() != BTC_LAUNCH_HEADER_SIZE) {
+            return InitError(Untranslated("Invalid -btclaunchheader: must be 160 hex characters (80-byte Bitcoin block header)."));
+        }
+        const auto& lock = chainparams.GetConsensus().btc_launch_lock;
+        if (lock.enabled) {
+            BlockValidationState state;
+            if (!CheckBtcLaunchLockHeader(*header, lock.min_unix_time, lock.nbits_floor, state)) {
+                return InitError(Untranslated(strprintf("Invalid -btclaunchheader: %s (%s).", state.GetRejectReason(), state.GetDebugMessage())));
+            }
         }
     }
 

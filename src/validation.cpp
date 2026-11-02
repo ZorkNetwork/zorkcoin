@@ -4404,9 +4404,11 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
 
     // Height 1 when launch lock is enabled: Bitcoin SHA256d coinbase check.
     // Enforced here (not only in ContextualCheckBlock) so -reindex-chainstate
-    // cannot skip it.
+    // cannot skip it. Unmined templates (!fCheckPOW && !fCheckMerkleRoot) omit
+    // the output when -btclaunchheader is not set so external miners can insert it.
     if (consensusParams.btc_launch_lock.enabled &&
-        block.hashPrevBlock == consensusParams.hashGenesisBlock) {
+        block.hashPrevBlock == consensusParams.hashGenesisBlock &&
+        (fCheckPOW || fCheckMerkleRoot || GetBtcLaunchLockOutputIndex(*block.vtx[0]).has_value())) {
         if (!CheckBtcLaunchLock(*block.vtx[0], consensusParams.btc_launch_lock, state)) {
             return false;
         }
