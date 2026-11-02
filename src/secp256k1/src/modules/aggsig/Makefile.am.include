@@ -1,0 +1,4 @@
+include_HEADERS += include/secp256k1_aggsig.h
+noinst_HEADERS += src/modules/aggsig/main_impl.h
+noinst_HEADERS += src/modules/aggsig/tests_impl.h
+noinst_HEADERS += src/modules/aggsig/tests_exhaustive_impl.h

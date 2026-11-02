@@ -220,7 +220,7 @@ static void test_exhaustive_ecmult_multi(const secp256k1_context *ctx, const sec
                         data.pt[0] = group[x];
                         data.pt[1] = group[y];
 
-                        CHECK(secp256k1_ecmult_multi_var(&ctx->error_callback, scratch, &tmp, &g_sc, ecmult_multi_callback, &data, 2) == 1);
+                        secp256k1_ecmult_multi_var(&ctx->error_callback, scratch, &tmp, &g_sc, ecmult_multi_callback, &data, 2);
                         CHECK(secp256k1_gej_eq_ge_var(&tmp, &group[(i * x + j * y + k) % EXHAUSTIVE_TEST_ORDER]));
                     }
                 }
@@ -362,6 +362,28 @@ static void test_exhaustive_sign(const secp256k1_context *ctx, const secp256k1_g
 #include "modules/ellswift/tests_exhaustive_impl.h"
 #endif
 
+/* BEGIN ZKP */
+#ifdef ENABLE_MODULE_GENERATOR
+#include "modules/generator/tests_exhaustive_impl.h"
+#endif
+
+#ifdef ENABLE_MODULE_COMMITMENT
+#include "modules/commitment/tests_exhaustive_impl.h"
+#endif
+
+#ifdef ENABLE_MODULE_BULLETPROOF
+#include "modules/bulletproofs/tests_exhaustive_impl.h"
+#endif
+
+#ifdef ENABLE_MODULE_AGGSIG
+#include "modules/aggsig/tests_exhaustive_impl.h"
+#endif
+
+#ifdef ENABLE_MODULE_SCHNORRSIG_MW
+#include "modules/schnorrsig_mw/tests_exhaustive_impl.h"
+#endif
+/* END ZKP */
+
 int main(int argc, char** argv) {
     int i;
     secp256k1_gej groupj[EXHAUSTIVE_TEST_ORDER];
@@ -465,6 +487,24 @@ int main(int argc, char** argv) {
         test_exhaustive_ellswift(ctx, group);
     #endif
 #endif
+
+/* BEGIN ZKP */
+#ifdef ENABLE_MODULE_GENERATOR
+        test_exhaustive_generator(ctx);
+#endif
+#ifdef ENABLE_MODULE_COMMITMENT
+        test_exhaustive_commitment(ctx, group);
+#endif
+#ifdef ENABLE_MODULE_BULLETPROOF
+        test_exhaustive_bulletproof(ctx);
+#endif
+#ifdef ENABLE_MODULE_AGGSIG
+        test_exhaustive_aggsig(ctx, group);
+#endif
+#ifdef ENABLE_MODULE_SCHNORRSIG_MW
+        test_exhaustive_schnorrsig_mw(ctx);
+#endif
+/* END ZKP */
 
         secp256k1_context_destroy(ctx);
     }

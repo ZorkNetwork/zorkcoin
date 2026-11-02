@@ -339,3 +339,9 @@ endif
 if ENABLE_MODULE_SILENTPAYMENTS
 include src/modules/silentpayments/Makefile.am.include
 endif
+
+# BEGIN ZKP
+if ENABLE_MODULE_GENERATOR
+include src/modules/zkp/Makefile.am.include
+endif
+# END ZKP

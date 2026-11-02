@@ -23,6 +23,7 @@ Features:
 * Optional module for ElligatorSwift key exchange according to [BIP-324](https://github.com/bitcoin/bips/blob/master/bip-0324.mediawiki).
 * Optional module for MuSig2 Schnorr multi-signatures according to [BIP-327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki).
 * Optional module for Silent Payments sending and receiving according to [BIP-352](https://github.com/bitcoin/bips/blob/master/bip-0352.mediawiki).
+* Optional ZKP modules: NUMS generator, Pedersen commitments, bulletproofs, aggsig, and Mimblewimble Schnorr (`schnorrsig-mw`).
 
 Implementation details
 ----------------------
@@ -109,6 +110,16 @@ Building with Autotools
     $ sudo make install  # Install the library into the system (optional)
 
 To compile optional modules (such as Schnorr signatures), you need to run `./configure` with additional flags (such as `--enable-module-schnorrsig`). Run `./configure --help` to see the full list of available flags.
+
+ZKP modules are enabled by default. To build without them (matching upstream bitcoin-core/secp256k1):
+
+```
+./configure --enable-module-generator=no --enable-module-commitment=no \
+  --enable-module-bulletproof=no --enable-module-aggsig=no \
+  --enable-module-schnorrsig-mw=no
+```
+
+Bulletproofs require generator and commitment. Create scratch space once via `secp256k1_scratch.h` and pass it to verify/prove calls.
 
 Building with CMake
 -------------------

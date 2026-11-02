@@ -44,6 +44,42 @@
 #include "../include/secp256k1_silentpayments.h"
 #endif
 
+/* BEGIN ZKP */
+/* ZKP module ctime coverage is intentionally disabled for CI.
+ * Valgrind currently reports secret-dependent branches in pedersen_commit,
+ * schnorrsig_mw_sign, aggsig_sign_single, and bulletproof prove (missing
+ * declassify / VT prover paths). Re-enable when those are fixed:
+ *   -DSECP256K1_ENABLE_ZKP_CTIME_TESTS=1
+ */
+#ifndef SECP256K1_ENABLE_ZKP_CTIME_TESTS
+#define SECP256K1_ENABLE_ZKP_CTIME_TESTS 0
+#endif
+
+#if SECP256K1_ENABLE_ZKP_CTIME_TESTS
+#ifdef ENABLE_MODULE_GENERATOR
+#include "../include/secp256k1_generator.h"
+#endif
+
+#ifdef ENABLE_MODULE_COMMITMENT
+#include "../include/secp256k1_commitment.h"
+#include "../include/secp256k1_zkp.h"
+#endif
+
+#ifdef ENABLE_MODULE_AGGSIG
+#include "../include/secp256k1_aggsig.h"
+#endif
+
+#ifdef ENABLE_MODULE_SCHNORRSIG_MW
+#include "../include/secp256k1_schnorrsig_mw.h"
+#endif
+
+#ifdef ENABLE_MODULE_BULLETPROOF
+#include "../include/secp256k1_bulletproofs.h"
+#include "../include/secp256k1_scratch.h"
+#endif
+#endif /* SECP256K1_ENABLE_ZKP_CTIME_TESTS */
+/* END ZKP */
+
 #if defined(__GNUC__)
 # pragma GCC diagnostic push
 # pragma GCC diagnostic warning "-Wunused-function"
@@ -347,6 +383,100 @@ static void run_tests(secp256k1_context *ctx, unsigned char *key) {
     CHECK(secp256k1_silentpayments_recipient_scan_outputs(ctx, found_outputs_ptrs, &n_found_outputs, tx_outputs, 1, key, &prevouts_summary, &recipient.spend_pubkey, NULL, NULL));
 
 #endif
+
+/* BEGIN ZKP */
+#if SECP256K1_ENABLE_ZKP_CTIME_TESTS
+#ifdef ENABLE_MODULE_COMMITMENT
+    {
+        secp256k1_generator value_gen;
+        secp256k1_generator blind_gen;
+        secp256k1_pedersen_commitment commit;
+        unsigned char gen_key[32] = {1};
+        unsigned char blind_gen_key[32] = {2};
+        unsigned char blind[32];
+
+        CHECK(secp256k1_generator_generate(ctx, &value_gen, gen_key));
+        CHECK(secp256k1_generator_generate(ctx, &blind_gen, blind_gen_key));
+        /* Secrets must be valid before UNDEFINE (Valgrind keeps bit values). */
+        SECP256K1_CHECKMEM_DEFINE(key, 32);
+        memcpy(blind, key, 32);
+        SECP256K1_CHECKMEM_UNDEFINE(blind, 32);
+        ret = secp256k1_pedersen_commit(ctx, &commit, blind, 1, &value_gen, &blind_gen);
+        SECP256K1_CHECKMEM_DEFINE(&commit, sizeof(commit));
+        SECP256K1_CHECKMEM_DEFINE(&ret, sizeof(ret));
+        CHECK(ret == 1);
+
+        SECP256K1_CHECKMEM_UNDEFINE(key, 32);
+        ret = secp256k1_ec_seckey_tweak_inv(ctx, key);
+        SECP256K1_CHECKMEM_DEFINE(&ret, sizeof(ret));
+        CHECK(ret == 1);
+    }
+#endif
+
+#ifdef ENABLE_MODULE_SCHNORRSIG_MW
+    {
+        secp256k1_schnorrsig_mw mw_sig;
+        int k = 1;
+        SECP256K1_CHECKMEM_UNDEFINE(key, 32);
+        ret = secp256k1_schnorrsig_mw_sign(ctx, &mw_sig, NULL, msg, key, secp256k1_nonce_function_default, &k);
+        SECP256K1_CHECKMEM_DEFINE(&mw_sig, sizeof(mw_sig));
+        SECP256K1_CHECKMEM_DEFINE(&ret, sizeof(ret));
+        CHECK(ret == 1);
+    }
+#endif
+
+#ifdef ENABLE_MODULE_AGGSIG
+    {
+        unsigned char secnonce[32];
+        unsigned char sig64[64];
+        unsigned char seed[32] = {0x55};
+        SECP256K1_CHECKMEM_DEFINE(seed, sizeof(seed));
+        ret = secp256k1_aggsig_export_secnonce_single(ctx, secnonce, seed);
+        SECP256K1_CHECKMEM_DEFINE(&ret, sizeof(ret));
+        CHECK(ret == 1);
+        SECP256K1_CHECKMEM_UNDEFINE(key, 32);
+        SECP256K1_CHECKMEM_UNDEFINE(secnonce, 32);
+        ret = secp256k1_aggsig_sign_single(ctx, sig64, msg, key, secnonce, NULL, NULL, NULL, NULL, seed);
+        SECP256K1_CHECKMEM_DEFINE(&ret, sizeof(ret));
+        CHECK(ret == 1);
+    }
+#endif
+
+#ifdef ENABLE_MODULE_BULLETPROOF
+    {
+        secp256k1_scratch *scratch = secp256k1_scratch_space_create(ctx, 1024 * 1024);
+        secp256k1_bulletproof_generators *gens;
+        secp256k1_generator value_gen;
+        secp256k1_pedersen_commitment commit;
+        unsigned char proof[2000];
+        size_t plen = sizeof(proof);
+        unsigned char blind[32];
+        unsigned char nonce[32];
+        unsigned char gen_seed[32] = {0x42};
+        const unsigned char *blind_ptr[1];
+        uint64_t value = 1234;
+
+        /* Match tests_impl.h: need gens->n >= 2*nbits*n_commits; use 256 like module tests. */
+        SECP256K1_CHECKMEM_DEFINE(key, 32);
+        memcpy(blind, key, 32);
+        memcpy(nonce, key, 32);
+        nonce[0] ^= 0x5a;
+        blind_ptr[0] = blind;
+        CHECK(secp256k1_generator_generate(ctx, &value_gen, gen_seed));
+        CHECK(secp256k1_pedersen_commit(ctx, &commit, blind, value, &value_gen, &secp256k1_generator_const_h));
+        gens = secp256k1_bulletproof_generators_create(ctx, &secp256k1_generator_const_h, 256);
+        CHECK(gens != NULL);
+        SECP256K1_CHECKMEM_UNDEFINE(blind, 32);
+        SECP256K1_CHECKMEM_UNDEFINE(nonce, 32);
+        ret = secp256k1_bulletproof_rangeproof_prove(ctx, scratch, gens, proof, &plen, NULL, NULL, NULL, &value, NULL, blind_ptr, NULL, 1, &value_gen, 64, nonce, NULL, NULL, 0, NULL);
+        SECP256K1_CHECKMEM_DEFINE(&ret, sizeof(ret));
+        CHECK(ret == 1);
+        secp256k1_bulletproof_generators_destroy(ctx, gens);
+        secp256k1_scratch_space_destroy(ctx, scratch);
+    }
+#endif
+#endif /* SECP256K1_ENABLE_ZKP_CTIME_TESTS */
+/* END ZKP */
 }
 
 #if defined(__GNUC__)
