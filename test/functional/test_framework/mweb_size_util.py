@@ -1106,7 +1106,7 @@ class MWEBSizeTestMixin:
         try:
             return [
                 u for u in wallet.listunspent(minconf=minconf)
-                if str(u.get("address", "")).startswith("bcrt1m")
+                if str(u.get("address", "")).startswith(("tmweb", "mweb"))
             ]
         except JSONRPCException:
             return []
@@ -1701,7 +1701,7 @@ class MWEBSizeTestMixin:
         try:
             return [
                 u for u in wallet.listunspent(minconf=minconf)
-                if not str(u.get("address", "")).startswith("bcrt1m")
+                if not str(u.get("address", "")).startswith(("tmweb", "mweb"))
             ]
         except JSONRPCException:
             return []

@@ -18,13 +18,13 @@ from test_framework.script import OP_0, OP_1, OP_2, OP_3, OP_16, OP_DUP, OP_EQUA
 from test_framework.segwit_addr import bech32_encode, decode_segwit_address, convertbits, CHARSET, Encoding  # noqa: E402
 
 # key types
-PUBKEY_ADDRESS = 0
-SCRIPT_ADDRESS = 5
+PUBKEY_ADDRESS = 80
+SCRIPT_ADDRESS = 54
 PUBKEY_ADDRESS_TEST = 111
-SCRIPT_ADDRESS_TEST = 196
+SCRIPT_ADDRESS_TEST = 58
 PUBKEY_ADDRESS_REGTEST = 111
-SCRIPT_ADDRESS_REGTEST = 196
-PRIVKEY = 128
+SCRIPT_ADDRESS_REGTEST = 58
+PRIVKEY = 167
 PRIVKEY_TEST = 239
 PRIVKEY_REGTEST = 239
 
@@ -62,22 +62,22 @@ templates = [
 # templates for valid bech32 sequences
 bech32_templates = [
   # hrp, version, witprog_size, metadata, encoding, output_prefix
-  ('bc',    0, 20, (False, 'main',    None, True), Encoding.BECH32,  p2wpkh_prefix),
-  ('bc',    0, 32, (False, 'main',    None, True), Encoding.BECH32,  p2wsh_prefix),
-  ('bc',    1, 32, (False, 'main',    None, True), Encoding.BECH32M, p2tr_prefix),
-  ('bc',    2,  2, (False, 'main',    None, True), Encoding.BECH32M, (OP_2, 2)),
-  ('tb',    0, 20, (False, 'test',    None, True), Encoding.BECH32,  p2wpkh_prefix),
-  ('tb',    0, 32, (False, 'test',    None, True), Encoding.BECH32,  p2wsh_prefix),
-  ('tb',    1, 32, (False, 'test',    None, True), Encoding.BECH32M, p2tr_prefix),
-  ('tb',    3, 16, (False, 'test',    None, True), Encoding.BECH32M, (OP_3, 16)),
-  ('tb',    0, 20, (False, 'signet',  None, True), Encoding.BECH32,  p2wpkh_prefix),
-  ('tb',    0, 32, (False, 'signet',  None, True), Encoding.BECH32,  p2wsh_prefix),
-  ('tb',    1, 32, (False, 'signet',  None, True), Encoding.BECH32M, p2tr_prefix),
-  ('tb',    3, 32, (False, 'signet',  None, True), Encoding.BECH32M, (OP_3, 32)),
-  ('bcrt',  0, 20, (False, 'regtest', None, True), Encoding.BECH32,  p2wpkh_prefix),
-  ('bcrt',  0, 32, (False, 'regtest', None, True), Encoding.BECH32,  p2wsh_prefix),
-  ('bcrt',  1, 32, (False, 'regtest', None, True), Encoding.BECH32M, p2tr_prefix),
-  ('bcrt', 16, 40, (False, 'regtest', None, True), Encoding.BECH32M, (OP_16, 40))
+  ('zork',    0, 20, (False, 'main',    None, True), Encoding.BECH32,  p2wpkh_prefix),
+  ('zork',    0, 32, (False, 'main',    None, True), Encoding.BECH32,  p2wsh_prefix),
+  ('zork',    1, 32, (False, 'main',    None, True), Encoding.BECH32M, p2tr_prefix),
+  ('zork',    2,  2, (False, 'main',    None, True), Encoding.BECH32M, (OP_2, 2)),
+  ('zorktest',0, 20, (False, 'test',    None, True), Encoding.BECH32,  p2wpkh_prefix),
+  ('zorktest',0, 32, (False, 'test',    None, True), Encoding.BECH32,  p2wsh_prefix),
+  ('zorktest',1, 32, (False, 'test',    None, True), Encoding.BECH32M, p2tr_prefix),
+  ('zorktest',3, 16, (False, 'test',    None, True), Encoding.BECH32M, (OP_3, 16)),
+  ('zorksig',0, 20, (False, 'signet',  None, True), Encoding.BECH32,  p2wpkh_prefix),
+  ('zorksig',0, 32, (False, 'signet',  None, True), Encoding.BECH32,  p2wsh_prefix),
+  ('zorksig',1, 32, (False, 'signet',  None, True), Encoding.BECH32M, p2tr_prefix),
+  ('zorksig',3, 32, (False, 'signet',  None, True), Encoding.BECH32M, (OP_3, 32)),
+  ('zorksim',  0, 20, (False, 'regtest', None, True), Encoding.BECH32,  p2wpkh_prefix),
+  ('zorksim',  0, 32, (False, 'regtest', None, True), Encoding.BECH32,  p2wsh_prefix),
+  ('zorksim',  1, 32, (False, 'regtest', None, True), Encoding.BECH32M, p2tr_prefix),
+  ('zorksim', 16, 40, (False, 'regtest', None, True), Encoding.BECH32M, (OP_16, 40))
 ]
 # templates for invalid bech32 sequences
 bech32_ng_templates = [
@@ -85,19 +85,19 @@ bech32_ng_templates = [
   ('tc',    0, 20, Encoding.BECH32,  False, False, False),
   ('bt',    1, 32, Encoding.BECH32M, False, False, False),
   ('tb',   17, 32, Encoding.BECH32M, False, False, False),
-  ('bcrt',  3,  1, Encoding.BECH32M, False, False, False),
-  ('bc',   15, 41, Encoding.BECH32M, False, False, False),
+  ('zorksim',  3,  1, Encoding.BECH32M, False, False, False),
+  ('zork',   15, 41, Encoding.BECH32M, False, False, False),
   ('tb',    0, 16, Encoding.BECH32,  False, False, False),
-  ('bcrt',  0, 32, Encoding.BECH32,  True,  False, False),
-  ('bc',    0, 16, Encoding.BECH32,  True,  False, False),
+  ('zorksim',  0, 32, Encoding.BECH32,  True,  False, False),
+  ('zork',    0, 16, Encoding.BECH32,  True,  False, False),
   ('tb',    0, 32, Encoding.BECH32,  False, True,  False),
-  ('bcrt',  0, 20, Encoding.BECH32,  False, False, True),
-  ('bc',    0, 20, Encoding.BECH32M, False, False, False),
+  ('zorksim',  0, 20, Encoding.BECH32,  False, False, True),
+  ('zork',    0, 20, Encoding.BECH32M, False, False, False),
   ('tb',    0, 32, Encoding.BECH32M, False, False, False),
-  ('bcrt',  0, 20, Encoding.BECH32M, False, False, False),
-  ('bc',    1, 32, Encoding.BECH32,  False, False, False),
+  ('zorksim',  0, 20, Encoding.BECH32M, False, False, False),
+  ('zork',    1, 32, Encoding.BECH32,  False, False, False),
   ('tb',    2, 16, Encoding.BECH32,  False, False, False),
-  ('bcrt', 16, 20, Encoding.BECH32,  False, False, False),
+  ('zorksim', 16, 20, Encoding.BECH32,  False, False, False),
 ]
 
 def is_valid(v):
@@ -119,7 +119,7 @@ def is_valid(v):
 
 def is_valid_bech32(v):
     '''Check vector v for bech32 validity'''
-    for hrp in ['bc', 'tb', 'bcrt']:
+    for hrp in ['zork', 'zorktest', 'zorksig', 'zorksim']:
         if decode_segwit_address(hrp, v) != (None, None):
             return True
     return False

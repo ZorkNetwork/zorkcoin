@@ -133,6 +133,9 @@ static std::unique_ptr<CBlockIndex> CreateBlockIndex(int nHeight, CBlockIndex* a
 // to allow reusing the blockchain created in CreateNewBlock_validity.
 void MinerTestingSetup::TestPackageSelection(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst)
 {
+    const int64_t tip_ms{Assert(m_node.chainman)->ActiveChain().Tip()->GetMedianTimePast()};
+    SetMockTime(std::chrono::seconds{(tip_ms / 1000) + 3'600});
+
     CTxMemPool& tx_mempool{MakeMempool()};
     auto mining{MakeMining()};
     BlockCreateOptions options{
@@ -396,7 +399,8 @@ void MinerTestingSetup::TestSigOpsAdjustedWeightChunkLimit(const CScript& script
 
 void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst, int baseheight)
 {
-    FakeNodeClock clock{};
+    const int64_t tip_ms{Assert(m_node.chainman)->ActiveChain().Tip()->GetMedianTimePast()};
+    FakeNodeClock clock{std::chrono::seconds{(tip_ms / 1000) + 3'600}};
 
     Txid hash;
     CMutableTransaction tx;
@@ -537,7 +541,6 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
         tx.vin[0].scriptSig = CScript() << OP_0 << OP_1;
         tx.vout[0].nValue = 0;
         hash = tx.GetHash();
-        // give it a fee so it'll get mined
         TryAddToMempool(tx_mempool, entry.Fee(LOWFEE).Time(Now<NodeSeconds>()).SpendsCoinbase(false).FromTx(tx));
         // Extra coinbase in the mempool is skipped (CSV/sequence checks reject it).
         BOOST_REQUIRE(mining->createNewBlock(options, /*cooldown=*/false));
@@ -736,6 +739,9 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
 
 void MinerTestingSetup::TestPrioritisedMining(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst)
 {
+    const int64_t tip_ms{Assert(m_node.chainman)->ActiveChain().Tip()->GetMedianTimePast()};
+    SetMockTime(std::chrono::seconds{(tip_ms / 1000) + 3'600});
+
     auto mining{MakeMining()};
     BOOST_REQUIRE(mining);
 
@@ -827,6 +833,11 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     auto mining{MakeMining()};
     BOOST_REQUIRE(mining);
 
+    // Launch genesis sits after wall-clock during the pre-launch window.
+    // Pin NodeClock so CreateNewBlock's TestBlockValidity is not time-too-new.
+    const int64_t tip_ms{WITH_LOCK(::cs_main, return Assert(m_node.chainman)->ActiveChain().Tip()->GetMedianTimePast())};
+    SetMockTime(std::chrono::seconds{(tip_ms / 1000) + 3'600});
+
     // Note that by default, these tests run with size accounting enabled.
     CScript scriptPubKey = CScript() << "04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5f"_hex << OP_CHECKSIG;
     BlockCreateOptions options{
@@ -904,7 +915,6 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
             block.nTime = Assert(m_node.chainman)->ActiveChain().Tip()->GetMedianTimePast()+1;
             txCoinbase.version = 1;
             txCoinbase.vin[0].scriptSig = CScript{} << (current_height + 1) << bi.extranonce;
-            txCoinbase.vout.resize(1); // Ignore the (optional) segwit commitment added by CreateNewBlock (as the hardcoded nonces don't account for this)
             txCoinbase.vout[0].scriptPubKey = CScript();
             block.vtx[0] = MakeTransactionRef(txCoinbase);
             if (txFirst.size() == 0)

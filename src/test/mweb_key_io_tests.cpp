@@ -41,15 +41,15 @@ BOOST_AUTO_TEST_CASE(mweb_address_rejects_foreign_hrp)
         BOOST_REQUIRE(std::holds_alternative<StealthAddress>(dest));
         BOOST_CHECK(std::get<StealthAddress>(dest) == stealth);
 
-        // Other chains' MWEB HRPs (Litecoin's ltcmweb and tmweb, and rmweb) are never accepted.
-        for (const std::string hrp : {"ltcmweb", "tmweb", "rmweb"}) {
+        // Other chains' MWEB HRPs (Bitcoin's bc1m, tb1m, bcrt1m, Litecoin's ltcmweb, and rmweb) are never accepted.
+        for (const std::string hrp : {"bc1m", "tb1m", "bcrt1m", "ltcmweb", "rmweb"}) {
             const std::string foreign = WithHRP(address, hrp);
             BOOST_CHECK_MESSAGE(!IsValidDestinationString(foreign), foreign);
         }
     }
 
-    // Each network refuses the others' MWEB addresses.
-    const std::vector<ChainType> chains{ChainType::MAIN, ChainType::TESTNET, ChainType::REGTEST};
+    // Mainnet and testnet/regtest refuse each other's MWEB addresses.
+    const std::vector<ChainType> chains{ChainType::MAIN, ChainType::TESTNET};
     std::vector<std::string> addresses;
     for (const ChainType chain : chains) {
         SelectParams(chain);

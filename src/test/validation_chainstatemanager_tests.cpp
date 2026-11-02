@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 //
+#include <arith_uint256.h>
 #include <chainparams.h>
 #include <consensus/validation.h>
 #include <kernel/disconnected_transactions.h>
@@ -194,7 +195,14 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_ibd_exit_after_loading_blocks, ChainTe
         chainman.m_cached_is_ibd.store(cached_is_ibd, std::memory_order_relaxed);
         chainman.m_blockman.m_importing = loading_blocks;
         if (tip_exists) {
-            tip.nChainWork = chainman.MinimumChainWork() - (enough_work ? 0 : 1);
+            const arith_uint256 min_work{chainman.MinimumChainWork()};
+            // A new chain may pin nMinimumChainWork at 0, in which case the
+            // work check cannot fail (0 - 1 would underflow to "plenty of work").
+            if (enough_work || min_work == 0) {
+                tip.nChainWork = min_work;
+            } else {
+                tip.nChainWork = min_work - 1;
+            }
             tip.nTime = TicksSinceEpoch<std::chrono::milliseconds>(recent_time - (tip_recent ? 0h : 100h));
             chainman.ActiveChain().SetTip(tip);
         } else {
@@ -209,7 +217,8 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_ibd_exit_after_loading_blocks, ChainTe
                 for (const bool enough_work : {false, true}) {
                     for (const bool tip_recent : {false, true}) {
                         apply(cached_is_ibd, loading_blocks, tip_exists, enough_work, tip_recent);
-                        const bool expected_ibd = cached_is_ibd && (loading_blocks || !tip_exists || !enough_work || !tip_recent);
+                        const bool work_satisfied{chainman.MinimumChainWork() == 0 || enough_work};
+                        const bool expected_ibd = cached_is_ibd && (loading_blocks || !tip_exists || !work_satisfied || !tip_recent);
                         BOOST_CHECK_EQUAL(chainman.IsInitialBlockDownload(), expected_ibd);
                     }
                 }

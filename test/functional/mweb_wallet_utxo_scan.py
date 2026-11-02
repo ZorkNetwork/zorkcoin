@@ -28,14 +28,14 @@ class WalletMWEBUtxoScanTest(BitcoinTestFramework):
         return sum(
             coin['amount']
             for coin in wallet.listunspent(minconf=1)
-            if coin.get('address', '').startswith('bcrt1m')
+            if coin.get('address', '').startswith('tmweb')
         )
 
     def _mweb_unspent(self, wallet):
         return sorted(
             (coin['amount'], coin['address'])
             for coin in wallet.listunspent(minconf=1)
-            if coin.get('address', '').startswith('bcrt1m')
+            if coin.get('address', '').startswith('tmweb')
         )
 
     def _fund_mweb_wallet(self, n0, wallet):

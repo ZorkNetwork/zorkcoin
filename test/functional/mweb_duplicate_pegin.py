@@ -85,7 +85,7 @@ class MWEBDuplicatePeginTest(BitcoinTestFramework):
         spend_utxo = next(
             utxo for utxo in wallet.listunspent()
             if utxo["spendable"]
-            and not utxo.get("address", "").startswith("bcrt1m")
+            and not utxo.get("address", "").startswith(("tmweb", "mweb"))
             and utxo["confirmations"] > 100
             and int(utxo["amount"] * COIN) > spend_amount + fee
         )

@@ -41,7 +41,7 @@ class MWEBBasicTest(BitcoinTestFramework):
         self.sync_all()
 
         self.log.info("Check for MWEB UTXOs")
-        utxos = [x for x in self.nodes[0].listunspent() if x['address'].startswith('bcrt1m')]
+        utxos = [x for x in self.nodes[0].listunspent() if x['address'].startswith(('tmweb', 'mweb'))]
         assert_equal(len(utxos), 2)
         utxos.sort(key=lambda x: x['amount'])
 
@@ -68,8 +68,9 @@ class MWEBBasicTest(BitcoinTestFramework):
             assert 'confirmations' in utxo
             assert 'spendable' in utxo
             assert 'address' in utxo
-        # Regtest MWEB HRP is bcrt1m (Bitcoin L1 product); L1 coins keep full field set.
-        l1_utxos = [x for x in self.nodes[0].listunspent() if not x.get('address', '').startswith('bcrt1m')]
+        # Zorkcoin MWEB HRP: mainnet `mweb`, test/signet/regtest `tmweb`.
+        l1_utxos = [x for x in self.nodes[0].listunspent()
+                    if not x.get('address', '').startswith(('tmweb', 'mweb'))]
         assert l1_utxos
         for utxo in l1_utxos:
             assert 'vout' in utxo
@@ -83,14 +84,14 @@ class MWEBBasicTest(BitcoinTestFramework):
         self.sync_all()
 
         self.log.info("Check MWEB coins are spent on node 0")
-        utxos = [x for x in self.nodes[0].listunspent() if x['address'].startswith('bcrt1m')]
+        utxos = [x for x in self.nodes[0].listunspent() if x['address'].startswith(('tmweb', 'mweb'))]
         # Smallest-first MWEB selection (doc/mweb/descriptors.md "Selection
         # algorithm") consumes both coins and leaves a single change output.
         assert_equal(len(utxos), 1)
         assert sum(x['amount'] for x in utxos) < 45
 
         self.log.info("Check for MWEB UTXO on node 1")
-        utxos = [x for x in self.nodes[1].listunspent() if x['address'].startswith('bcrt1m')]
+        utxos = [x for x in self.nodes[1].listunspent() if x['address'].startswith(('tmweb', 'mweb'))]
         assert_equal(len(utxos), 1)
         assert utxos[0]['amount'] == 5 and utxos[0]['address'] == addr1
 
@@ -101,7 +102,7 @@ class MWEBBasicTest(BitcoinTestFramework):
         self.sync_all()
 
         self.log.info("Check MWEB coins are spent on node 1")
-        utxos = [x for x in self.nodes[1].listunspent() if x['address'].startswith('bcrt1m')]
+        utxos = [x for x in self.nodes[1].listunspent() if x['address'].startswith(('tmweb', 'mweb'))]
         assert_equal(len(utxos), 1)
         assert sum(x['amount'] for x in utxos) < 3
         self.log.info("UTXO amount: {}".format(utxos[0]['amount']))
@@ -119,7 +120,7 @@ class MWEBBasicTest(BitcoinTestFramework):
         self.sync_all()
 
         self.log.info("Check MWEB coins are spent on node 1")
-        utxos = [x for x in self.nodes[1].listunspent() if x['address'].startswith('bcrt1m')]
+        utxos = [x for x in self.nodes[1].listunspent() if x['address'].startswith(('tmweb', 'mweb'))]
         assert_equal(len(utxos), 1)
         assert sum(x['amount'] for x in utxos) < 1
 

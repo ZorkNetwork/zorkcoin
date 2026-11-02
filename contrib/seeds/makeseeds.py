@@ -33,7 +33,7 @@ PATTERN_IPV6 = re.compile(r"^\[([\da-f:]+)]:(\d{1,5})$", re.IGNORECASE)
 PATTERN_ONION = re.compile(r"^([a-z2-7]{56}\.onion):(\d+)$")
 PATTERN_I2P = re.compile(r"^([a-z2-7]{52}\.b32\.i2p):(\d{1,5})$")
 PATTERN_AGENT = re.compile(
-    r"^/Satoshi:("
+    r"^/ZorkcoinCore:("
     r"0\.14\.(0|1|2|3|99)"
     r"|0\.15\.(0|1|2|99)"
     r"|0\.16\.(0|1|2|3|99)"

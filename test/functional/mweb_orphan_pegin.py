@@ -46,7 +46,7 @@ class MWEBOrphanPeginTest(BitcoinTestFramework):
         utxo = next(
             u for u in wallet.listunspent()
             if u["spendable"]
-            and not u.get("address", "").startswith("bcrt1m")
+            and not u.get("address", "").startswith(("tmweb", "mweb"))
             and u["confirmations"] > 0
             and int(u["amount"] * COIN) > COIN
         )

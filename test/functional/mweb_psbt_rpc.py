@@ -403,7 +403,7 @@ class MWEBPSBTRPCTest(BitcoinTestFramework):
             assert key in mweb_in, key
         out = decoded['outputs'][0]
         mweb_out = out['mweb']
-        assert mweb_out['address'].startswith('bcrt1m')
+        assert mweb_out['address'].startswith('tmweb')
         assert_equal(len(mweb_out['rangeproof']), 2 * RANGEPROOF_SIZE)
         assert_equal(len(mweb_out['encrypted_value']), 16)
         assert_equal(len(mweb_out['encrypted_nonce']), 32)

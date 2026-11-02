@@ -387,7 +387,7 @@ class MWEBPSBTTest(BitcoinTestFramework):
         assert not decoded.get('kernels')
         assert 'mweb_tx_offset' not in decoded
         assert 'mweb_stealth_offset' not in decoded
-        assert "bcrt1m" not in str(decoded).lower()
+        assert "tmweb" not in str(decoded).lower()
 
         self.log.info("walletcreatefundedpsbt funds an MWEB destination as an unsigned PSBT")
         psbt_addr = node1.getnewaddress(address_type='mweb')

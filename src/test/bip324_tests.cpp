@@ -4,6 +4,7 @@
 
 #include <bip324.h>
 #include <chainparams.h>
+#include <kernel/messagestartchars.h>
 #include <key.h>
 #include <pubkey.h>
 #include <span.h>
@@ -56,11 +57,14 @@ void TestBIP324PacketVector(
     EllSwiftPubKey ellswift_ours(in_ellswift_ours);
     EllSwiftPubKey ellswift_theirs(in_ellswift_theirs);
 
+    // Official BIP324 packet vectors use Bitcoin mainnet magic in the HKDF salt.
+    static constexpr MessageStartChars bip324_vector_magic{0xf9, 0xbe, 0xb4, 0xd9};
+
     // Instantiate encryption BIP324 cipher.
     BIP324Cipher cipher(key, ellswift_ours);
     BOOST_CHECK(!cipher);
     BOOST_CHECK(cipher.GetOurPubKey() == ellswift_ours);
-    cipher.Initialize(ellswift_theirs, in_initiating);
+    cipher.Initialize(ellswift_theirs, in_initiating, /*self_decrypt=*/false, &bip324_vector_magic);
     BOOST_CHECK(cipher);
 
     // Compare session variables.
@@ -107,7 +111,7 @@ void TestBIP324PacketVector(
         BIP324Cipher dec_cipher(key, ellswift_ours);
         BOOST_CHECK(!dec_cipher);
         BOOST_CHECK(dec_cipher.GetOurPubKey() == ellswift_ours);
-        dec_cipher.Initialize(ellswift_theirs, (error == 1) ^ in_initiating, /*self_decrypt=*/true);
+        dec_cipher.Initialize(ellswift_theirs, (error == 1) ^ in_initiating, /*self_decrypt=*/true, &bip324_vector_magic);
         BOOST_CHECK(dec_cipher);
 
         // Compare session variables.

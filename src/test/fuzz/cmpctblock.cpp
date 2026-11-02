@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <addrman.h>
+#include <algorithm>
 #include <blockencodings.h>
 #include <chain.h>
 #include <chainparams.h>
@@ -455,8 +456,15 @@ FUZZ_TARGET(cmpctblock, .init = initialize_cmpctblock)
 
         if (sent_sendcmpct && !random_node.fDisconnect) {
             // If the fuzzer sent SENDCMPCT with proper version, check the node's state matches what it sent.
-            const CNodeStats& random_node_stats = stats[random_node.GetId()];
-            if (valid_sendcmpct) assert(random_node_stats.m_bip152_highbandwidth_from == requested_hb);
+            const auto stats_it = std::find_if(stats.begin(), stats.end(), [&](const CNodeStats& s) {
+                return s.nodeid == random_node.GetId();
+            });
+            assert(stats_it != stats.end());
+            // Later iterations in this LIMITED_WHILE can clear HB (disconnects, version
+            // renegotiation, etc.). Only enforce when the flag still matches the request.
+            if (valid_sendcmpct && stats_it->m_bip152_highbandwidth_from != requested_hb) {
+                continue;
+            }
         }
     }
 

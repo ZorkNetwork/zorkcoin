@@ -173,6 +173,12 @@ BOOST_AUTO_TEST_CASE(genesis_pow_nonces)
     header.nTime = 1714777860ULL * 1000;
     header.nBits = 0x1e0ffff0;
     CheckGenesisPoW(header, 653310);
+
+    header.nVersion = 0x20000000;
+    header.hashMerkleRoot = uint256{"b72f0b81e63bb83b40816ac4e3cf92bdfed7d51c80dbc04d3e66043fc62ea6c1"};
+    header.nTime = 1789390749696ULL;
+    header.nBits = 0x1e0ffff0;
+    CheckGenesisPoW(header, 1634777);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -393,7 +393,7 @@ def _remove_dir(test, path):
 
 
 def _copy_chain_subdirs(test, src_chain_path, dst_chain_path):
-    """Copy block chain data only; preserve destination bitcoin.conf and ports."""
+    """Copy block chain data only; preserve destination zorkcoin.conf and ports."""
     for sub in ('blocks', 'chainstate', 'indexes'):
         src = src_chain_path / sub
         if not src.exists():

@@ -20,16 +20,20 @@ from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal
 
 
+def _is_mweb_address(addr):
+    return bool(addr) and addr.startswith(('tmweb', 'mweb'))
+
+
 def mweb_balance(node):
     return sum(
         utxo['amount']
         for utxo in node.listunspent()
-        if utxo['address'].startswith('bcrt1m')
+        if _is_mweb_address(utxo.get('address', ''))
     )
 
 
 def mweb_utxo_count(node):
-    return len([u for u in node.listunspent() if u['address'].startswith('bcrt1m')])
+    return len([u for u in node.listunspent() if _is_mweb_address(u.get('address', ''))])
 
 
 class MWEBReorgUndoTest(BitcoinTestFramework):

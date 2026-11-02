@@ -149,13 +149,19 @@ HeadersSyncSetup* g_testing_setup;
 
 void initialize()
 {
+    // Zorkcoin pins consensus nMinimumChainWork at 0 (pre-launch). This fuzz
+    // target's anti-DoS invariants assume a non-zero floor higher than any
+    // claimed work from FUZZ_MAX_HEADERS_RESULTS*100 headers in the allowed
+    // nBits range, so override it to a large sentinel.
     static auto setup{
         MakeNoLogFileContext<HeadersSyncSetup>(ChainType::MAIN,
                                                {
+                                                   .extra_args = {"-minimumchainwork=0x00000000000000000000000000000000000000ffffffffffffffffffffffffff"},
                                                    .setup_validation_interface = false,
                                                }),
     };
     g_testing_setup = setup.get();
+    Assert(g_testing_setup->m_node.chainman->MinimumChainWork() != 0);
 }
 } // namespace
 

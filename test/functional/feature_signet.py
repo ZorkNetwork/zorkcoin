@@ -9,7 +9,7 @@ from decimal import Decimal
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal
 
-SIGNET_DEFAULT_CHALLENGE = '512103ad5e0edad18cb1f0fc0d28a3d4f1f3e445640337489abb10404f2d1e086be430210359ef5021964fe22d6f8e05b2463c9540ce96883fe3b278760f048f5189f2e6c452ae'
+SIGNET_DEFAULT_CHALLENGE = '51'  # Zorkcoin developer signet default (OP_TRUE)
 
 signet_blocks = [
     # Bitcoin Core pregenerated public-signet blocks are incompatible
@@ -34,10 +34,9 @@ class SignetBasicTest(BitcoinTestFramework):
         self.num_nodes = 6
         self.setup_clean_chain = True
         self.signets = [
-            SignetParams(challenge='51'), # OP_TRUE
-            SignetParams(), # default challenge
-            # default challenge as a 2-of-2, which means it should fail
-            SignetParams(challenge='522103ad5e0edad18cb1f0fc0d28a3d4f1f3e445640337489abb10404f2d1e086be430210359ef5021964fe22d6f8e05b2463c9540ce96883fe3b278760f048f5189f2e6c452ae')
+            SignetParams(challenge='51'),  # OP_TRUE
+            SignetParams(),  # node default (== OP_TRUE)
+            SignetParams(challenge='60'),  # OP_16 — incompatible with OP_TRUE
         ]
 
         self.extra_args = [

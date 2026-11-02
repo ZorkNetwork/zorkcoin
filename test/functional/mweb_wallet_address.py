@@ -61,7 +61,7 @@ class MWEBWalletAddressTest(BitcoinTestFramework):
         self.log.info("After createwalletdescriptor('mweb') the L1-only wallet receives and spends MWEB")
         wallet.createwalletdescriptor('mweb')
         addr = wallet.getnewaddress(address_type='mweb')
-        assert addr.startswith('bcrt1m')
+        assert addr.startswith('tmweb')
         txid = miner.sendtoaddress(addr, 2)
         self.generate(node, 1)
         coins = wallet.listunspent(addresses=[addr])

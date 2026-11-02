@@ -94,8 +94,12 @@ class WalletAnchorTest(BitcoinTestFramework):
 
         anchor_txid = self.default_wallet.sendtoaddress(ANCHOR_ADDRESS, 1)
         self.generate(self.nodes[0], 1)
+        self.nodes[0].syncwithvalidationinterfacequeue()
 
         wallet = self.nodes[0].get_wallet_rpc("anchor_spend_True")
+        # Watch-only wallet may need an explicit rescan after the send confirms
+        # when multiple wallets are attached to the same node.
+        wallet.rescanblockchain()
         utxos = wallet.listunspent()
         assert_equal(len(utxos), 1)
         assert_equal(utxos[0]["txid"], anchor_txid)

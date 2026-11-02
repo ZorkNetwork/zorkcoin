@@ -22,7 +22,7 @@ ASSUMEUTXO_MWEB_HDKEY_TPRV = (
     "tprv8ZgxMBicQKsPeuVhWwi6wuMQGfPKi9Li5GtX35jVNknACgqe3CY4g5xgkfDDJcmtF7o1QnxWDRYw4H5P26PXq7sbcUkEqeR4fg3Kxp2tigg"
 )
 ASSUMEUTXO_MWEB_PEGIN_ADDRESS = (
-    "bcrt1m1qq2c62egp2m05ydu860nj76jcwp63tkvgn9l8x72mpwe0sr5l6s2pzqj2mv0tpszhph3men0fp8wf05hzu84el2s3a9tapa9qe7wllnl8zuxthekp"
+    "tmweb1qq2c62egp2m05ydu860nj76jcwp63tkvgn9l8x72mpwe0sr5l6s2pzqj2mv0tpszhph3men0fp8wf05hzu84el2s3a9tapa9qe7wllnl8zuxtutdf"
 )
 
 ASSUMEUTXO_MWEB_WALLET_NAME = 'mweb_assumeutxo'
@@ -218,7 +218,7 @@ def finish_assumeutxo_mweb_chain(test, node, *, sync_fun=None, capture_pegin=Fal
 
     sync = sync_fun if sync_fun is not None else test.sync_all
 
-    assert ASSUMEUTXO_MWEB_PEGIN_ADDRESS.startswith('bcrt1m')
+    assert ASSUMEUTXO_MWEB_PEGIN_ADDRESS.startswith(('tmweb', 'mweb'))
     tip = node.getblockcount()
     assert tip >= ASSUMEUTXO_BASE_HEIGHT
 

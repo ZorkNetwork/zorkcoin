@@ -38,7 +38,7 @@ public:
 
     std::string operator()(const ScriptHash& id) const
     {
-        std::vector<unsigned char> data = m_params.Base58Prefix(CChainParams::SCRIPT_ADDRESS);
+        std::vector<unsigned char> data = m_params.Base58Prefix(CChainParams::SCRIPT_ADDRESS2);
         data.insert(data.end(), id.begin(), id.end());
         return EncodeBase58Check(data);
     }
@@ -107,7 +107,7 @@ CTxDestination DecodeDestination(const std::string& str, const CChainParams& par
     // Note this will be false if it is a valid Bech32 address for a different network
     const bool is_bech32 = str.size() >= params.Bech32HRP().size() &&
         ToLower(str.substr(0, params.Bech32HRP().size())) == params.Bech32HRP();
-    // MWEB: bc1m/tb1m addresses use a separate HRP from segwit
+    // MWEB: stealth addresses use a separate HRP from segwit (mainnet "mweb", test "tmweb")
     const bool is_mweb_bech32 = str.size() >= params.MWEB_HRP().size() &&
         ToLower(str.substr(0, params.MWEB_HRP().size())) == params.MWEB_HRP();
 
@@ -123,14 +123,21 @@ CTxDestination DecodeDestination(const std::string& str, const CChainParams& par
         // Script-hash-addresses have version 5 (or 196 testnet).
         // The data vector contains RIPEMD160(SHA256(cscript)), where cscript is the serialized redemption script.
         const std::vector<unsigned char>& script_prefix = params.Base58Prefix(CChainParams::SCRIPT_ADDRESS);
+        const std::vector<unsigned char>& script_prefix2 = params.Base58Prefix(CChainParams::SCRIPT_ADDRESS2);
         if (data.size() == hash.size() + script_prefix.size() && std::equal(script_prefix.begin(), script_prefix.end(), data.begin())) {
             std::copy(data.begin() + script_prefix.size(), data.end(), hash.begin());
+            return ScriptHash(hash);
+        }
+        if (data.size() == hash.size() + script_prefix2.size() && std::equal(script_prefix2.begin(), script_prefix2.end(), data.begin())) {
+            std::copy(data.begin() + script_prefix2.size(), data.end(), hash.begin());
             return ScriptHash(hash);
         }
 
         // If the prefix of data matches either the script or pubkey prefix, the length must have been wrong
         if ((data.size() >= script_prefix.size() &&
                 std::equal(script_prefix.begin(), script_prefix.end(), data.begin())) ||
+            (data.size() >= script_prefix2.size() &&
+                std::equal(script_prefix2.begin(), script_prefix2.end(), data.begin())) ||
             (data.size() >= pubkey_prefix.size() &&
                 std::equal(pubkey_prefix.begin(), pubkey_prefix.end(), data.begin()))) {
             error_str = "Invalid length for Base58 address (P2PKH or P2SH)";
@@ -151,7 +158,7 @@ CTxDestination DecodeDestination(const std::string& str, const CChainParams& par
     data.clear();
     const auto dec = bech32::Decode(str, is_mweb_bech32 ? bech32::CharLimit::MWEB : bech32::CharLimit::BECH32);
 
-    // MWEB: Stealth address decoding (bc1m/tb1m HRP)
+    // MWEB: Stealth address decoding (mainnet "mweb", test/signet/regtest "tmweb")
     if (dec.encoding == bech32::Encoding::BECH32 && dec.hrp == params.MWEB_HRP()) {
         std::vector<uint8_t> converted;
         converted.reserve(((dec.data.size() - 1) * 5) / 8);

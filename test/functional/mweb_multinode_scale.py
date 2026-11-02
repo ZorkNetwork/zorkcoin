@@ -114,8 +114,8 @@ class MWEBMultinodeScaleTest(BitcoinTestFramework):
             amount=1,
             drain_addr=all_destinations[1] if len(all_destinations) > 1 else all_destinations[0],
         )
-        reconnect_mweb_peers(self)
-        self.sync_blocks()
+        reconnect_mweb_peers(self, node_indices=range(n_econ))
+        self.sync_blocks(self.nodes[:n_econ])
         assert_funder_has_no_mweb(funder)
 
         expected_addrs = (
@@ -159,7 +159,7 @@ class MWEBMultinodeScaleTest(BitcoinTestFramework):
 
             self.generate(miner, 1, sync_fun=self.no_op)
             if height % 10 == 0 or height == post_blocks:
-                self.sync_blocks()
+                self.sync_blocks(self.nodes[:n_econ])
 
             if height == early_at:
                 assert_funder_has_no_mweb(funder)
@@ -179,7 +179,7 @@ class MWEBMultinodeScaleTest(BitcoinTestFramework):
             if log_interval and height % log_interval == 0:
                 self.log.info("  post-MWEB progress: %d / %d blocks", height, post_blocks)
 
-        self.sync_blocks()
+        self.sync_blocks(self.nodes[:n_econ])
         assert_funder_has_no_mweb(funder)
         assert_distribution_floor(
             self, miner, miner_parties['recipient_names'], min_funded_fraction=0.5,

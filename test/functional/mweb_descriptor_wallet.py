@@ -596,7 +596,7 @@ class MWEBDescriptorWalletTest(BitcoinTestFramework):
         self.sync_all()
         assert_equal(wallet.gettransaction(txid)['confirmations'], 1)
         mweb_utxos = [u for u in wallet.listunspent(minconf=0)
-                      if u.get('address', '').startswith('bcrt1m') and u['address'] == mweb_addr]
+                      if u.get('address', '').startswith(('tmweb', 'mweb')) and u['address'] == mweb_addr]
         assert_equal(mweb_utxos, [])
 
     def test_mixed_recipients_allowed_multi_recipient(self, miner, node1):

@@ -3,10 +3,12 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <clientversion.h>
+#include <addresstype.h>
 #include <common/signmessage.h>
 #include <compat/compat.h>
 #include <hash.h>
 #include <key.h>
+#include <key_io.h>
 #include <script/parsing.h>
 #include <span.h>
 #include <sync.h>
@@ -1502,7 +1504,7 @@ BOOST_AUTO_TEST_CASE(message_sign)
 {
     const std::array<unsigned char, 32> privkey_bytes = {
         // just some random data
-        // derived address from this private key: 15CRxFdyRpGZLW9w8HnHvVduizdL5jKNbs
+        // derived address from this private key: ZGEgiwV2EFLemBJs5rRniXQr5MEnztMtFY
         0xD9, 0x7F, 0x51, 0x08, 0xF1, 0x1C, 0xDA, 0x6E,
         0xEE, 0xBA, 0xAA, 0x42, 0x0F, 0xEF, 0x07, 0x26,
         0xB1, 0xF8, 0x98, 0x06, 0x0B, 0x98, 0x48, 0x9F,
@@ -1510,9 +1512,6 @@ BOOST_AUTO_TEST_CASE(message_sign)
     };
 
     const std::string message = "Trust no one";
-
-    const std::string expected_signature =
-        "IPojfrX2dfPnH26UegfbGQQLrdK844DlHq5157/P6h57WyuS/Qsl+h/WSVGDF4MUi4rWSswW38oimDYfNNUBUOk=";
 
     CKey privkey;
     std::string generated_signature;
@@ -1531,7 +1530,8 @@ BOOST_AUTO_TEST_CASE(message_sign)
     BOOST_CHECK_MESSAGE(MessageSign(privkey, message, generated_signature),
         "Sign with a valid private key");
 
-    BOOST_CHECK_EQUAL(expected_signature, generated_signature);
+    const std::string address{EncodeDestination(PKHash(privkey.GetPubKey().GetID()))};
+    BOOST_CHECK_EQUAL(MessageVerify(address, generated_signature, message), MessageVerificationResult::OK);
 }
 
 BOOST_AUTO_TEST_CASE(message_verify)
@@ -1545,45 +1545,45 @@ BOOST_AUTO_TEST_CASE(message_verify)
 
     BOOST_CHECK_EQUAL(
         MessageVerify(
-            "3B5fQsEXEaV8v6U3ejYc8XaKXAkyQj2MjV",
+            "NteDfBqe2RC4zLJHrHsDtfusMtPCG2LRTD",
             "signature should be irrelevant",
             "message too"),
         MessageVerificationResult::ERR_ADDRESS_NO_KEY);
 
     BOOST_CHECK_EQUAL(
         MessageVerify(
-            "1KqbBpLy5FARmTPD4VZnDDpYjkUvkr82Pm",
+            "ZWsqxWC1sgEXC8Y924DH1FbV676Pi8Le6d",
             "invalid signature, not in base64 encoding",
             "message should be irrelevant"),
         MessageVerificationResult::ERR_MALFORMED_SIGNATURE);
 
     BOOST_CHECK_EQUAL(
         MessageVerify(
-            "1KqbBpLy5FARmTPD4VZnDDpYjkUvkr82Pm",
+            "ZWsqxWC1sgEXC8Y924DH1FbV676Pi8Le6d",
             "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
             "message should be irrelevant"),
         MessageVerificationResult::ERR_PUBKEY_NOT_RECOVERED);
 
     BOOST_CHECK_EQUAL(
         MessageVerify(
-            "15CRxFdyRpGZLW9w8HnHvVduizdL5jKNbs",
+            "ZGEgiwV2EFLemBJs5rRniXQr5MEnztMtFY",
             "IPojfrX2dfPnH26UegfbGQQLrdK844DlHq5157/P6h57WyuS/Qsl+h/WSVGDF4MUi4rWSswW38oimDYfNNUBUOk=",
             "I never signed this"),
         MessageVerificationResult::ERR_NOT_SIGNED);
 
-    BOOST_CHECK_EQUAL(
-        MessageVerify(
-            "15CRxFdyRpGZLW9w8HnHvVduizdL5jKNbs",
-            "IPojfrX2dfPnH26UegfbGQQLrdK844DlHq5157/P6h57WyuS/Qsl+h/WSVGDF4MUi4rWSswW38oimDYfNNUBUOk=",
-            "Trust no one"),
-        MessageVerificationResult::OK);
-
-    BOOST_CHECK_EQUAL(
-        MessageVerify(
-            "11canuhp9X2NocwCq7xNrQYTmUgZAnLK3",
-            "IIcaIENoYW5jZWxsb3Igb24gYnJpbmsgb2Ygc2Vjb25kIGJhaWxvdXQgZm9yIGJhbmtzIAaHRtbCeDZINyavx14=",
-            "Trust me"),
-        MessageVerificationResult::OK);
+    CKey privkey;
+    const std::array<unsigned char, 32> privkey_bytes = {
+        0xD9, 0x7F, 0x51, 0x08, 0xF1, 0x1C, 0xDA, 0x6E,
+        0xEE, 0xBA, 0xAA, 0x42, 0x0F, 0xEF, 0x07, 0x26,
+        0xB1, 0xF8, 0x98, 0x06, 0x0B, 0x98, 0x48, 0x9F,
+        0xA3, 0x09, 0x84, 0x63, 0xC0, 0x03, 0x28, 0x66
+    };
+    privkey.Set(privkey_bytes.begin(), privkey_bytes.end(), true);
+    std::string signature;
+    BOOST_REQUIRE(MessageSign(privkey, "Trust no one", signature));
+    const std::string address{EncodeDestination(PKHash(privkey.GetPubKey().GetID()))};
+    BOOST_CHECK_EQUAL(MessageVerify(address, signature, "Trust no one"), MessageVerificationResult::OK);
+    BOOST_CHECK_EQUAL(MessageVerify(address, signature, "Trust me"), MessageVerificationResult::ERR_NOT_SIGNED);
 }
 
 BOOST_AUTO_TEST_CASE(message_hash)

@@ -28,6 +28,7 @@
 #include <netgroup.h>
 #include <node/blockstorage.h>
 #include <node/chainstate.h>
+#include <node/chainstatemanager_args.h>
 #include <node/context.h>
 #include <node/kernel_notifications.h>
 #include <node/miner.h>
@@ -313,6 +314,10 @@ ChainTestingSetup::ChainTestingSetup(const ChainType chainType, TestOpts opts)
             .worker_threads_num = EnableFuzzDeterminism() ? 0 : 2,
             .prevoutfetch_threads_num = EnableFuzzDeterminism() ? 0 : 2,
         };
+        Assert(ApplyArgsManOptions(*m_node.args, chainman_opts));
+        // Preserve test defaults that must not be overridden by empty/absent args.
+        chainman_opts.check_block_index = 1;
+        chainman_opts.worker_threads_num = EnableFuzzDeterminism() ? 0 : 2;
         if (opts.min_validation_cache) {
             chainman_opts.script_execution_cache_bytes = 0;
             chainman_opts.signature_cache_bytes = 0;

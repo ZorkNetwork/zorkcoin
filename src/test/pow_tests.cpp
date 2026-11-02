@@ -288,6 +288,8 @@ BOOST_AUTO_TEST_CASE(ChainParams_MAIN_sanity)
     const auto chainParams = CreateChainParams(*m_node.args, ChainType::MAIN);
     const auto& genesis = chainParams->GenesisBlock();
     BOOST_CHECK(CheckProofOfWork(genesis.GetPoWHash(), genesis.nBits, chainParams->GetConsensus()));
+    BOOST_CHECK_EQUAL(genesis.nTime, 1789390749696ULL);
+    BOOST_CHECK_EQUAL(genesis.vtx[0]->vout[0].nValue, static_cast<CAmount>(1LL << 32));
 }
 
 BOOST_AUTO_TEST_CASE(ChainParams_REGTEST_sanity)

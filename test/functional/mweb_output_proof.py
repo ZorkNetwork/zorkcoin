@@ -28,7 +28,7 @@ class MWEBOutputProofTest(BitcoinTestFramework):
         addr = node.getnewaddress(address_type="mweb")
         node.sendtoaddress(addr, 1)
         self.generate(node, 1)
-        utxos = [u for u in node.listunspent() if u.get("address", "").startswith("bcrt1m") and u["amount"] == 1]
+        utxos = [u for u in node.listunspent() if u.get("address", "").startswith("tmweb") and u["amount"] == 1]
         assert_equal(len(utxos), 1)
         assert "output_id" in utxos[0]
         output_id = utxos[0]["output_id"]

@@ -45,7 +45,7 @@ class MWEBP2PServeRegressionTest(BitcoinTestFramework):
     def count_wallet_mweb(self, wallet):
         return sum(
             1 for u in wallet.listunspent(0)
-            if u.get('address', '').startswith('bcrt1m')
+            if u.get('address', '').startswith(('tmweb', 'mweb'))
         )
 
     def assert_serve_floor(self, node, block_hash, label):

@@ -133,8 +133,13 @@ def complete_testing_fail(msg):
     raise AssertionError(f"Complete testing requirements not met: {msg}")
 
 
+def is_mweb_address(addr):
+    """True for Zorkcoin MWEB stealth addresses (mainnet mweb…, test tmweb…)."""
+    return bool(addr) and addr.startswith(('tmweb', 'mweb'))
+
+
 def count_wallet_mweb_utxos(wallet_rpc):
-    return len([u for u in wallet_rpc.listunspent(0) if u.get('address', '').startswith('bcrt1m')])
+    return len([u for u in wallet_rpc.listunspent(0) if is_mweb_address(u.get('address', ''))])
 
 
 def count_all_wallet_mweb_utxos(node, wallet_names):

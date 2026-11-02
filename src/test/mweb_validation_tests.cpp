@@ -627,6 +627,21 @@ BOOST_AUTO_TEST_CASE(regtest_mweb_inactive_by_default)
     BOOST_CHECK_EQUAL(mweb.threshold, 108U);
 }
 
+BOOST_AUTO_TEST_CASE(product_mweb_signals_from_genesis)
+{
+    const auto check_started = [](ChainType chain) {
+        const auto params = CreateChainParams(ArgsManager{}, chain);
+        const auto& mweb = params->GetConsensus().vDeployments[Consensus::DEPLOYMENT_MWEB];
+        BOOST_CHECK_EQUAL(mweb.nStartTime, 0);
+        BOOST_CHECK_EQUAL(mweb.nTimeout, Consensus::BIP9Deployment::NO_TIMEOUT);
+        BOOST_CHECK_EQUAL(mweb.min_activation_height, 0);
+    };
+    check_started(ChainType::MAIN);
+    check_started(ChainType::TESTNET);
+    check_started(ChainType::TESTNET4);
+    check_started(ChainType::SIGNET);
+}
+
 BOOST_AUTO_TEST_CASE(regtest_mweb_vbparams_enable)
 {
     ArgsManager args;
