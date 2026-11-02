@@ -18,8 +18,8 @@ SecretKey KeyToSecretKey(const CKey& key);
 
 /**
  * BIP32 derivation from a wallet master extended key: scan at the chain's
- * MWEB account path then 0', spend at the account path then 1' (m/0'/100'/0'
- * and m/0'/100'/1' on every network), the paths of the default account
+ * MWEB account path then 0', spend at the account path then 1' (m/100'/240079435'/{0',1'}
+ * on mainnet, m/100'/1'/{0',1'} on test networks), the paths of the default account
  * descriptor's two KEY expressions.
  */
 bool DeriveMWEBMasterSecretsFromAccountKey(const CExtKey& master_xprv, SecretKey& scan_secret, SecretKey& spend_secret);

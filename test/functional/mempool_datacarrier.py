@@ -49,6 +49,7 @@ class DataCarrierTest(BitcoinTestFramework):
             assert_raises_rpc_error(-26, "datacarrier", self.wallet.sendrawtransaction, from_node=node, tx_hex=tx_hex)
 
     def run_test(self):
+        self.generate(self.nodes[0], 20)
         self.wallet = MiniWallet(self.nodes[0])
 
         # Test that bare multisig is allowed by default. Do it here rather than create a new test for it.

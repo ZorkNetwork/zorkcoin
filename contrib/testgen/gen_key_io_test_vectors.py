@@ -19,7 +19,7 @@ from test_framework.segwit_addr import bech32_encode, decode_segwit_address, con
 
 # key types
 PUBKEY_ADDRESS = 80
-SCRIPT_ADDRESS = 54
+SCRIPT_ADDRESS = 63
 PUBKEY_ADDRESS_TEST = 111
 SCRIPT_ADDRESS_TEST = 58
 PUBKEY_ADDRESS_REGTEST = 111

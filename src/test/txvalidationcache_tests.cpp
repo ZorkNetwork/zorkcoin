@@ -17,7 +17,7 @@
 
 struct Dersig100Setup : public TestChain100Setup {
     Dersig100Setup()
-        : TestChain100Setup{ChainType::REGTEST, {.extra_args = {"-testactivationheight=dersig@102"}}} {}
+        : TestChain100Setup{ChainType::REGTEST, {.extra_args = {"-testactivationheight=dersig@121"}}} {}
 };
 
 bool CheckInputScripts(const CTransaction& tx, TxValidationState& state,
@@ -253,7 +253,7 @@ BOOST_FIXTURE_TEST_CASE(checkinputs_test, Dersig100Setup)
     {
         CMutableTransaction invalid_with_cltv_tx;
         invalid_with_cltv_tx.version = 1;
-        invalid_with_cltv_tx.nLockTime = 100;
+        invalid_with_cltv_tx.nLockTime = COINBASE_MATURITY;
         invalid_with_cltv_tx.vin = {CTxIn{spend_tx.GetHash(), 2, {}, /*nSequenceIn=*/0}};
         invalid_with_cltv_tx.vout = {CTxOut{11*CENT, p2pk_scriptPubKey}};
 
@@ -262,12 +262,12 @@ BOOST_FIXTURE_TEST_CASE(checkinputs_test, Dersig100Setup)
         uint256 hash = SignatureHash(spend_tx.vout[2].scriptPubKey, invalid_with_cltv_tx, 0, SIGHASH_ALL, 0, SigVersion::BASE);
         BOOST_CHECK(coinbaseKey.Sign(hash, vchSig));
         vchSig.push_back((unsigned char)SIGHASH_ALL);
-        invalid_with_cltv_tx.vin[0].scriptSig = CScript() << vchSig << 101;
+        invalid_with_cltv_tx.vin[0].scriptSig = CScript() << vchSig << (COINBASE_MATURITY + 1);
 
         ValidateCheckInputsForAllFlags(CTransaction(invalid_with_cltv_tx), SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY, true, m_node.chainman->ActiveChainstate().CoinsTip(), m_node.chainman->m_validation_cache);
 
         // Make it valid, and check again
-        invalid_with_cltv_tx.vin[0].scriptSig = CScript() << vchSig << 100;
+        invalid_with_cltv_tx.vin[0].scriptSig = CScript() << vchSig << COINBASE_MATURITY;
         TxValidationState state;
         PrecomputedTransactionData txdata;
         BOOST_CHECK(CheckInputScripts(CTransaction(invalid_with_cltv_tx), state, m_node.chainman->ActiveChainstate().CoinsTip(), SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY, true, true, txdata, m_node.chainman->m_validation_cache, nullptr));

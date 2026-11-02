@@ -34,8 +34,8 @@ GENESIS_PUBKEY = bytes.fromhex(
     "040241e2ab92d48de2889fe28891ceb7cf84e28487d18f70c2aed19753e284ae"
     "24588d0429a6a46d555360b9f3b83a60a6c49895a62abad18fd8182c0009492308"
 )
-OPRET = b"LTC BLK:3159327 -> 30364f9302886379279692f4c6ec33ec2ae679be2016490b0096c29ddbe7347b"
-NTIME = 1_786_609_421_000
+OPRET = b"Space.com 31/Oct/2026 SpaceX celebrates Halloween with early-morning Falcon 9 launch from California"
+NTIME = 1_793_484_390_400
 NVERSION = 0x20000000
 REWARD = 1 << 32
 MINER_INFO = b"/Genesis Fifty-Niner/"
@@ -91,7 +91,7 @@ def grind_python(header: CBlockHeader) -> CBlockHeader:
 
 def grind_util(header: CBlockHeader, util: str) -> CBlockHeader:
     hex_in = header.serialize().hex()
-    out = subprocess.check_output([util, "grind", hex_in], text=True).strip()
+    out = subprocess.check_output([util, "-regtest", "grind", hex_in], text=True).strip()
     solved = CBlockHeader()
     solved.deserialize(__import__("io").BytesIO(bytes.fromhex(out)))
     return solved

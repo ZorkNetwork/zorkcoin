@@ -27,9 +27,9 @@ class UTXOSetHashTest(BitcoinTestFramework):
         mocktime = node.getblockheader(node.getblockhash(0))['time'] + 1
         node.setmocktime(mocktime)
 
-        # Generate 100 blocks and remove the first since we plan to spend its
+        # Generate COINBASE_MATURITY blocks and remove the first since we plan to spend its
         # coinbase
-        block_hashes = self.generate(wallet, 1) + self.generate(node, 99)
+        block_hashes = self.generate(wallet, 1) + self.generate(node, 118)
         blocks = list(map(lambda block: from_hex(CBlock(), node.getblock(block, False)), block_hashes))
         blocks.pop(0)
 
@@ -67,8 +67,8 @@ class UTXOSetHashTest(BitcoinTestFramework):
         assert_equal(finalized[::-1].hex(), node_muhash)
 
         self.log.info("Test deterministic UTXO set hash results")
-        assert_equal(node.gettxoutsetinfo()['hash_serialized_3'], "ef8b4a281c706a2c9515ecd7600fbdec889647cdc8ae23b87d84ac1a181c8120")
-        assert_equal(node.gettxoutsetinfo("muhash")['muhash'], "4279c62f30378713b79a931c5b6a7a6b3f4d542ae21586c6136ddd57ee484b4a")
+        assert_equal(node.gettxoutsetinfo()['hash_serialized_3'], "4d29d6479e761d6bfd2b12603e793c1a06d62b711d46a443808b024128259e86")
+        assert_equal(node.gettxoutsetinfo("muhash")['muhash'], "9c731af59a21097094df19836bf64511241f038e59f372c6fa62648355a9ca12")
 
     def run_test(self):
         self.test_muhash_implementation()

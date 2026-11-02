@@ -45,15 +45,16 @@ GENESIS_PUBKEY = bytes.fromhex(
     "040241e2ab92d48de2889fe28891ceb7cf84e28487d18f70c2aed19753e284ae"
     "24588d0429a6a46d555360b9f3b83a60a6c49895a62abad18fd8182c0009492308"
 )
-# Locked launch instant: 2026-09-14 12:59:09.696 UTC == 0x1A0A0000000
-NTIME = 1_789_390_749_696
+# Locked launch instant: 2026-11-21 21:25:29.728 UTC == 0x1A200000000
+NTIME = 1_795_296_329_728
 NVERSION = 0x20000000
 NBITS = 0x1E0FFFF0
 REWARD = 1 << 32
 MINER_INFO = b"/Genesis Fifty-Niner/"
 EXTRA_NONCE = bytes.fromhex("4361726C")
 MINER_COMMENT = b"zork.network"
-# Engineering placeholder only — replace at T0 with the live Litecoin tip.
+DEFAULT_OPRETURN = "The News International 31/Oct/2026 SpaceX Falcon 9 reaches 700th launch with Starlink satellites in historic feat"
+# Engineering placeholder only — replace at T0 with the live Litecoin tip if --fetch-ltc is used.
 PLACEHOLDER_LTC_HEIGHT = 3_158_477
 PLACEHOLDER_LTC_HASH = "2e0962ab5028e67b83d6d7f240e2330b4ca58f6a7e28ceda3f371837a03f0d58"
 
@@ -113,7 +114,7 @@ def grind_python(header: CBlockHeader) -> CBlockHeader:
 
 def grind_util(header: CBlockHeader, util: str) -> CBlockHeader:
     hex_in = header.serialize().hex()
-    out = subprocess.check_output([util, "grind", hex_in], text=True).strip()
+    out = subprocess.check_output([util, "-regtest", "grind", hex_in], text=True).strip()
     solved = CBlockHeader()
     solved.deserialize(BytesIO(bytes.fromhex(out)))
     return solved
@@ -141,6 +142,11 @@ def write_pins(opret: bytes, solved: CBlockHeader, merkle: int) -> None:
     opret_txt = opret.decode("ascii")
     replace_one(
         PIN_HEADER,
+        r'static constexpr uint64_t MAINNET_GENESIS_NTIME = \d+ULL;[^\n]*',
+        f"static constexpr uint64_t MAINNET_GENESIS_NTIME = {NTIME}ULL; // 0x{NTIME:X}",
+    )
+    replace_one(
+        PIN_HEADER,
         r'static constexpr uint64_t MAINNET_GENESIS_NONCE = \d+ULL;',
         f"static constexpr uint64_t MAINNET_GENESIS_NONCE = {solved.nNonce}ULL;",
     )
@@ -156,13 +162,13 @@ def write_pins(opret: bytes, solved: CBlockHeader, merkle: int) -> None:
     )
     replace_one(
         PIN_HEADER,
-        r'inline constexpr const char MAINNET_GENESIS_LTC_OPRETURN\[\] = "LTC BLK:\d+ -> [0-9a-f]{64}";',
+        r'inline constexpr const char MAINNET_GENESIS_LTC_OPRETURN\[\] = "[^"]+";',
         f'inline constexpr const char MAINNET_GENESIS_LTC_OPRETURN[] = "{opret_txt}";',
     )
     replace_one(
         KHEAVY_TEST,
-        r"header\.hashMerkleRoot = uint256\{\"[0-9a-f]{64}\"\};\n    header\.nTime = 1789390749696ULL;\n    header\.nBits = 0x1e0ffff0;\n    CheckGenesisPoW\(header, \d+\);",
-        f'header.hashMerkleRoot = uint256{{"{merkle_hex}"}};\n    header.nTime = 1789390749696ULL;\n    header.nBits = 0x1e0ffff0;\n    CheckGenesisPoW(header, {solved.nNonce});',
+        r'header\.hashMerkleRoot = uint256\{"[0-9a-f]{64}"\};\n    header\.nTime = \d+ULL;\n    header\.nBits = 0x1e0ffff0;\n    CheckGenesisPoW\(header, \d+\);',
+        f'header.hashMerkleRoot = uint256{{"{merkle_hex}"}};\n    header.nTime = {NTIME}ULL;\n    header.nBits = 0x1e0ffff0;\n    CheckGenesisPoW(header, {solved.nNonce});',
     )
     replace_one(
         QT_RPC_TEST,
@@ -176,8 +182,9 @@ def write_pins(opret: bytes, solved: CBlockHeader, merkle: int) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--ltc-height", type=int, default=PLACEHOLDER_LTC_HEIGHT)
-    parser.add_argument("--ltc-hash", default=PLACEHOLDER_LTC_HASH)
+    parser.add_argument("--opreturn", default=DEFAULT_OPRETURN, help="genesis OP_RETURN text")
+    parser.add_argument("--ltc-height", type=int, default=None)
+    parser.add_argument("--ltc-hash", default=None)
     parser.add_argument("--fetch-ltc", action="store_true", help="query live Litecoin tip via litecoin-cli")
     parser.add_argument("--ltc-cli", default=os.environ.get("LITECOIN_CLI", "litecoin-cli"))
     parser.add_argument("--util", default=os.environ.get("ZORKCOIN_UTIL", ""), help="path to zorkcoin-util")
@@ -185,12 +192,14 @@ def main() -> None:
     parser.add_argument("--write-pins", action="store_true", help="patch genesis_mainnet.h and test pins")
     args = parser.parse_args()
 
-    height, block_hash = args.ltc_height, args.ltc_hash
     if args.fetch_ltc:
         height, block_hash = fetch_ltc_tip(args.ltc_cli)
         print(f"fetched Litecoin tip height={height} hash={block_hash}")
-
-    opret = ltc_opreturn(height, block_hash)
+        opret = ltc_opreturn(height, block_hash)
+    elif args.ltc_height is not None and args.ltc_hash is not None:
+        opret = ltc_opreturn(args.ltc_height, args.ltc_hash)
+    else:
+        opret = args.opreturn.encode("ascii")
     tx = genesis_tx(opret)
     merkle = txid_int(tx)
     print(f"nTime={NTIME} (0x{NTIME:x})")

@@ -2,7 +2,7 @@
 
 MWEB uses a **dual-budget** model: L1 (base + witness) follows Bitcoin Core BIP141; the extension block uses Litecoin's abstract MWEB weight. Never fold serialized extension bytes into L1 BIP141 weight.
 
-Serialized block size uses **two** caps: consensus `MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB` (~25.8 MB) vs mine/BIP324-v2 `MAX_BLOCK_SERIALIZED_SIZE_BIP324` (16,777,214). Canonical detail: [consensus.md — Block Serialized Size](./consensus.md#block-serialized-size).
+Serialized block size uses `MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB` = `MAX_BLOCK_SERIALIZED_SIZE_BIP324` (16,777,214) for both consensus and mine/BIP324-v2. Canonical detail: [consensus.md — Block Serialized Size](./consensus.md#block-serialized-size).
 
 ## Dual budgets + wire size
 
@@ -10,7 +10,7 @@ Serialized block size uses **two** caps: consensus `MAX_BLOCK_SERIALIZED_SIZE_WI
 |--------|------------------|-----|
 | L1 base + witness | BIP141 weight of the non-MWEB transaction/block bytes, plus explicit peg-in/peg-out L1 side-effects | `MAX_BLOCK_WEIGHT` (4,000,000) |
 | MWEB extension | `Weight::Calculate` over inputs, kernels, and outputs | Consensus `mw::MAX_BLOCK_WEIGHT` (200,000) |
-| Full block wire bytes (consensus) | `GetSerializeSize(TX_WITH_WITNESS(block))` (L1 + HogEx + `mweb_block`) | `MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB` = **25,800,195** |
+| Full block wire bytes (consensus) | `GetSerializeSize(TX_WITH_WITNESS(block))` (L1 + HogEx + `mweb_block`) | `MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB` = **16,777,214** |
 | Mine / BIP324 v2 send | Same wire serialization for templates and v2 body send | `MAX_BLOCK_SERIALIZED_SIZE_BIP324` = **16,777,214** |
 
 Fees: `GetFee(vsize)` for L1 plus `GetMWEBFee(mweb_weight)` (`BASE_MWEB_FEE` = 100 sat per MWEB weight unit).

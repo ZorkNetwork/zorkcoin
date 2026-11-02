@@ -260,8 +260,8 @@ BOOST_AUTO_TEST_CASE(address_descriptor_records_origins_and_expands_to_the_coin_
 
     const std::string body = by_address->substr(0, by_address->find('#'));
     BOOST_CHECK(body.starts_with("mweb(["));
-    BOOST_CHECK(body.find("/0h/100h/0h]") != std::string::npos);
-    BOOST_CHECK(body.find("/0h/100h/1h]") != std::string::npos);
+    BOOST_CHECK(body.find("/100h/240079435h/0h]") != std::string::npos);
+    BOOST_CHECK(body.find("/100h/240079435h/1h]") != std::string::npos);
     BOOST_CHECK(body.ends_with(strprintf(",%u)", *index)));
 
     FlatSigningProvider keys;
@@ -298,8 +298,8 @@ BOOST_AUTO_TEST_CASE(watch_only_account_export_mints_the_same_addresses)
     BOOST_REQUIRE(exported);
     const std::string body = exported->substr(0, exported->find('#'));
     BOOST_CHECK(body.starts_with("mweb(["));
-    BOOST_CHECK(body.find("/0h/100h/0h]") != std::string::npos);
-    BOOST_CHECK(body.ends_with("/0h/100h/1h]" + HexStr(spend_pubkey.vec()) + ",*)"));
+    BOOST_CHECK(body.find("/100h/240079435h/0h]") != std::string::npos);
+    BOOST_CHECK(body.ends_with("/100h/240079435h/1h]" + HexStr(spend_pubkey.vec()) + ",*)"));
     BOOST_CHECK(body.find("tpub") == std::string::npos);
     BOOST_CHECK(body.find("tprv") == std::string::npos);
 

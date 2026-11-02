@@ -114,12 +114,12 @@ K<sub>o</sub> = HASH32('O'||e)⋅B<sub>i</sub>
   * **Repeated `output_id` occurrence tracking:** Consensus forbids duplicate live UTXO IDs but allows a previously spent `output_id` to be recreated in a later block (for example, if two wallets share a scan secret and deterministic sender index). Wallet output and spend tracking is always occurrence-aware: `mapOutputsMWEB` indexes all occurrences per `output_id`, block scans match full transactions by block/kernel membership and disambiguate extension-block placeholders with the output's PMMR leaf index (`header.num_txos - block_outputs + output_pos`), and spentness checks bind spends to their creation height epoch.
   * <code>sender_key</code> / <code>blind</code> are stripped on disk; see [payment-proofs.md](payment-proofs.md).
 * Recommended derivation paths (same as Litecoin Core):
-  * Master scan key <code>(a, A)</code>: <code>m/0'/100'/0'</code>
-  * Master spend key <code>(b, B)</code>: <code>m/0'/100'/1'</code>
+  * Master scan key <code>(a, A)</code>: <code>m/100'/240079435'/0'</code> (mainnet) or <code>m/100'/1'/0'</code> (testnet/signet/regtest)
+  * Master spend key <code>(b, B)</code>: <code>m/100'/240079435'/1'</code> (mainnet) or <code>m/100'/1'/1'</code> (testnet/signet/regtest)
 
 ### Address encoding (Zorkcoin)
 
-Stealth addresses are encoded with Bech32 (not Bech32m) under the MWEB HRP: `mweb` on mainnet and `tmweb` on test/signet/regtest. This is distinct from native segwit addresses (`zork1…`, `zorktest1…`, `zorksim1…`).
+Stealth addresses are encoded with Bech32 (not Bech32m) under the MWEB HRP: `zorkmweb` on mainnet and `tmweb` on test/signet/regtest. This is distinct from native segwit addresses (`zork1…`, `zorktest1…`, `zorksim1…`).
 
 The data part is a version symbol `0` followed by the 5-bit conversion of the 66 bytes <code>A<sub>i</sub>||B<sub>i</sub></code> (each a 33-byte compressed key).
 
@@ -133,4 +133,4 @@ Bech32 is sufficient for MWEB because the payload has a single fixed length (the
 
 How MWEB keys and stealth indices are stored, exported, imported, and scanned in descriptor wallets is specified in [descriptors.md](descriptors.md). That document references this file for DKSAP cryptography; it does not change the protocol math above.
 
-The bech32 `mweb1…` / `tmweb1…` pay-to encoding includes the scan and spend public keys `(A_i, B_i)` required for a sender to construct a valid output. There is no descriptor form of a payment address; see [descriptors.md](descriptors.md).
+The bech32 `zorkmweb1…` / `tmweb1…` pay-to encoding includes the scan and spend public keys `(A_i, B_i)` required for a sender to construct a valid output. There is no descriptor form of a payment address; see [descriptors.md](descriptors.md).

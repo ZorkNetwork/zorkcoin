@@ -152,7 +152,7 @@ class AssumeutxoTest(BitcoinTestFramework):
             with open(bad_snapshot_path, 'wb') as f:
                 f.write(valid_snapshot_contents[:11] + bytes.fromhex(bad_block_hash)[::-1] + valid_snapshot_contents[43:])
 
-            msg = f"Unable to load UTXO snapshot: assumeutxo block hash in snapshot metadata not recognized (hash: {bad_block_hash}). The following snapshot heights are available: 110, 200, 299, 750."
+            msg = f"Unable to load UTXO snapshot: assumeutxo block hash in snapshot metadata not recognized (hash: {bad_block_hash}). The following snapshot heights are available: 129, 200, 299, 750."
             assert_raises_rpc_error(-32603, msg, node.loadtxoutset, bad_snapshot_path)
 
         self.log.info("  - snapshot file with wrong number of coins")
@@ -676,15 +676,12 @@ class AssumeutxoTest(BitcoinTestFramework):
         n1.getblock(stale_hash)
 
         self.log.info("Submit a spending transaction for a snapshot chainstate coin to the mempool")
-        # spend the coinbase output of the first block that is not available on node1
+        # spend the non-coinbase self-transfer output of the first block that is not available on node1
         spend_coin_blockhash = n1.getblockhash(START_HEIGHT + 1)
         assert_raises_rpc_error(-1, "Block not available (not fully downloaded)", n1.getblock, spend_coin_blockhash)
-        prev_tx = n0.getblock(spend_coin_blockhash, 3)['tx'][0]
-        prevout = {"txid": prev_tx['txid'], "vout": 0, "scriptPubKey": prev_tx['vout'][0]['scriptPubKey']['hex']}
-        privkey = n0.get_deterministic_priv_key().key
-        spend_value = Decimal(str(prev_tx['vout'][0]['value'])) - Decimal('0.01')
-        raw_tx = n1.createrawtransaction([prevout], {getnewdestination()[2]: spend_value})
-        signed_tx = n1.signrawtransactionwithkey(raw_tx, [privkey], [prevout])['hex']
+        prev_tx = n0.getblock(spend_coin_blockhash, 3)['tx'][1]
+        utxo_to_spend = self.mini_wallet.get_utxo(txid=prev_tx['txid'])
+        signed_tx = self.mini_wallet.create_self_transfer(utxo_to_spend=utxo_to_spend)['hex']
         signed_txid = tx_from_hex(signed_tx).txid_hex
 
         assert n1.gettxout(prev_tx['txid'], 0) is not None

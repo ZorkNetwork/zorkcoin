@@ -72,17 +72,17 @@ class SegWitTest(BitcoinTestFramework):
         self.extra_args = [
             [
                 "-acceptnonstdtxn=1",
-                "-testactivationheight=segwit@165",
+                "-testactivationheight=segwit@184",
                 "-addresstype=legacy",
             ],
             [
                 "-acceptnonstdtxn=1",
-                "-testactivationheight=segwit@165",
+                "-testactivationheight=segwit@184",
                 "-addresstype=legacy",
             ],
             [
                 "-acceptnonstdtxn=1",
-                "-testactivationheight=segwit@165",
+                "-testactivationheight=segwit@184",
                 "-addresstype=legacy",
             ],
         ]
@@ -106,7 +106,7 @@ class SegWitTest(BitcoinTestFramework):
         assert_raises_rpc_error(-26, error_msg, send_to_witness, use_p2wsh=1, node=node, utxo=getutxo(txid), pubkey=self.pubkey[0], encode_p2sh=False, amount=Decimal("42.94767296"), sign=sign, insert_redeem_script=redeem_script)
 
     def run_test(self):
-        self.generate(self.nodes[0], 161)  # block 161
+        self.generate(self.nodes[0], 180)  # block 180
 
         self.log.info("Verify sigops are counted in GBT with pre-BIP141 rules before the fork")
         txid = self.nodes[0].sendtoaddress(self.nodes[0].getnewaddress(), 1)

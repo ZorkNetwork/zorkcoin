@@ -409,8 +409,7 @@ BOOST_AUTO_TEST_CASE(snapshot_metadata_versions)
 BOOST_AUTO_TEST_CASE(bip324_serialized_size_constant)
 {
     BOOST_CHECK_EQUAL(MAX_BLOCK_SERIALIZED_SIZE_BIP324, (1u << 24) - 1 - 1);
-    BOOST_CHECK_EQUAL(MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB, MAX_BLOCK_SERIALIZED_SIZE + mw::MAX_BLOCK_BYTES);
-    BOOST_CHECK(MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB > MAX_BLOCK_SERIALIZED_SIZE_BIP324);
+    BOOST_CHECK_EQUAL(MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB, MAX_BLOCK_SERIALIZED_SIZE_BIP324);
     BOOST_CHECK(MAX_PROTOCOL_MESSAGE_LENGTH > MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB);
     // Default build: mine budget equals BIP324 send gate.
     BOOST_CHECK_EQUAL(MAX_BLOCK_SERIALIZED_SIZE_MINE, MAX_BLOCK_SERIALIZED_SIZE_BIP324);
@@ -464,13 +463,14 @@ BOOST_AUTO_TEST_CASE(bip324_payload_gate_helper)
     BOOST_CHECK(!ExceedsBip324BlockPayload(0));
     BOOST_CHECK(!ExceedsBip324BlockPayload(MAX_BLOCK_SERIALIZED_SIZE_BIP324));
     BOOST_CHECK(ExceedsBip324BlockPayload(MAX_BLOCK_SERIALIZED_SIZE_BIP324 + 1));
-    BOOST_CHECK(ExceedsBip324BlockPayload(MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB));
+    BOOST_CHECK(!ExceedsBip324BlockPayload(MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB));
+    BOOST_CHECK(ExceedsBip324BlockPayload(MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB + 1));
 }
 
 BOOST_AUTO_TEST_CASE(checkblock_tests_above_bip324_below_max_mweb_no_bad_blk_serialized_size)
 {
-    // Size in (BIP324, WITH_MWEB]: CheckBlock must not reject for bad-blk-serialized-size.
-    // Synthetic MWEB body fails later crypto/structure checks — that is expected.
+    // On Zorkcoin, MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB is capped at MAX_BLOCK_SERIALIZED_SIZE_BIP324.
+    // A block above MAX_BLOCK_SERIALIZED_SIZE_BIP324 is rejected with bad-blk-serialized-size.
     CBlock block;
     CMutableTransaction coinbase;
     coinbase.vin.resize(1);
@@ -493,7 +493,7 @@ BOOST_AUTO_TEST_CASE(checkblock_tests_above_bip324_below_max_mweb_no_bad_blk_ser
         PublicKey{},
         PublicKey{},
         Signature{});
-    // ~100k weightless inputs ≈ 19.6 MB: above BIP324 mine/v2 gate, under WITH_MWEB.
+    // ~100k weightless inputs ≈ 19.6 MB: above BIP324 / WITH_MWEB cap.
     std::vector<Input> inputs(100'000, sample);
     auto header = std::make_shared<mw::Header>(
         /*height=*/1,
@@ -504,12 +504,12 @@ BOOST_AUTO_TEST_CASE(checkblock_tests_above_bip324_below_max_mweb_no_bad_blk_ser
 
     const auto ser = ::GetSerializeSize(TX_WITH_WITNESS(block));
     BOOST_REQUIRE(ser > MAX_BLOCK_SERIALIZED_SIZE_BIP324);
-    BOOST_REQUIRE(ser <= MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB);
+    BOOST_REQUIRE(ser > MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB);
     BOOST_REQUIRE(::GetSerializeSize(TX_NO_WITNESS_NO_MWEB(block)) * WITNESS_SCALE_FACTOR <= MAX_BLOCK_WEIGHT);
 
     BlockValidationState state;
     BOOST_CHECK(!CheckBlock(block, state, Params().GetConsensus(), /*fCheckPOW=*/false, /*fCheckMerkleRoot=*/false));
-    BOOST_CHECK(state.GetRejectReason() != "bad-blk-serialized-size");
+    BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-blk-serialized-size");
 }
 
 BOOST_AUTO_TEST_CASE(frozen_mweb_output_ids_configured)
@@ -634,7 +634,9 @@ BOOST_AUTO_TEST_CASE(product_mweb_signals_from_genesis)
         const auto& mweb = params->GetConsensus().vDeployments[Consensus::DEPLOYMENT_MWEB];
         BOOST_CHECK_EQUAL(mweb.nStartTime, 0);
         BOOST_CHECK_EQUAL(mweb.nTimeout, Consensus::BIP9Deployment::NO_TIMEOUT);
-        BOOST_CHECK_EQUAL(mweb.min_activation_height, 0);
+        BOOST_CHECK_EQUAL(mweb.min_activation_height, 16384);
+        BOOST_CHECK_EQUAL(mweb.threshold, 3840U);
+        BOOST_CHECK_EQUAL(mweb.period, 4096U);
     };
     check_started(ChainType::MAIN);
     check_started(ChainType::TESTNET);

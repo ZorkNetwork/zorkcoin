@@ -49,7 +49,7 @@ MAX_BLOOM_FILTER_SIZE = 36000
 MAX_BLOOM_HASH_FUNCS = 50
 
 COIN = 100000000  # 1 zork in satoshis
-MAX_MONEY = (1 << 32) * 2 * (1 << 20)  # 2^53 sat; matches src/consensus/amount.h
+MAX_MONEY = 9007199253692420  # 0x001FFFFF_FFF00004 sat; matches src/consensus/amount.h
 
 MAX_BIP125_RBF_SEQUENCE = 0xfffffffd  # Sequence number that is rbf-opt-in (BIP 125) and csv-opt-out (BIP 68)
 MAX_SEQUENCE_NONFINAL = 0xfffffffe  # Sequence number that is csv-opt-out (BIP 68)

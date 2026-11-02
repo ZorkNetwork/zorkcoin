@@ -1,28 +1,22 @@
 {
   "chain": "main",
   "test_chain": false,
-  "genesis": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
-  "subsidy_halving_interval": 210000,
+  "genesis": "e97b7d9b9283162744596c3a46e7e167dcbec6b8df0e2b4ef2786c7c633d1ca8",
+  "subsidy_halving_interval": 1048576,
   "pow": {
-    "limit": "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-    "target_spacing": 600,
+    "limit": "00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "target_spacing": 131,
     "difficulty_retarget_interval": 2016,
     "mindiff_blocks": "no"
   },
   "net": {
-    "default_port": 8333,
-    "magic": "f9beb4d9",
+    "default_port": 24302,
+    "magic": "f71ddc3d",
     "dns_seeds": [
-      "dnsseed.bluematt.me.",
-      "seed.bitcoin.jonasschnelli.ch.",
-      "seed.btc.petertodd.net.",
-      "seed.bitcoin.sprovoost.nl.",
-      "dnsseed.emzy.de.",
-      "seed.bitcoin.wiz.biz.",
-      "seed.mainnet.achownodes.xyz."
+      "mainnet-seed.zork.network"
     ]
   },
   "addresses": {
-    "bech32_hrp": "bc"
+    "bech32_hrp": "zork"
   }
 }

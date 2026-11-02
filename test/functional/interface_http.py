@@ -714,7 +714,7 @@ class HTTPBasicsTest (BitcoinTestFramework):
 
             # The waiting connection gets processed
             delayed_response = waiting_request.result(timeout=5)
-            assert "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206" in delayed_response.decode()
+            assert "f1c2b04f4fc9cacae4a4fb143bced0793faf917a96826c981afa4c89042b0a24" in delayed_response.decode()
 
             # Close all remaining connections for clean up
             for client in connections:
@@ -847,6 +847,7 @@ class HTTPBasicsTest (BitcoinTestFramework):
         self.restart_node(0, extra_args=["-rest=1"])
         # Generate a big block
         self.wallet = MiniWallet(self.node)
+        self.generate(self.wallet, 20, sync_fun=self.no_op)
         mine_large_block(self, self.wallet, self.node)
         big_block_hash = self.node.getbestblockhash()
 

@@ -26,7 +26,7 @@ class WalletDeprecatedRBFTest(BitcoinTestFramework):
       node = self.nodes[0]
       node.createwallet("deprecated_optinrbf")
       wallet = node.get_wallet_rpc("deprecated_optinrbf")
-      self.generatetoaddress(node, nblocks=101, address=wallet.getnewaddress(), sync_fun=self.no_op)
+      self.generatetoaddress(node, nblocks=120, address=wallet.getnewaddress(), sync_fun=self.no_op)
       tx = wallet.gettransaction(wallet.sendall(recipients=[wallet.getnewaddress()])["txid"])
       assert_equal("bip125-replaceable" in tx, True)
       assert_equal(tx["bip125-replaceable"], "no")

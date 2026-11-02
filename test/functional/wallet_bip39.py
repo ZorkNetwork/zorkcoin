@@ -165,14 +165,14 @@ class WalletBIP39Test(BitcoinTestFramework):
             # gethdkeys links the stored account's hardened derivations to the master xpub.
             hd_account, = [d["desc"] for d in hdkey["descriptors"] if d["desc"].startswith("mweb(")]
             assert_equal(hd_account.split("#")[0].replace("'", "h"),
-                         f"mweb({xpub}/0h/100h/0h,{xpub}/0h/100h/1h,*)")
+                         f"mweb({xpub}/100h/1h/0h,{xpub}/100h/1h/1h,*)")
 
             account, = [d["desc"] for d in active if d["desc"].startswith("mweb(")]
             # listdescriptors exports scan-WIF/spend-pubkey KEYs with their derived origins.
             scan, spend, wildcard = account.split("#")[0][5:-1].replace("'", "h").split(",")
             fingerprint = scan[1:9]
-            assert scan.startswith(f"[{fingerprint}/0h/100h/0h]")
-            assert spend.startswith(f"[{fingerprint}/0h/100h/1h]")
+            assert scan.startswith(f"[{fingerprint}/100h/1h/0h]")
+            assert spend.startswith(f"[{fingerprint}/100h/1h/1h]")
             assert_equal(wildcard, "*")
 
             wallets.append(wallet)

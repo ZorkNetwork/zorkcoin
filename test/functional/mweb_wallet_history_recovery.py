@@ -65,7 +65,7 @@ class MWEBWalletHistoryRecoveryTest(BitcoinTestFramework):
                                 payment=payment, recipient=recipient,
                                 change=Decimal(5) - payment - kernel['fee']))
         node.unloadwallet('source', load_on_startup=False)
-        self.mining_time = node.getblockheader(node.getbestblockhash())['time'] + 100
+        self.mining_time = (node.getblockheader(node.getbestblockhash())['time'] // 1000) + 100
 
         self.log.info('Mine an unknown winner, then restore two wallets with the same known loser')
         first_block = self.mine_winner(winners[0])

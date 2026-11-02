@@ -63,7 +63,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager, TestChain100Setup)
 
     // Get to a valid assumeutxo tip (per chainparams);
     mineBlocks(10);
-    BOOST_CHECK_EQUAL(WITH_LOCK(manager.GetMutex(), return manager.ActiveHeight()), 110);
+    BOOST_CHECK_EQUAL(WITH_LOCK(manager.GetMutex(), return manager.ActiveHeight()), COINBASE_MATURITY + 10);
     auto active_tip = WITH_LOCK(manager.GetMutex(), return manager.ActiveTip());
     auto exp_tip = c1.m_chain.Tip();
     BOOST_CHECK_EQUAL(active_tip, exp_tip);
@@ -105,10 +105,10 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager, TestChain100Setup)
     auto& active_chain2 = WITH_LOCK(manager.GetMutex(), return manager.ActiveChain());
     BOOST_CHECK_EQUAL(&active_chain2, &c2.m_chain);
 
-    BOOST_CHECK_EQUAL(WITH_LOCK(manager.GetMutex(), return manager.ActiveHeight()), 110);
+    BOOST_CHECK_EQUAL(WITH_LOCK(manager.GetMutex(), return manager.ActiveHeight()), COINBASE_MATURITY + 10);
     mineBlocks(1);
-    BOOST_CHECK_EQUAL(WITH_LOCK(manager.GetMutex(), return manager.ActiveHeight()), 111);
-    BOOST_CHECK_EQUAL(WITH_LOCK(manager.GetMutex(), return c1.m_chain.Height()), 110);
+    BOOST_CHECK_EQUAL(WITH_LOCK(manager.GetMutex(), return manager.ActiveHeight()), COINBASE_MATURITY + 11);
+    BOOST_CHECK_EQUAL(WITH_LOCK(manager.GetMutex(), return c1.m_chain.Height()), COINBASE_MATURITY + 10);
 
     auto active_tip2 = WITH_LOCK(manager.GetMutex(), return manager.ActiveTip());
     BOOST_CHECK_EQUAL(active_tip, active_tip2->pprev);
@@ -255,7 +255,7 @@ struct SnapshotTestSetup : TestChain100Setup {
         }
 
         size_t initial_size;
-        size_t initial_total_coins{100};
+        size_t initial_total_coins{COINBASE_MATURITY};
 
         // Make some initial assertions about the contents of the chainstate.
         {
@@ -280,9 +280,9 @@ struct SnapshotTestSetup : TestChain100Setup {
         BOOST_REQUIRE(!CreateAndActivateUTXOSnapshot(this));
         BOOST_CHECK(!chainman.ActiveChainstate().m_from_snapshot_blockhash);
 
-        // Mine 10 more blocks, putting at us height 110 where a valid assumeutxo value can
+        // Mine 10 more blocks, putting at us height COINBASE_MATURITY + 10 where a valid assumeutxo value can
         // be found.
-        constexpr int snapshot_height = 110;
+        constexpr int snapshot_height = COINBASE_MATURITY + 10;
         mineBlocks(10);
         initial_size += 10;
         initial_total_coins += 10;
@@ -495,17 +495,17 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_loadblockindex, TestChain100Setup)
     // Blocks in range [assumed_valid_start_idx, last_assumed_valid_idx) will be
     // marked as assumed-valid and not having data.
     const int expected_assumed_valid{20};
-    const int last_assumed_valid_idx{111};
+    const int last_assumed_valid_idx{COINBASE_MATURITY + 11};
     const int assumed_valid_start_idx = last_assumed_valid_idx - expected_assumed_valid;
 
-    // Mine to height 120, past the hardcoded regtest assumeutxo snapshot at
-    // height 110
+    // Mine to height COINBASE_MATURITY + 20, past the hardcoded regtest assumeutxo snapshot at
+    // height COINBASE_MATURITY + 10
     mineBlocks(20);
 
     CBlockIndex* validated_tip{nullptr};
     CBlockIndex* assumed_base{nullptr};
     CBlockIndex* assumed_tip{WITH_LOCK(chainman.GetMutex(), return chainman.ActiveChain().Tip())};
-    BOOST_CHECK_EQUAL(assumed_tip->nHeight, 120);
+    BOOST_CHECK_EQUAL(assumed_tip->nHeight, COINBASE_MATURITY + 20);
 
     auto reload_all_block_indexes = [&]() {
         LOCK(chainman.GetMutex());
@@ -562,10 +562,10 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_loadblockindex, TestChain100Setup)
     cs2.m_chain.SetTip(*assumed_base);
 
     // Sanity check test variables.
-    BOOST_CHECK_EQUAL(num_indexes, 121); // 121 total blocks, including genesis
-    BOOST_CHECK_EQUAL(assumed_tip->nHeight, 120);  // original chain has height 120
-    BOOST_CHECK_EQUAL(validated_tip->nHeight, 90); // current cs1 chain has height 90
-    BOOST_CHECK_EQUAL(assumed_base->nHeight, 110); // current cs2 chain has height 110
+    BOOST_CHECK_EQUAL(num_indexes, COINBASE_MATURITY + 21); // total blocks, including genesis
+    BOOST_CHECK_EQUAL(assumed_tip->nHeight, COINBASE_MATURITY + 20);  // original chain has height COINBASE_MATURITY + 20
+    BOOST_CHECK_EQUAL(validated_tip->nHeight, COINBASE_MATURITY - 10); // current cs1 chain has height COINBASE_MATURITY - 10
+    BOOST_CHECK_EQUAL(assumed_base->nHeight, COINBASE_MATURITY + 10); // current cs2 chain has height COINBASE_MATURITY + 10
 
     // Regenerate cs1.setBlockIndexCandidates and cs2.setBlockIndexCandidate and
     // check contents below.
@@ -645,15 +645,15 @@ BOOST_FIXTURE_TEST_CASE(invalidate_block_and_reconsider_fork, TestChain100Setup)
     ChainstateManager& chainman = *Assert(m_node.chainman);
     Chainstate& chainstate = chainman.ActiveChainstate();
 
-    // we have a chain of 100 blocks: genesis(0) <- ... <- block98 <- block99 <- block100
+    // we have a chain of COINBASE_MATURITY blocks: genesis(0) <- ... <- block98 <- block99 <- block100
     CBlockIndex* block98;
     CBlockIndex* block99;
     CBlockIndex* block100;
     {
         LOCK(chainman.GetMutex());
-        block98 = chainman.ActiveChain()[98];
-        block99 = chainman.ActiveChain()[99];
-        block100 = chainman.ActiveChain()[100];
+        block98 = chainman.ActiveChain()[COINBASE_MATURITY - 2];
+        block99 = chainman.ActiveChain()[COINBASE_MATURITY - 1];
+        block100 = chainman.ActiveChain()[COINBASE_MATURITY];
     }
 
     // create the following block constellation:
@@ -672,9 +672,9 @@ BOOST_FIXTURE_TEST_CASE(invalidate_block_and_reconsider_fork, TestChain100Setup)
     const CBlockIndex* fork_block100;
     {
         LOCK(chainman.GetMutex());
-        fork_block99 = chainman.ActiveChain()[99];
+        fork_block99 = chainman.ActiveChain()[COINBASE_MATURITY - 1];
         BOOST_REQUIRE(fork_block99->pprev == block98);
-        fork_block100 = chainman.ActiveChain()[100];
+        fork_block100 = chainman.ActiveChain()[COINBASE_MATURITY];
         BOOST_REQUIRE(fork_block100->pprev == fork_block99);
     }
     // Restore original block99 and block100
@@ -757,7 +757,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_init, SnapshotTestSetup)
         BOOST_CHECK(bg_chainstate.DisconnectTip(unused_state, &unused_pool));
         unused_pool.clear();  // to avoid queuedTx assertion errors on teardown
     }
-    BOOST_CHECK_EQUAL(bg_chainstate.m_chain.Height(), 109);
+    BOOST_CHECK_EQUAL(bg_chainstate.m_chain.Height(), COINBASE_MATURITY + 9);
 
     // Test that simulating a shutdown (resetting ChainstateManager) and then performing
     // chainstate reinitializing successfully reloads both chainstates.
@@ -775,15 +775,15 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_init, SnapshotTestSetup)
         // of the LoadVerifyActivate only calling ActivateBestChain on one
         // chainstate. The height would be 110 after a real restart, but it's
         // fine for this test which is focused on the snapshot chainstate.
-        BOOST_CHECK_EQUAL(chainman_restarted.m_chainstates[0]->m_chain.Height(), 109);
-        BOOST_CHECK_EQUAL(chainman_restarted.m_chainstates[1]->m_chain.Height(), 210);
+        BOOST_CHECK_EQUAL(chainman_restarted.m_chainstates[0]->m_chain.Height(), COINBASE_MATURITY + 9);
+        BOOST_CHECK_EQUAL(chainman_restarted.m_chainstates[1]->m_chain.Height(), COINBASE_MATURITY + 110);
 
         BOOST_CHECK(chainman_restarted.CurrentChainstate().m_from_snapshot_blockhash);
         BOOST_CHECK(chainman_restarted.CurrentChainstate().m_assumeutxo == Assumeutxo::UNVALIDATED);
 
         BOOST_CHECK_EQUAL(chainman_restarted.ActiveTip()->GetBlockHash(), snapshot_tip_hash);
-        BOOST_CHECK_EQUAL(chainman_restarted.ActiveHeight(), 210);
-        BOOST_CHECK_EQUAL(chainman_restarted.HistoricalChainstate()->m_chain.Height(), 109);
+        BOOST_CHECK_EQUAL(chainman_restarted.ActiveHeight(), COINBASE_MATURITY + 110);
+        BOOST_CHECK_EQUAL(chainman_restarted.HistoricalChainstate()->m_chain.Height(), COINBASE_MATURITY + 9);
     }
 
     BOOST_TEST_MESSAGE(
@@ -791,13 +791,13 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_init, SnapshotTestSetup)
     mineBlocks(10);
     {
         LOCK(chainman_restarted.GetMutex());
-        BOOST_CHECK_EQUAL(chainman_restarted.ActiveHeight(), 220);
+        BOOST_CHECK_EQUAL(chainman_restarted.ActiveHeight(), COINBASE_MATURITY + 120);
 
         // Background chainstate should be unaware of new blocks on the snapshot
         // chainstate, but the block disconnected above is now reattached.
         BOOST_CHECK_EQUAL(chainman_restarted.m_chainstates.size(), 2);
-        BOOST_CHECK_EQUAL(chainman_restarted.m_chainstates[0]->m_chain.Height(), 110);
-        BOOST_CHECK_EQUAL(chainman_restarted.m_chainstates[1]->m_chain.Height(), 220);
+        BOOST_CHECK_EQUAL(chainman_restarted.m_chainstates[0]->m_chain.Height(), COINBASE_MATURITY + 10);
+        BOOST_CHECK_EQUAL(chainman_restarted.m_chainstates[1]->m_chain.Height(), COINBASE_MATURITY + 120);
         BOOST_CHECK_EQUAL(chainman_restarted.HistoricalChainstate(), nullptr);
     }
 }
@@ -870,7 +870,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_completion, SnapshotTestSetup
         BOOST_CHECK(active_cs2.m_coinsdb_cache_size_bytes > db_cache_before_complete);
 
         BOOST_CHECK_EQUAL(chainman_restarted.ActiveTip()->GetBlockHash(), snapshot_tip_hash);
-        BOOST_CHECK_EQUAL(chainman_restarted.ActiveHeight(), 210);
+        BOOST_CHECK_EQUAL(chainman_restarted.ActiveHeight(), COINBASE_MATURITY + 110);
     }
 
     BOOST_TEST_MESSAGE(
@@ -878,7 +878,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_completion, SnapshotTestSetup
     mineBlocks(10);
     {
         LOCK(chainman_restarted.GetMutex());
-        BOOST_CHECK_EQUAL(chainman_restarted.ActiveHeight(), 220);
+        BOOST_CHECK_EQUAL(chainman_restarted.ActiveHeight(), COINBASE_MATURITY + 120);
     }
 }
 
@@ -941,7 +941,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_completion_hash_mismatch, Sna
         LOCK(::cs_main);
         BOOST_CHECK_EQUAL(chainman_restarted.m_chainstates.size(), 1);
         BOOST_CHECK(!chainman_restarted.CurrentChainstate().m_from_snapshot_blockhash);
-        BOOST_CHECK_EQUAL(chainman_restarted.ActiveHeight(), 210);
+        BOOST_CHECK_EQUAL(chainman_restarted.ActiveHeight(), COINBASE_MATURITY + 110);
     }
 
     BOOST_TEST_MESSAGE(
@@ -949,7 +949,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_snapshot_completion_hash_mismatch, Sna
     mineBlocks(10);
     {
         LOCK(::cs_main);
-        BOOST_CHECK_EQUAL(chainman_restarted.ActiveHeight(), 220);
+        BOOST_CHECK_EQUAL(chainman_restarted.ActiveHeight(), COINBASE_MATURITY + 120);
     }
 }
 

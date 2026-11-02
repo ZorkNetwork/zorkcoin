@@ -103,7 +103,7 @@ class WalletV3Test(BitcoinTestFramework):
         self.nodes[0].createwallet("charlie")
         self.charlie = self.nodes[0].get_wallet_rpc("charlie")
 
-        self.generatetoaddress(self.nodes[0], 100, self.charlie.getnewaddress())
+        self.generatetoaddress(self.nodes[0], 119, self.charlie.getnewaddress())
 
         self.run_test_with_swapped_versions(self.tx_spends_unconfirmed_tx_with_wrong_version)
         self.run_test_with_swapped_versions(self.va_tx_spends_confirmed_vb_tx)

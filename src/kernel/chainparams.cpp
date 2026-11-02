@@ -191,13 +191,12 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].period = 2016;
 
         // MWEB: BIP9 signaling from genesis. Not buried at height 1.
-        // ACTIVE after 2–3 periods (~6048 blocks). Peg-ins still need maturity 100.
         consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].bit = 4;
         consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].nStartTime = 0;
         consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
-        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].min_activation_height = 0;
-        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].threshold = 1815;
-        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].period = 2016;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].min_activation_height = 16384;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].threshold = 3840;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].period = 4096;
 
         ApplyDeploymentOptions(opts.dep_opts);
 
@@ -229,13 +228,12 @@ public:
         pchMessageStart[1] = 0x1d;
         pchMessageStart[2] = 0xdc;
         pchMessageStart[3] = 0x3d;
-        nDefaultPort = 24301;
+        nDefaultPort = 24302;
         nPruneAfterHeight = 100000;
         m_assumed_blockchain_size = 40;
         m_assumed_chain_state_size = 2;
 
-        // Launch nTime is locked. Litecoin OP_RETURN is a placeholder until T0;
-        // remine with contrib/genesis/grind_mainnet.py --fetch-ltc --write-pins.
+        // Launch nTime is locked.
         genesis = CreateZorkNetworkGenesisBlock(MAINNET_GENESIS_NTIME, MAINNET_GENESIS_NONCE, MAINNET_GENESIS_NBITS, MAINNET_GENESIS_NVERSION, MAINNET_GENESIS_REWARD, MAINNET_GENESIS_MINER_COMMENT, MAINNET_GENESIS_LTC_OPRETURN);
         consensus.hashGenesisBlock = genesis.GetHash();
         assert(consensus.hashGenesisBlock == uint256{MAINNET_GENESIS_HASH});
@@ -257,14 +255,14 @@ public:
 
         base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,80);
         base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,5);
-        base58Prefixes[SCRIPT_ADDRESS2] = std::vector<unsigned char>(1,54);
+        base58Prefixes[SCRIPT_ADDRESS2] = std::vector<unsigned char>(1,63);
         base58Prefixes[SECRET_KEY] =     std::vector<unsigned char>(1,167);
         base58Prefixes[EXT_PUBLIC_KEY] = {0x04, 0x88, 0xB2, 0x1E};
         base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x88, 0xAD, 0xE4};
 
         bech32_hrp = "zork";
-        mweb_hrp = "mweb";
-        m_mweb_account_path = {0 | BIP32_HARDENED_FLAG, 100 | BIP32_HARDENED_FLAG}; // MWEB
+        mweb_hrp = "zorkmweb";
+        m_mweb_account_path = {100 | BIP32_HARDENED_FLAG, 240079435 | BIP32_HARDENED_FLAG}; // MWEB
 
         vFixedSeeds.clear();
 
@@ -322,9 +320,9 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].bit = 4;
         consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].nStartTime = 0;
         consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
-        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].min_activation_height = 0;
-        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].threshold = 1512;
-        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].period = 2016;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].min_activation_height = 16384;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].threshold = 3840;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].period = 4096;
 
         ApplyDeploymentOptions(opts.dep_opts);
 
@@ -357,11 +355,11 @@ public:
         m_assumed_chain_state_size = 1;
 
         static const char* const testnet_ltc_opreturn =
-            "LTC BLK:3159327 -> 30364f9302886379279692f4c6ec33ec2ae679be2016490b0096c29ddbe7347b";
-        genesis = CreateZorkNetworkGenesisBlock(1786609421000ULL, 100785826ULL, 0x1d15198e, 0x20000000UL, static_cast<CAmount>(1LL << 32), "ad astra per aspera", testnet_ltc_opreturn);
+            "Space.com 31/Oct/2026 SpaceX celebrates Halloween with early-morning Falcon 9 launch from California";
+        genesis = CreateZorkNetworkGenesisBlock(1793484390400ULL, 405094034ULL, 0x1d15198e, 0x20000000UL, static_cast<CAmount>(1LL << 32), "ad astra per aspera", testnet_ltc_opreturn);
         consensus.hashGenesisBlock = genesis.GetHash();
-        assert(consensus.hashGenesisBlock == uint256{"623d8b3c73efcfe2cf500b50db667d2190e15bec5d854315a62cabf558628499"});
-        assert(genesis.hashMerkleRoot == uint256{"ca955e6727398b2cc02fcb30a46678e6db910187a8bffbe6cb7b6ab4ba4095ba"});
+        assert(consensus.hashGenesisBlock == uint256{"a36bd8817c32e78b2f63e6bfa3bf1d7dca870e54706bde5609822ce60a9b767d"});
+        assert(genesis.hashMerkleRoot == uint256{"037598f1d4801ccb0f839bde41437ae1e2c81e18a89b5dcb2324756d4a4b74d1"});
         consensus.BIP34Hash = consensus.hashGenesisBlock;
 
         vFixedSeeds.clear();
@@ -377,7 +375,7 @@ public:
 
         bech32_hrp = "zorktest";
         mweb_hrp = "tmweb";
-        m_mweb_account_path = {0 | BIP32_HARDENED_FLAG, 100 | BIP32_HARDENED_FLAG}; // MWEB
+        m_mweb_account_path = {100 | BIP32_HARDENED_FLAG, 1 | BIP32_HARDENED_FLAG}; // MWEB
 
         vFixedSeeds.clear();
 
@@ -436,9 +434,9 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].bit = 4;
         consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].nStartTime = 0;
         consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
-        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].min_activation_height = 0;
-        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].threshold = 1512;
-        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].period = 2016;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].min_activation_height = 16384;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].threshold = 3840;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].period = 4096;
 
         ApplyDeploymentOptions(opts.dep_opts);
 
@@ -465,7 +463,7 @@ public:
         pchMessageStart[1] = 0x3d;
         pchMessageStart[2] = 0xdc;
         pchMessageStart[3] = 0x3d;
-        nDefaultPort = 24304;
+        nDefaultPort = 43295;
         nPruneAfterHeight = 1000;
         m_assumed_blockchain_size = 31;
         m_assumed_chain_state_size = 2;
@@ -494,7 +492,7 @@ public:
 
         bech32_hrp = "zorktest4";
         mweb_hrp = "tmweb";
-        m_mweb_account_path = {0 | BIP32_HARDENED_FLAG, 100 | BIP32_HARDENED_FLAG}; // MWEB
+        m_mweb_account_path = {100 | BIP32_HARDENED_FLAG, 1 | BIP32_HARDENED_FLAG}; // MWEB
 
         fDefaultConsistencyChecks = false;
         m_is_mockable_chain = false;
@@ -588,9 +586,9 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].bit = 4;
         consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].nStartTime = 0;
         consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
-        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].min_activation_height = 0;
-        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].threshold = 1815;
-        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].period = 2016;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].min_activation_height = 16384;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].threshold = 3840;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].period = 4096;
 
         ApplyDeploymentOptions(options.dep_opts);
 
@@ -616,15 +614,15 @@ public:
         uint256 hash = h.GetHash();
         std::copy_n(hash.begin(), 4, pchMessageStart.begin());
 
-        nDefaultPort = 24333;
+        nDefaultPort = 20697;
         nPruneAfterHeight = 1000;
 
         static const char* const signet_ltc_opreturn =
-            "LTC BLK:3159327 -> 30364f9302886379279692f4c6ec33ec2ae679be2016490b0096c29ddbe7347b";
-        genesis = CreateZorkNetworkGenesisBlock(1786609421000ULL, 3737844ULL, 0x1e0ffff0, 0x20000000UL, static_cast<CAmount>(1LL << 32), "signature based network", signet_ltc_opreturn);
+            "Space.com 31/Oct/2026 SpaceX celebrates Halloween with early-morning Falcon 9 launch from California";
+        genesis = CreateZorkNetworkGenesisBlock(1793484390400ULL, 2226535ULL, 0x1e0ffff0, 0x20000000UL, static_cast<CAmount>(1LL << 32), "signature based network", signet_ltc_opreturn);
         consensus.hashGenesisBlock = genesis.GetHash();
-        assert(consensus.hashGenesisBlock == uint256{"dc83989078f433660b6297b23d4998616ab87bfa51a43edf20ea68e2529f0e43"});
-        assert(genesis.hashMerkleRoot == uint256{"511dfafa16a0a191d19ee04efa92044299bfa0d859c5da0bf54bce855a946cc0"});
+        assert(consensus.hashGenesisBlock == uint256{"4be76855376d6ab5245289db0c0b1e85d74f53f2cccb1b68e1202ced1bad8d7c"});
+        assert(genesis.hashMerkleRoot == uint256{"c3a63fc9a437dc5565c34f5b16ac583f840c499618c74e38e63596498bf718da"});
 
         m_assumeutxo_data = {};
 
@@ -637,7 +635,7 @@ public:
 
         bech32_hrp = "zorksig";
         mweb_hrp = "tmweb";
-        m_mweb_account_path = {0 | BIP32_HARDENED_FLAG, 100 | BIP32_HARDENED_FLAG}; // MWEB
+        m_mweb_account_path = {100 | BIP32_HARDENED_FLAG, 1 | BIP32_HARDENED_FLAG}; // MWEB
 
         fDefaultConsistencyChecks = false;
         m_is_mockable_chain = false;
@@ -736,11 +734,11 @@ public:
         m_is_mockable_chain = true;
 
         m_assumeutxo_data = {
-            {   // For use by unit tests
-                .height = 110,
-                .hash_serialized = AssumeutxoHash{uint256{"35d3eeddf22f7ef9dd1a3bdd86dd7547cfc02ef3d1380e5207fd1d766764f62d"}},
-                .m_chain_tx_count = 111,
-                .blockhash = uint256{"f559dee5f05011b02ac30eb556b81c6fa3ed2d7ccc4da8dd0f383c10084ac52a"},
+            {   // For use by unit tests (COINBASE_MATURITY + 10)
+                .height = 129,
+                .hash_serialized = AssumeutxoHash{uint256{"806e70263042ecbfd6865913e5540a594820d9c6e4edee2c743db42bdb1c8d2b"}},
+                .m_chain_tx_count = 130,
+                .blockhash = uint256{"332f80e6392351be303a49c5552c6e941deefe5cb5f388aa9f68757c4c9e4a60"},
             },
             {
                 // For use by fuzz target src/test/fuzz/utxo_snapshot.cpp
@@ -759,10 +757,10 @@ public:
             {
                 // For use by test/functional/feature_assumeutxo.py (post-MWEB snapshot)
                 .height = 750,
-                .hash_serialized = AssumeutxoHash{uint256{"0718a2e213c41bc688a6028bb485d5dc6633491df2a58f2ca750593621316fd3"}},
-                .mweb_hash_serialized = AssumeutxoHash{uint256{"baabd96c4318aa0acf19fc7a3491709e159935e2a274e059aa4364f6aecf54a7"}},
+                .hash_serialized = AssumeutxoHash{uint256{"62c02c1aa8e5c87d01f6a8374ad429f17f50ce5f894948f5ee930e31ec9aab12"}},
+                .mweb_hash_serialized = AssumeutxoHash{uint256{"ecf573b84553778dfae3fd1c66557146f1b9466875fad83cab9e71d76cbb6f97"}},
                 .m_chain_tx_count = 817,
-                .blockhash = uint256{"4ce427ff8024b81fb7a37e81d7f2c914a1e5e0d383381864e8ea8ceceb01c109"},
+                .blockhash = uint256{"a4dc05b79fe4e57ad5dc96a367cdc4ca60f12c82e8d843979a5042771d1ffc4b"},
             },
         };
 
@@ -781,7 +779,7 @@ public:
 
         bech32_hrp = "zorksim";
         mweb_hrp = "tmweb";
-        m_mweb_account_path = {0 | BIP32_HARDENED_FLAG, 100 | BIP32_HARDENED_FLAG}; // MWEB
+        m_mweb_account_path = {100 | BIP32_HARDENED_FLAG, 1 | BIP32_HARDENED_FLAG}; // MWEB
 
         // Copied from Testnet4.
         m_headers_sync_params = HeadersSyncParams{

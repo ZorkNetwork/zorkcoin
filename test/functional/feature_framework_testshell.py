@@ -36,10 +36,10 @@ def run_testshell_doc_example(functional_tests_dir):
             res = test.nodes[0].createwallet('default')
             assert_equal(res, {'name': 'default'})
             address = test.nodes[0].getnewaddress()
-            res = test.generatetoaddress(test.nodes[0], 101, address)
-            assert_equal(len(res), 101)
+            res = test.generatetoaddress(test.nodes[0], 120, address)
+            assert_equal(len(res), 120)
             test.sync_blocks()
-            assert_equal(test.nodes[1].getblockchaininfo()["blocks"], 101)
+            assert_equal(test.nodes[1].getblockchaininfo()["blocks"], 120)
             assert_equal(test.nodes[0].getbalance(), Decimal('42.94967296'))
             test.nodes[0].log.info("Successfully mined regtest chain!")
     finally:

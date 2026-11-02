@@ -59,7 +59,7 @@ class WalletMiniscriptDecayingMultisigDescriptorPSBTTest(BitcoinTestFramework):
         self.M = 4  # starts as 4-of-4
         self.N = 4
 
-        self.locktimes = [104, 106, 108]
+        self.locktimes = [123, 125, 127]
         assert_equal(len(self.locktimes), self.N - 1)
 
         self.name = f"{self.M}_of_{self.N}_decaying_multisig"
@@ -74,7 +74,7 @@ class WalletMiniscriptDecayingMultisigDescriptorPSBTTest(BitcoinTestFramework):
 
         self.log.info("Get a mature utxo to send to the multisig...")
         coordinator_wallet = self.node.get_wallet_rpc(self.node.createwallet(wallet_name="coordinator")["name"])
-        self.generatetoaddress(self.node, 101, coordinator_wallet.getnewaddress())
+        self.generatetoaddress(self.node, 120, coordinator_wallet.getnewaddress())
 
         self.log.info("Send funds to the multisig's receiving address...")
         deposit_amount = 6.15

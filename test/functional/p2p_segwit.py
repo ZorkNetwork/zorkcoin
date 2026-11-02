@@ -95,7 +95,7 @@ from test_framework.wallet_util import generate_keypair
 
 MAX_SIGOP_COST = 80000
 
-SEGWIT_HEIGHT = 120
+SEGWIT_HEIGHT = 139
 
 class UTXO():
     """Used to keep track of anyone-can-spend outputs that we can use in the tests."""
@@ -307,7 +307,7 @@ class SegWitTest(BitcoinTestFramework):
         self.test_node.send_and_ping(msg_no_witness_block(block))  # make sure the block was processed
         txid = block.vtx[0].txid_int
 
-        self.generate(self.wallet, 99)  # let the block mature
+        self.generate(self.wallet, 118)  # let the block mature
 
         # Create a transaction that spends the coinbase
         tx = CTransaction()
@@ -1469,7 +1469,7 @@ class SegWitTest(BitcoinTestFramework):
         spend_tx.wit.vtxinwit[0].scriptWitness.stack = [witness_script]
 
         # Now test a premature spend.
-        self.generate(self.nodes[0], 98)
+        self.generate(self.nodes[0], 117)
         block2 = self.build_next_block()
         self.update_witness_block_with_transactions(block2, [spend_tx])
         test_witness_block(self.nodes[0], self.test_node, block2, accepted=False, reason='bad-txns-premature-spend-of-coinbase')

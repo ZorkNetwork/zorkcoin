@@ -98,7 +98,7 @@ class MiningTest(BitcoinTestFramework):
         self.generate(wallet_sigops, 1, sync_fun=self.no_op)
 
         # Mature with regular coinbases to prevent interference with other tests
-        self.generate(self.wallet, 100, sync_fun=self.no_op)
+        self.generate(self.wallet, 119, sync_fun=self.no_op)
 
         # Generate three transactions that must be mined in sequence
         #

@@ -77,7 +77,7 @@ class MWEBPreActivationHogExMarkerTest(BitcoinTestFramework):
         tip_hash = int(victim.getbestblockhash(), 16)
         block_time = victim.getblock(victim.getbestblockhash())["time"] + 1
         blocks = []
-        for height in range(1, 102):
+        for height in range(1, 121):
             block = self.make_block(tip_hash, height, block_time)
             self.submit_to_all(block)
             blocks.append(block)
@@ -106,7 +106,7 @@ class MWEBPreActivationHogExMarkerTest(BitcoinTestFramework):
 
         honest_parent = self.make_block(
             tip_hash,
-            102,
+            121,
             block_time,
             txlist=[fund_tx, filler_tx],
         )
@@ -129,7 +129,7 @@ class MWEBPreActivationHogExMarkerTest(BitcoinTestFramework):
         )
         child = self.make_block(
             honest_parent.sha256,
-            103,
+            122,
             block_time + 1,
             txlist=[spend_tx],
         )

@@ -107,7 +107,7 @@ CTxDestination DecodeDestination(const std::string& str, const CChainParams& par
     // Note this will be false if it is a valid Bech32 address for a different network
     const bool is_bech32 = str.size() >= params.Bech32HRP().size() &&
         ToLower(str.substr(0, params.Bech32HRP().size())) == params.Bech32HRP();
-    // MWEB: stealth addresses use a separate HRP from segwit (mainnet "mweb", test "tmweb")
+    // MWEB: stealth addresses use a separate HRP from segwit (mainnet "zorkmweb", test "tmweb")
     const bool is_mweb_bech32 = str.size() >= params.MWEB_HRP().size() &&
         ToLower(str.substr(0, params.MWEB_HRP().size())) == params.MWEB_HRP();
 
@@ -158,7 +158,7 @@ CTxDestination DecodeDestination(const std::string& str, const CChainParams& par
     data.clear();
     const auto dec = bech32::Decode(str, is_mweb_bech32 ? bech32::CharLimit::MWEB : bech32::CharLimit::BECH32);
 
-    // MWEB: Stealth address decoding (mainnet "mweb", test/signet/regtest "tmweb")
+    // MWEB: Stealth address decoding (mainnet "zorkmweb", test/signet/regtest "tmweb")
     if (dec.encoding == bech32::Encoding::BECH32 && dec.hrp == params.MWEB_HRP()) {
         std::vector<uint8_t> converted;
         converted.reserve(((dec.data.size() - 1) * 5) / 8);

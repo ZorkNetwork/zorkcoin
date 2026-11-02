@@ -102,7 +102,7 @@ class PackageRelayTest(BitcoinTestFramework):
         self.wallet = MiniWallet(self.nodes[1])
         self.wallet_nonsegwit = MiniWallet(self.nodes[2], mode=MiniWalletMode.RAW_P2PK)
         self.generate(self.wallet_nonsegwit, 10)
-        self.generate(self.wallet, 120)
+        self.generate(self.wallet, 139)
 
         # Create the transactions.
         self.wallet.rescan_utxos(include_mempool=True)

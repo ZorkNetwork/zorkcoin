@@ -14,6 +14,7 @@
 #include <common/system.h>
 #include <compat/compat.h>
 #include <core_io.h>
+#include <crypto/kheavyhash.h>
 #include <crypto/sha256.h>
 #include <streams.h>
 #include <univalue.h>
@@ -97,13 +98,21 @@ static void grind_task(uint32_t nBits, CBlockHeader header, uint32_t offset, uin
     if (target == 0 || neg || over) return;
     header.nNonce = offset;
 
+    const uint256 pre_pow = header.GetPrePowBlockHeader().GetHash();
+    const KHeavyHash base{pre_pow};
+    const std::span<const unsigned char> time{reinterpret_cast<const unsigned char*>(&header.nTime), sizeof(header.nTime)};
+
     uint32_t finish = std::numeric_limits<uint32_t>::max() - step;
     finish = finish - (finish % step) + offset;
 
     while (!found && header.nNonce < finish) {
         const uint32_t next = (finish - header.nNonce < 5000*step) ? finish : header.nNonce + 5000*step;
         do {
-            if (UintToArith256(header.GetPoWHash()) <= target) {
+            KHeavyHash work{base};
+            uint256 pow;
+            const std::span<const unsigned char> nonce{reinterpret_cast<const unsigned char*>(&header.nNonce), sizeof(header.nNonce)};
+            work.Write(pre_pow).Write(time).Write(uint256::ZERO).Write(nonce).Finalize(pow);
+            if (UintToArith256(pow) <= target) {
                 if (!found.exchange(true)) {
                     proposed_nonce = header.nNonce;
                 }

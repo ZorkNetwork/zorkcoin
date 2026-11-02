@@ -1,25 +1,22 @@
 {
   "chain": "test",
   "test_chain": true,
-  "genesis": "000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943",
-  "subsidy_halving_interval": 210000,
+  "genesis": "a36bd8817c32e78b2f63e6bfa3bf1d7dca870e54706bde5609822ce60a9b767d",
+  "subsidy_halving_interval": 1048576,
   "pow": {
-    "limit": "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-    "target_spacing": 600,
+    "limit": "00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "target_spacing": 131,
     "difficulty_retarget_interval": 2016,
-    "mindiff_blocks": "yes"
+    "mindiff_blocks": "no"
   },
   "net": {
-    "default_port": 18333,
-    "magic": "0b110907",
+    "default_port": 23295,
+    "magic": "f72ddc3d",
     "dns_seeds": [
-      "testnet-seed.bitcoin.jonasschnelli.ch.",
-      "seed.tbtc.petertodd.net.",
-      "testnet-seed.bluematt.me.",
-      "seed.testnet.achownodes.xyz."
+      "testnet-seed.zork.network"
     ]
   },
   "addresses": {
-    "bech32_hrp": "tb"
+    "bech32_hrp": "zorktest"
   }
 }

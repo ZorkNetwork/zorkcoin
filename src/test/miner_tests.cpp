@@ -664,17 +664,20 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
     BOOST_CHECK(!TestSequenceLocks(CTransaction{tx}, tx_mempool)); // Sequence locks fail
 
     const int SEQUENCE_LOCK_TIME = 512 * 1000; // Sequence locks pass 512 seconds later
-    for (int i = 0; i < CBlockIndex::nMedianTimeSpan; ++i)
-        m_node.chainman->ActiveChain().Tip()->GetAncestor(m_node.chainman->ActiveChain().Tip()->nHeight - i)->nTime += SEQUENCE_LOCK_TIME; // Trick the MedianTimePast
-    {
-        CBlockIndex* active_chain_tip = m_node.chainman->ActiveChain().Tip();
-        BOOST_CHECK(SequenceLocks(CTransaction(tx), flags, prevheights, *CreateBlockIndex(active_chain_tip->nHeight + 1, active_chain_tip)));
-    }
+        const int tip_height{m_node.chainman->ActiveChain().Tip()->nHeight};
+        for (int i = 0; i < CBlockIndex::nMedianTimeSpan; ++i) {
+            CBlockIndex* ancestor{Assert(m_node.chainman->ActiveChain().Tip()->GetAncestor(tip_height - i))};
+            ancestor->nTime += SEQUENCE_LOCK_TIME; // Trick the MedianTimePast
+        }
+        {
+            CBlockIndex* active_chain_tip = m_node.chainman->ActiveChain().Tip();
+            BOOST_CHECK(SequenceLocks(CTransaction(tx), flags, prevheights, *CreateBlockIndex(active_chain_tip->nHeight + 1, active_chain_tip)));
+        }
 
-    for (int i = 0; i < CBlockIndex::nMedianTimeSpan; ++i) {
-        CBlockIndex* ancestor{Assert(m_node.chainman->ActiveChain().Tip()->GetAncestor(m_node.chainman->ActiveChain().Tip()->nHeight - i))};
-        ancestor->nTime -= SEQUENCE_LOCK_TIME; // undo tricked MTP
-    }
+        for (int i = 0; i < CBlockIndex::nMedianTimeSpan; ++i) {
+            CBlockIndex* ancestor{Assert(m_node.chainman->ActiveChain().Tip()->GetAncestor(tip_height - i))};
+            ancestor->nTime -= SEQUENCE_LOCK_TIME; // undo tricked MTP
+        }
 
     // absolute height locked
     tx.vin[0].prevout.hash = txFirst[2]->GetHash();
@@ -725,16 +728,30 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
     BOOST_CHECK_EQUAL(block.vtx.size(), 1U);
     // However if we advance height by 1 and time by SEQUENCE_LOCK_TIME, all of them should be mined
     for (int i = 0; i < CBlockIndex::nMedianTimeSpan; ++i) {
-        CBlockIndex* ancestor{Assert(m_node.chainman->ActiveChain().Tip()->GetAncestor(m_node.chainman->ActiveChain().Tip()->nHeight - i))};
+        CBlockIndex* ancestor{Assert(m_node.chainman->ActiveChain().Tip()->GetAncestor(tip_height - i))};
         ancestor->nTime += SEQUENCE_LOCK_TIME; // Trick the MedianTimePast
     }
-    m_node.chainman->ActiveChain().Tip()->nHeight++;
+    CBlockIndex* prev_tip = m_node.chainman->ActiveChain().Tip();
+    CBlockIndex* dummy_tip = new CBlockIndex();
+    dummy_tip->phashBlock = new uint256(m_rng.rand256());
+    dummy_tip->pprev = prev_tip;
+    dummy_tip->nHeight = prev_tip->nHeight + 1;
+    dummy_tip->nTime = prev_tip->nTime;
+    dummy_tip->nBits = prev_tip->nBits;
+    dummy_tip->BuildSkip();
+    m_node.chainman->ActiveChain().SetTip(*dummy_tip);
+    m_node.chainman->ActiveChainstate().CoinsTip().SetBestBlock(dummy_tip->GetBlockHash());
     clock.set(std::chrono::milliseconds{m_node.chainman->ActiveChain().Tip()->GetMedianTimePast() + 1000});
 
     block_template = mining->createNewBlock(options, /*cooldown=*/false);
     BOOST_REQUIRE(block_template);
     block = block_template->getBlock();
     BOOST_CHECK_EQUAL(block.vtx.size(), 5U);
+
+    m_node.chainman->ActiveChain().SetTip(*prev_tip);
+    m_node.chainman->ActiveChainstate().CoinsTip().SetBestBlock(prev_tip->GetBlockHash());
+    delete dummy_tip->phashBlock;
+    delete dummy_tip;
 }
 
 void MinerTestingSetup::TestPrioritisedMining(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst)
@@ -890,11 +907,13 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     }
 
     // We can't make transactions until we have inputs
-    // Therefore, load 110 blocks :)
+    // Therefore, load COINBASE_MATURITY + 10 blocks :)
     static_assert(std::size(BLOCKINFO) == 110, "Should have 110 blocks to import");
     int baseheight = 0;
     std::vector<CTransactionRef> txFirst;
-    for (const auto& bi : BLOCKINFO) {
+    constexpr size_t total_blocks = COINBASE_MATURITY + 10;
+    for (size_t idx = 0; idx < total_blocks; ++idx) {
+        const auto& bi = BLOCKINFO[idx % std::size(BLOCKINFO)];
         const int current_height{mining->getTip()->height};
 
         /**
@@ -970,11 +989,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
 
     TestBasicMining(scriptPubKey, txFirst, baseheight);
 
-    m_node.chainman->ActiveChain().Tip()->nHeight--;
-
     TestPackageSelection(scriptPubKey, txFirst);
-
-    m_node.chainman->ActiveChain().Tip()->nHeight--;
 
     TestPrioritisedMining(scriptPubKey, txFirst);
 

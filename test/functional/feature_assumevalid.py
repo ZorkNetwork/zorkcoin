@@ -114,8 +114,8 @@ class AssumeValidTest(BitcoinTestFramework):
         self.tip = block.hash_int
         height += 1
 
-        # Bury the block 100 deep so the coinbase output is spendable
-        for _ in range(100):
+        # Bury the block COINBASE_MATURITY deep so the coinbase output is spendable
+        for _ in range(COINBASE_MATURITY):
             block = create_block(self.tip, height=height, ntime=self.block_time)
             block.solve()
             self.blocks.append(block)
@@ -164,7 +164,7 @@ class AssumeValidTest(BitcoinTestFramework):
         with self.nodes[0].assert_debug_log(expected_msgs=[
             "Block validation error: block-script-verify-flag-failed",
         ]):
-            for i in range(1, 103):
+            for i in range(1, COINBASE_MATURITY + 3):
                 p2p0.send_without_ping(msg_block(self.blocks[i]))
             p2p0.wait_for_disconnect()
             assert_equal(self.nodes[0].getblockcount(), COINBASE_MATURITY + 1)
@@ -179,7 +179,7 @@ class AssumeValidTest(BitcoinTestFramework):
         ]):
             p2p1.send_and_ping(msg_block(self.blocks[0]))
         with self.nodes[1].assert_debug_log(expected_msgs=[
-            f"Enabling script verification at block #103 ({self.blocks[102].hash_hex}): block height above assumevalid height.",
+            f"Enabling script verification at block #{COINBASE_MATURITY + 3} ({self.blocks[COINBASE_MATURITY + 2].hash_hex}): block height above assumevalid height.",
         ]):
             # Send in batches; flooding ~8k blocks can drop the p2p link.
             for i in range(1, tip_height):
@@ -200,7 +200,7 @@ class AssumeValidTest(BitcoinTestFramework):
         with self.nodes[2].assert_debug_log(expected_msgs=[
             "Block validation error: block-script-verify-flag-failed",
         ]):
-            for i in range(1, 103):
+            for i in range(1, COINBASE_MATURITY + 3):
                 p2p2.send_without_ping(msg_block(self.blocks[i]))
             p2p2.wait_for_disconnect()
             assert_equal(self.nodes[2].getblockcount(), COINBASE_MATURITY + 1)
@@ -219,7 +219,7 @@ class AssumeValidTest(BitcoinTestFramework):
             second_chain_tip, second_chain_time, second_chain_height = block.hash_int, second_chain_time + 1, second_chain_height + 1
         p2p3 = self.nodes[3].add_p2p_connection(BaseNode())
         p2p3.send_header_for_blocks(second_chain)
-        p2p3.send_header_for_blocks(self.blocks[0:103])
+        p2p3.send_header_for_blocks(self.blocks[0:COINBASE_MATURITY + 3])
         with self.nodes[3].assert_debug_log(expected_msgs=[
             f"Enabling script verification at block #1 ({block_1_hash}): block not in best header chain.",
         ]):
@@ -233,7 +233,7 @@ class AssumeValidTest(BitcoinTestFramework):
         alt1 = create_block(int(genesis_hash, 16), height=1, ntime=genesis_time + 2)
         alt1.solve()
         p2p4 = self.nodes[4].add_p2p_connection(BaseNode())
-        p2p4.send_header_for_blocks(self.blocks[0:103])
+        p2p4.send_header_for_blocks(self.blocks[0:COINBASE_MATURITY + 3])
         with self.nodes[4].assert_debug_log(expected_msgs=[
             f"Enabling script verification at block #1 ({alt1.hash_hex}): block not in assumevalid chain.",
         ]):

@@ -79,11 +79,11 @@ WalletDescriptor GenerateWalletDescriptor(const CExtPubKey& master_key, const Ou
         const std::string account_path = FormatHDKeypath(Params().MWEBAccountPath());
         desc_str = strprintf("%s%s%s/0h,%s%s/1h,*)", desc_prefix, xpub, account_path, xpub, account_path);
     } else {
-        // Mainnet derives at 0', testnet and regtest derive at 1'
+        // Mainnet derives at 240079435', testnet and regtest derive at 1'
         if (Params().IsTestChain()) {
             desc_prefix += "/1h";
         } else {
-            desc_prefix += "/0h";
+            desc_prefix += "/240079435h";
         }
 
         std::string internal_path = internal ? "/1" : "/0";

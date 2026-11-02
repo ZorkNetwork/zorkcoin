@@ -230,7 +230,7 @@ class MempoolCoinbaseTest(BitcoinTestFramework):
             parent_utxo = tx["new_utxo"]
 
         self.log.info("Use invalidateblock to re-org back and make all those coinbase spends immature/invalid")
-        b = self.nodes[0].getblockhash(first_block + 100)
+        b = self.nodes[0].getblockhash(first_block + 119)
 
         # Use invalidateblock to go backwards in MTP time.
         # invalidateblock actually moves MTP backwards, making timelock_tx_id valid again.
@@ -241,6 +241,7 @@ class MempoolCoinbaseTest(BitcoinTestFramework):
         assert_equal(set(self.nodes[0].getrawmempool()), set())
         self.sync_all()
 
+        self.wallet.rescan_utxos()
         self.test_reorg_relay()
 
 

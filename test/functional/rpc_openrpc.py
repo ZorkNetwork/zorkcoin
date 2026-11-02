@@ -75,7 +75,7 @@ class OpenRPCDocTest(BitcoinTestFramework):
         self.log.info("Checking relaxed schemas for unchecked RPC types")
         createrawtransaction = find_method(openrpc, "createrawtransaction")
         outputs = find_param(createrawtransaction, "outputs")
-        address_description = "A key-value pair. The key (string) is the bitcoin address, the value (float or string) is the amount in BTC"
+        address_description = "A key-value pair. The key (string) is the zorkcoin address, the value (float or string) is the amount in ℤ"
         address_obj = {"type": "object", "additionalProperties": {"oneOf": [{"type": "number"},{"type": "string"}]}, "description": address_description}
         data_description = "A key-value pair. The key must be \"data\", the value is hex-encoded data that becomes a part of an OP_RETURN output"
         data_obj = {"type": "object", "properties": { "data": {"type": "string", "pattern": "^([0-9a-fA-F]{2})*$", "description": data_description}}, "additionalProperties": False, "required": ["data"]}

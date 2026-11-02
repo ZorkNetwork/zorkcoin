@@ -98,11 +98,8 @@ class TxnMallTest(BitcoinTestFramework):
         tx1 = self.nodes[0].gettransaction(txid1)
         tx2 = self.nodes[0].gettransaction(txid2)
 
-        # Node0's balance should be starting balance, plus 50BTC for another
-        # matured block, minus tx1 and tx2 amounts, and minus transaction fees:
+        # Node0's balance should be starting balance, minus tx1 and tx2 amounts, and minus transaction fees:
         expected = starting_balance + node0_tx1["fee"] + node0_tx2["fee"]
-        if self.options.mine_block:
-            expected += BLOCK_SUBSIDY
         expected += tx1["amount"] + tx1["fee"]
         expected += tx2["amount"] + tx2["fee"]
         assert_equal(self.nodes[0].getbalance(), expected)
@@ -140,11 +137,7 @@ class TxnMallTest(BitcoinTestFramework):
         assert_equal(tx1_clone["confirmations"], 2)
         assert_equal(tx2["confirmations"], 1)
 
-        # Check node0's total balance; should be same as before the clone, + 100 BTC for 2 matured,
-        # less possible orphaned matured subsidy
-        expected += 2 * BLOCK_SUBSIDY
-        if (self.options.mine_block):
-            expected -= BLOCK_SUBSIDY
+        # Check node0's total balance; should be same as before the clone
         assert_equal(self.nodes[0].getbalance(), expected)
 
         self.test_malleated_metadata_synced()

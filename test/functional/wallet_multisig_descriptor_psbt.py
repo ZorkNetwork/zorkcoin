@@ -97,7 +97,7 @@ class WalletMultisigDescriptorPSBTTest(BitcoinTestFramework):
 
         self.log.info("Get a mature utxo to send to the multisig...")
         coordinator_wallet = participants["signers"][0]
-        self.generatetoaddress(self.node, 101, coordinator_wallet.getnewaddress())
+        self.generatetoaddress(self.node, 120, coordinator_wallet.getnewaddress())
 
         deposit_amount = 6.15
         multisig_receiving_address = participants["multisigs"][0].getnewaddress()

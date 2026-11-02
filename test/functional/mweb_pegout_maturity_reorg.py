@@ -23,7 +23,7 @@ from test_framework.mweb_util import (
 )
 
 # Matches consensus/consensus.h PEGOUT_MATURITY.
-PEGOUT_MATURITY = 6
+PEGOUT_MATURITY = 9
 
 
 class MWEBPegoutMaturityReorgTest(BitcoinTestFramework):

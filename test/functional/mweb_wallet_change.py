@@ -29,7 +29,7 @@ from test_framework.util import assert_equal, assert_raises_rpc_error
 
 
 # Matches consensus/consensus.h PEGOUT_MATURITY.
-PEGOUT_MATURITY = 6
+PEGOUT_MATURITY = 9
 # Matches policy/feerate.cpp BASE_MWEB_FEE, in satoshis per MWEB weight unit.
 BASE_MWEB_FEE = 100
 

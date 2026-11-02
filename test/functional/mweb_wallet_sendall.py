@@ -74,18 +74,18 @@ class WalletSendallMWEBTest(BitcoinTestFramework):
         assert 'fee' not in receipt
 
         self.log.info("Mine pegout maturity and verify the swept amount stays with node0")
-        self.generate(node1, 5, sync_fun=self.sync_all)
+        self.generate(node1, 8, sync_fun=self.sync_all)
         assert_equal(node1.getbalances()["mine"]["trusted"], 0)
         node0_balances_final = node0.getbalances()["mine"]
         node0_total_final = node0_balances_final["trusted"] + node0_balances_final["immature"]
         assert_equal(node0_total_final, node0_total_after_pegout)
         node0_received = node0.listreceivedbyaddress(minconf=0, address_filter=node0_l1)
         assert_equal(node0_received[0]["amount"], expected_pegout_amount)
-        assert_equal(node0_received[0]["confirmations"], 6)
+        assert_equal(node0_received[0]["confirmations"], 9)
         mature, = node0.listwallettransactions(txid=sendall_to_l1['txid'])
         assert_equal((mature['type'], mature['address'], mature['amount'], mature['net'], mature['pegout']),
                      tuple(receipt[key] for key in ('type', 'address', 'amount', 'net', 'pegout')))
-        assert_equal(mature['confirmations'], 6)
+        assert_equal(mature['confirmations'], 9)
         assert 'fee' not in mature
 
         self.log.info("Sweep a transparent-only wallet to an MWEB address as one peg-in")

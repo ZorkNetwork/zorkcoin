@@ -24,7 +24,7 @@ are allowed. A 2-leaf proof is a required test fixture.
 With \(T_Z\) from the Zorkcoin header `nBits` and \(T_K\) from the Kaspa peer header `bits`:
 
 - Floor: peer PoW \(h \le \lfloor T_Z / 4 \rfloor\)
-- Kaspa-derived: \(h \le \lfloor T_K / 3000 \rfloor\)
+- Kaspa-derived: \(h \le \lfloor T_K / 3000 \rfloor\) (compensating for Kaspa's typical 0.1-second block time so that a qualifying Kaspa proof occurs roughly once every 300 seconds)
 - Also \(h \le T_K\)
 
 ## AuxPoW header extension

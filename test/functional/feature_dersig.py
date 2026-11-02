@@ -40,7 +40,7 @@ def unDERify(tx):
     tx.vin[0].scriptSig = CScript(newscript)
 
 
-DERSIG_HEIGHT = 102
+DERSIG_HEIGHT = 121
 
 
 class BIP66Test(BitcoinTestFramework):

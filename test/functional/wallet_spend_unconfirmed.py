@@ -467,7 +467,7 @@ class UnconfirmedInputTest(BitcoinTestFramework):
         self.log.info("Starting UnconfirmedInputTest!")
         self.target_fee_rate = 30
         self.def_wallet  = self.nodes[0].get_wallet_rpc(self.default_wallet_name)
-        self.generate(self.nodes[0], 110)
+        self.generate(self.nodes[0], 129)
 
         self.test_target_feerate_confirmed()
 

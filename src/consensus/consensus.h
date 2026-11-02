@@ -14,18 +14,17 @@
 /** The maximum allowed size for a serialized block, in bytes (only for buffer size limits) */
 inline constexpr unsigned int MAX_BLOCK_SERIALIZED_SIZE{4'000'000};
 /**
- * Maximum wire-serialized block size (witness + MWEB extension). Consensus.
- * Litecoin-compatible full envelope: L1 block + pessimistic MWEB extension body.
- */
-inline constexpr unsigned int MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB =
-    MAX_BLOCK_SERIALIZED_SIZE + mw::MAX_BLOCK_BYTES; // 25'800'195
-/**
- * BIP324 short-id `block` application-payload max for v2 **send** only:
+ * BIP324 short-id `block` application-payload max:
  *   (2^24 - 1) - 1 = 16,777,214
  * (3-byte length field caps contents at 2^24-1; short-id encoding uses 1 type byte).
- * Mining/assembly uses MAX_BLOCK_SERIALIZED_SIZE_MINE (may equal this by default).
  */
 inline constexpr unsigned int MAX_BLOCK_SERIALIZED_SIZE_BIP324 = 16'777'214;
+/**
+ * Maximum wire-serialized block size (witness + MWEB extension). Consensus.
+ * Capped at the BIP324 maximum payload size (16,777,214 bytes).
+ */
+inline constexpr unsigned int MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB =
+    MAX_BLOCK_SERIALIZED_SIZE_BIP324; // 16'777'214
 
 /**
  * Serialized-size budget for CreateNewBlock / GBT / MWEB miner packing.
@@ -58,9 +57,9 @@ inline constexpr unsigned int MAX_BLOCK_WEIGHT{4'000'000};
 /** The maximum allowed number of signature check operations in a block (network rule) */
 inline constexpr int64_t MAX_BLOCK_SIGOPS_COST{80'000};
 /** Coinbase transaction outputs can only be spent after this number of new blocks (network rule) */
-inline constexpr int COINBASE_MATURITY = 100;
+inline constexpr int COINBASE_MATURITY = 119;
 /** MWEB: Pegout transaction outputs can only be spent after this number of new blocks (network rule) */
-inline constexpr int PEGOUT_MATURITY = 6;
+inline constexpr int PEGOUT_MATURITY = 9;
 
 inline constexpr int WITNESS_SCALE_FACTOR = 4;
 

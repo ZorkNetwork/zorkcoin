@@ -75,7 +75,7 @@ def cltv_validate(tx, height):
     cltv_modify_tx(tx, prepend_scriptsig=scheme[0], nsequence=scheme[1], nlocktime=scheme[2])
 
 
-CLTV_HEIGHT = 111
+CLTV_HEIGHT = 130
 
 
 class BIP65Test(BitcoinTestFramework):

@@ -30,12 +30,12 @@ from test_framework.wallet import MiniWallet
 
 
 # Daily historical-serving reserve (see CConnman::OutboundTargetReached):
-# one MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB (~25.8 MB) every 10 minutes for 24h.
-# That reserve alone is ~3544 MB, so the upload target must exceed it.
+# one MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB (~16.8 MB) every 10 minutes for 24h.
+# That reserve alone is ~2304 MB, so the upload target must exceed it.
 # Keep headroom small so the test does not need to ship multi-GB over P2P.
-MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB = 25_800_195  # MAX_BLOCK_SERIALIZED_SIZE + mw::MAX_BLOCK_BYTES
+MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB = 16_777_214  # MAX_BLOCK_SERIALIZED_SIZE_BIP324
 DAILY_HISTORICAL_BUFFER = 144 * MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB
-UPLOAD_TARGET_MB = 3600  # ~56 MB above the historical reserve
+UPLOAD_TARGET_MB = 2360  # ~56 MB above the historical reserve
 assert DAILY_HISTORICAL_BUFFER < UPLOAD_TARGET_MB * 1024 * 1024
 
 
@@ -77,7 +77,7 @@ class MaxUploadTest(BitcoinTestFramework):
 
         # Generate some old blocks
         self.wallet = MiniWallet(self.nodes[0])
-        self.generate(self.wallet, 130)
+        self.generate(self.wallet, 149)
 
         # p2p_conns[0] will only request old blocks
         # p2p_conns[1] will only request new blocks

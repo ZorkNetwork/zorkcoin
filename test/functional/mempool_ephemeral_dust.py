@@ -76,6 +76,7 @@ class EphemeralDustTest(BitcoinTestFramework):
     def run_test(self):
 
         node = self.nodes[0]
+        self.generate(node, 20)
         self.wallet = MiniWallet(node)
 
         self.test_normal_dust()

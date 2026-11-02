@@ -98,7 +98,7 @@ class CoinStatsIndexTest(BitcoinTestFramework):
 
         for hash_option in index_hash_options:
             # Fetch old stats by height
-            res2 = index_node.gettxoutsetinfo(hash_option, 102)
+            res2 = index_node.gettxoutsetinfo(hash_option, COINBASE_MATURITY + 2)
             del res2['block_info'], res2['total_unspendable_amount']
             res2.pop('muhash', None)
             assert_equal(res0, res2)
@@ -110,7 +110,7 @@ class CoinStatsIndexTest(BitcoinTestFramework):
             assert_equal(res0, res3)
 
             # It does not work without coinstatsindex
-            assert_raises_rpc_error(-8, "Querying specific block heights requires coinstatsindex", node.gettxoutsetinfo, hash_option, 102)
+            assert_raises_rpc_error(-8, "Querying specific block heights requires coinstatsindex", node.gettxoutsetinfo, hash_option, COINBASE_MATURITY + 2)
 
         self.log.info("Test gettxoutsetinfo() with index and verbose flag")
 
@@ -133,7 +133,7 @@ class CoinStatsIndexTest(BitcoinTestFramework):
             self.block_sanity_check(res4['block_info'])
 
             # Test an older block height that included a normal tx
-            res5 = index_node.gettxoutsetinfo(hash_option, 102)
+            res5 = index_node.gettxoutsetinfo(hash_option, COINBASE_MATURITY + 2)
             assert_equal(res5['total_unspendable_amount'], BLOCK_SUBSIDY)
             assert_equal(res5['block_info'], {
                 'unspendable': 0,
@@ -171,7 +171,7 @@ class CoinStatsIndexTest(BitcoinTestFramework):
 
         for hash_option in index_hash_options:
             # Check all amounts were registered correctly
-            res6 = index_node.gettxoutsetinfo(hash_option, 108)
+            res6 = index_node.gettxoutsetinfo(hash_option, COINBASE_MATURITY + 8)
             assert_equal(res6['total_unspendable_amount'], BLOCK_SUBSIDY + Decimal('20.99000000'))
             assert_equal(res6['block_info'], {
                 'unspendable': Decimal('20.99000000'),
@@ -189,7 +189,7 @@ class CoinStatsIndexTest(BitcoinTestFramework):
 
         # Create a coinbase that does not claim full subsidy and also
         # has two outputs
-        cb = create_coinbase(109, nValue=35)
+        cb = create_coinbase(COINBASE_MATURITY + 9, nValue=35)
         cb.vout.append(CTxOut(5 * COIN, CScript([OP_FALSE])))
 
         # Generate a block that includes previous coinbase
@@ -201,7 +201,7 @@ class CoinStatsIndexTest(BitcoinTestFramework):
         self.sync_all()
 
         for hash_option in index_hash_options:
-            res7 = index_node.gettxoutsetinfo(hash_option, 109)
+            res7 = index_node.gettxoutsetinfo(hash_option, COINBASE_MATURITY + 9)
             assert_equal(res7['total_unspendable_amount'], BLOCK_SUBSIDY + Decimal('20.99000000') + (BLOCK_SUBSIDY - 40))
             assert_equal(res7['block_info'], {
                 'unspendable': BLOCK_SUBSIDY - 40,
@@ -249,7 +249,7 @@ class CoinStatsIndexTest(BitcoinTestFramework):
         self.log.info("Test use_index option for nodes running the index")
 
         self.connect_nodes(0, 1)
-        self.nodes[0].waitforblockheight(110)
+        self.nodes[0].waitforblockheight(COINBASE_MATURITY + 10)
         res = self.nodes[0].gettxoutsetinfo('muhash')
         option_res = self.nodes[1].gettxoutsetinfo(hash_type='muhash', hash_or_height=None, use_index=False)
         del res['disk_size'], option_res['disk_size']
@@ -265,14 +265,14 @@ class CoinStatsIndexTest(BitcoinTestFramework):
         self.sync_index_node()
         res_invalid = index_node.gettxoutsetinfo('muhash')
         index_node.invalidateblock(reorg_blocks[0])
-        assert_equal(index_node.gettxoutsetinfo('muhash')['height'], 110)
+        assert_equal(index_node.gettxoutsetinfo('muhash')['height'], COINBASE_MATURITY + 10)
 
         # Add two new blocks
         block = self.generate(index_node, 2, sync_fun=self.no_op)[1]
         res = index_node.gettxoutsetinfo(hash_type='muhash', hash_or_height=None, use_index=False)
 
         # Test that the result of the reorged block is not returned for its old block height
-        res2 = index_node.gettxoutsetinfo(hash_type='muhash', hash_or_height=112)
+        res2 = index_node.gettxoutsetinfo(hash_type='muhash', hash_or_height=COINBASE_MATURITY + 12)
         assert_equal(res["bestblock"], block)
         assert_equal(res["muhash"], res2["muhash"])
         assert_not_equal(res["muhash"], res_invalid["muhash"])
@@ -290,7 +290,7 @@ class CoinStatsIndexTest(BitcoinTestFramework):
         block = index_node.getblockhash(99)
         index_node.invalidateblock(block)
         index_node.reconsiderblock(block)
-        res3 = index_node.gettxoutsetinfo(hash_type='muhash', hash_or_height=112)
+        res3 = index_node.gettxoutsetinfo(hash_type='muhash', hash_or_height=COINBASE_MATURITY + 12)
         assert_equal(res2, res3)
 
     def _test_index_rejects_hash_serialized(self):

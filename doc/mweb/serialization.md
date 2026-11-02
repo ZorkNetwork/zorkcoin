@@ -147,7 +147,7 @@ MWEB stealth addresses use a dedicated Bech32 human-readable part, separate from
 
 | Network | HRP |
 |---|---|
-| Mainnet | `mweb` |
+| Mainnet | `zorkmweb` |
 | Testnet / Testnet4 / Signet / Regtest | `tmweb` |
 
 Access via `CChainParams::MWEB_HRP()`. Address encoding and decoding: [stealth-addresses.md](stealth-addresses.md#address-encoding-zorkcoin).

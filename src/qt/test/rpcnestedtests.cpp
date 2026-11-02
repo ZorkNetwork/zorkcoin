@@ -82,7 +82,7 @@ void RPCNestedTests::rpcNestedTests()
     QVERIFY(result == result2);
 
     RPCConsole::RPCExecuteCommandLine(m_node, result, "getblock(getbestblockhash())[tx][0]", &filtered);
-    QVERIFY(result == "b72f0b81e63bb83b40816ac4e3cf92bdfed7d51c80dbc04d3e66043fc62ea6c1");
+    QVERIFY(result == "d89b34bc8c1eded12084fd12964041f5a2111de307b4ab701a9b4ebd580fac24");
     QVERIFY(filtered == "getblock(getbestblockhash())[tx][0]");
 
     RPCConsole::RPCParseCommandLine(nullptr, result, "createwallet test true", false, &filtered);

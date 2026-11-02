@@ -67,7 +67,7 @@ class MWEBP2PServeRegressionTest(BitcoinTestFramework):
         node.createwallet(wallet_name='serve_recv', load_on_startup=True)
         w_recv = node.get_wallet_rpc('serve_recv')
 
-        generate(node, 101)
+        generate(node, 120)
         w_send.sendtoaddress(w_send.getnewaddress(), 10)
         generate(node, 1)
         remaining = FIRST_MWEB_HEIGHT - 1 - node.getblockcount()

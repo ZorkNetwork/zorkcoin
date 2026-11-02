@@ -113,7 +113,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         self.fee_tolerance = 2 * self.min_relay_tx_fee / 1000
 
         self.generate(self.nodes[2], 1)
-        self.generate(self.nodes[0], 121)
+        self.generate(self.nodes[0], 140)
 
         self.test_add_inputs_default_value()
         self.test_preset_inputs_selection()

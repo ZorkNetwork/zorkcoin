@@ -1356,9 +1356,9 @@ class PSBTTest(BitcoinTestFramework):
         assert_equal(analysis['error'], 'PSBT is not valid. Input 0 spends unspendable output')
 
         self.log.info("PSBT with invalid values should have error message and Creator as next")
-        # Amount MAX_MONEY+1 (2^53+1 sats) exceeds Zorkcoin MAX_MONEY. Bitcoin Core's
+        # Amount MAX_MONEY+1 exceeds Zorkcoin MAX_MONEY. Bitcoin Core's
         # historical vector used 22M which only exceeds Bitcoin's 21M cap.
-        analysis = self.nodes[0].analyzepsbt('cHNidP8BAFICAAAAAREAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQDh9QUAAAAAFgAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEBHwEAAAAAACAAFgAUEREREREREREREREREREREREREREAAA==')
+        analysis = self.nodes[0].analyzepsbt('cHNidP8BAFICAAAAAREAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQDh9QUAAAAAFgAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEBHwUA8P///x8AFgAUEREREREREREREREREREREREREREAAA==')
         assert_equal(analysis['next'], 'creator')
         assert_equal(analysis['error'], 'PSBT is not valid. Input 0 has invalid value')
 
@@ -1367,7 +1367,7 @@ class PSBTTest(BitcoinTestFramework):
         assert_equal(analysis['next'], 'finalizer')
 
         # Output amount MAX_MONEY+1 with valid MAX_MONEY input UTXO.
-        analysis = self.nodes[0].analyzepsbt('cHNidP8BAFICAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/////AQEAAAAAACAAFgAUEREREREREREREREREREREREREREAAAAAAAEBHwAAAAAAACAAFgAUEREREREREREREREREREREREREREAAA==')
+        analysis = self.nodes[0].analyzepsbt('cHNidP8BAFICAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/////AQUA8P///x8AFgAUEREREREREREREREREREREREREREAAAAAAAEBHwQA8P///x8AFgAUEREREREREREREREREREREREREREAAA==')
         assert_equal(analysis['next'], 'creator')
         assert_equal(analysis['error'], 'PSBT is not valid. Output amount invalid')
 

@@ -12,6 +12,7 @@ in the next block are accepted into the memory pool,
 but less mature coinbase spends are NOT.
 """
 
+from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal, assert_raises_rpc_error
 from test_framework.wallet import MiniWallet
@@ -29,13 +30,13 @@ class MempoolSpendCoinbaseTest(BitcoinTestFramework):
         self.nodes[0].invalidateblock(self.nodes[0].getblockhash(chain_height + 1))
         assert_equal(chain_height, self.nodes[0].getblockcount())
 
-        # Coinbase at height chain_height-100+1 ok in mempool, should
-        # get mined. Coinbase at height chain_height-100+2 is
+        # Coinbase at height chain_height-COINBASE_MATURITY+1 ok in mempool, should
+        # get mined. Coinbase at height chain_height-COINBASE_MATURITY+2 is
         # too immature to spend.
         def coinbase_txid(h):
             return self.nodes[0].getblock(self.nodes[0].getblockhash(h))['tx'][0]
-        utxo_mature = wallet.get_utxo(txid=coinbase_txid(chain_height - 100 + 1))
-        utxo_immature = wallet.get_utxo(txid=coinbase_txid(chain_height - 100 + 2))
+        utxo_mature = wallet.get_utxo(txid=coinbase_txid(chain_height - COINBASE_MATURITY + 1))
+        utxo_immature = wallet.get_utxo(txid=coinbase_txid(chain_height - COINBASE_MATURITY + 2))
 
         spend_mature_id = wallet.send_self_transfer(from_node=self.nodes[0], utxo_to_spend=utxo_mature)["txid"]
 

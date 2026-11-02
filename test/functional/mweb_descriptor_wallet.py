@@ -74,8 +74,8 @@ class MWEBDescriptorWalletTest(BitcoinTestFramework):
         assert account['desc'].startswith('mweb(')
         body = account['desc'].split('#')[0]
         assert is_mweb_account_desc_body(body)
-        assert '/0h/100h/0h,' in body or "/0'/100'/0'," in body
-        assert '/0h/100h/1h,*' in body or "/0'/100'/1',*" in body
+        assert '/100h/1h/0h,' in body or "/100'/1'/0'," in body
+        assert '/100h/1h/1h,*' in body or "/100'/1'/1',*" in body
         assert_equal(account.get('internal'), False)
         # Account may expose a keypool-style range for mint-index tracking.
         if 'range' in account:
@@ -775,8 +775,8 @@ class MWEBDescriptorWalletTest(BitcoinTestFramework):
         public = get_mweb_account_descriptor(receiver)
         body = public['desc'].split('#')[0]
         scan, spend, rng = body[len('mweb('):-1].split(',')
-        assert scan.startswith('[') and scan.split(']')[0].endswith('/0h/100h/0h'), scan
-        assert spend.startswith('[') and spend.split(']')[0].endswith('/0h/100h/1h'), spend
+        assert scan.startswith('[') and scan.split(']')[0].endswith('/100h/1h/0h'), scan
+        assert spend.startswith('[') and spend.split(']')[0].endswith('/100h/1h/1h'), spend
         assert_equal(len(spend.split(']')[1]), 66)
         assert_equal(rng, '*')
         assert 'tprv' not in body and 'tpub' not in body

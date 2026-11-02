@@ -240,6 +240,7 @@ class BytesPerSigOpTest(BitcoinTestFramework):
         self.generateblock(self.nodes[0], output="raw(42)", transactions=[nonstd_tx.serialize().hex()])
 
     def run_test(self):
+        self.generate(self.nodes[0], 20)
         self.wallet = MiniWallet(self.nodes[0])
 
         for bytes_per_sigop in (DEFAULT_BYTES_PER_SIGOP, 43, 81, 165, 327, 649, 1072):

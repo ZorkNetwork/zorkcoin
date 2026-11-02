@@ -12,10 +12,10 @@ BOOST_AUTO_TEST_SUITE(disconnected_transactions)
 //! Tests that DisconnectedBlockTransactions limits its own memory properly
 BOOST_FIXTURE_TEST_CASE(disconnectpool_memory_limits, TestChain100Setup)
 {
-    // Use the coinbase transactions from TestChain100Setup. It doesn't matter whether these
+    // Use the first 100 coinbase transactions from TestChain100Setup. It doesn't matter whether these
     // transactions would realistically be in a block together, they just need distinct txids and
     // uniform size for this test to work.
-    std::vector<CTransactionRef> block_vtx(m_coinbase_txns);
+    std::vector<CTransactionRef> block_vtx(m_coinbase_txns.begin(), m_coinbase_txns.begin() + 100);
     BOOST_CHECK_EQUAL(block_vtx.size(), 100);
 
     // Roughly estimate sizes to sanity check that DisconnectedBlockTransactions::DynamicMemoryUsage

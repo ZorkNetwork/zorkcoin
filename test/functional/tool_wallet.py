@@ -326,7 +326,7 @@ class ToolWalletTest(BitcoinTestFramework):
     def test_chainless_conflicts(self):
         self.log.info("Test wallet tool when wallet contains conflicting transactions")
         self.restart_node(0)
-        self.generate(self.nodes[0], 101)
+        self.generate(self.nodes[0], 120)
 
         def_wallet = self.nodes[0].get_wallet_rpc(self.default_wallet_name)
 

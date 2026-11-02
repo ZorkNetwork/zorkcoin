@@ -56,7 +56,7 @@ Product invariants for packing tests: **NO_GAP** (no equal-or-better eligible le
 
 ### GBT `sizelimit` vs wire caps
 
-`getblocktemplate`'s `sizelimit` field remains the legacy L1 value (`MAX_BLOCK_SERIALIZED_SIZE` = 4,000,000). It does **not** report either MWEB-aware wire cap. MWEB extension data is carried in the separate `mweb` blob. The assembler enforces the BIP324 mine gate (16,777,214). `CheckBlock` enforces the larger consensus envelope `MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB` (~25.8 MB). See [consensus.md — Block Serialized Size](./consensus.md#block-serialized-size). Pools must not treat `sizelimit` as “max block bytes including MWEB.”
+`getblocktemplate`'s `sizelimit` field remains the legacy L1 value (`MAX_BLOCK_SERIALIZED_SIZE` = 4,000,000). It does **not** report the MWEB-aware wire cap. MWEB extension data is carried in the separate `mweb` blob. Both the assembler (`MAX_BLOCK_SERIALIZED_SIZE_MINE`) and `CheckBlock` (`MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB`) enforce the BIP324 cap (16,777,214). See [consensus.md — Block Serialized Size](./consensus.md#block-serialized-size). Pools must not treat `sizelimit` as “max block bytes including MWEB.”
 
 ----
 

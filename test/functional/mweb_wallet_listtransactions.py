@@ -210,15 +210,15 @@ class MWEBWalletListTransactionsTest(BitcoinTestFramework):
         node2.unloadwallet('node1_copy')
 
         self.log.info("HogEx outputs are \"hogex\" once mature")
-        for _ in range(4):
+        for _ in range(7):
             self.mine(node0)
         assert_array_result(node2.listtransactions(),
                             {"address": node2_addr},
-                            {"txid": hogex_txid, "category": "immature", "confirmations": 5})
+                            {"txid": hogex_txid, "category": "immature", "confirmations": 8})
         self.mine(node0)
         assert_array_result(node2.listtransactions(),
                             {"address": node2_addr},
-                            {"txid": hogex_txid, "category": "hogex", "amount": Decimal("1.0"), "confirmations": 6})
+                            {"txid": hogex_txid, "category": "hogex", "amount": Decimal("1.0"), "confirmations": 9})
 
         self.test_native_external_send_history(node0, node1)
         self.test_native_pegout_component_ids(node0, node1)

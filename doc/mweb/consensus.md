@@ -71,7 +71,7 @@
 | `mweb_kernel_lock_height_grandfather` | `0` | Kernel lock heights are enforced in every MWEB block. Litecoin's historical grandfather height (`KERNEL_LOCK_HEIGHT_GRANDFATHER_HEIGHT`) does not apply here. |
 | `mweb_input_metadata_grandfather_blockhash` | unset (null) | No block is exempt from the input commitment/pubkey match rule ([UTXO LeafSet](#utxo-leafset)). Litecoin needs one exempt block; this chain has none. |
 | `frozen_mweb_output_ids` | empty (regtest: one synthetic test ID) | No output IDs are frozen. Regtest carries a synthetic ID only to exercise the rule. |
-| `PEGOUT_MATURITY` | `6` blocks | Fixed constant. |
+| `PEGOUT_MATURITY` | `9` blocks | Fixed constant. |
 
 The two feature-activation heights exist in Litecoin because those rules were soft-forked in after MWEB had been running (Litecoin mainnet: 3,154,440 and 3,172,640). On this chain both rules are intended to be active from the first MWEB block.
 
@@ -184,7 +184,7 @@ For kernel-specific rules (feature bits, feature-gated fields, and kernel signat
   * Kernel IDs in the canonical block pegin set must be unique.
 * The total MWEB supply (<code>v_total</code>) shall increase by the sum of the block's pegins (<code>v<sub>pegin</sub></code>), and decrease by the sum of the block's pegouts (<code>v<sub>pegout</sub></code>) and the sum of all fees (`f`).
   * <code>v_total<sub>new</sub> = v_total<sub>prev</sub> + &Sigma;v<sub>pegin</sub> - (&Sigma;v<sub>pegout</sub> + &Sigma;f)</code>
-* Pegged-out coins require `PEGOUT_MATURITY` (6) blocks to mature before they can be spent. The wallet offers them at 6 confirmations, as released Litecoin Core does; their spend is valid in the next block.
+* Pegged-out coins require `PEGOUT_MATURITY` (9) blocks to mature before they can be spent. The wallet offers them at 9 confirmations, as released Litecoin Core does; their spend is valid in the next block.
 ---
 
 #### Block Weight
@@ -201,10 +201,10 @@ For kernel-specific rules (feature bits, feature-gated fields, and kernel signat
 
 #### Block Serialized Size
 
-* The full wire-serialized block (`GetSerializeSize(TX_WITH_WITNESS(block))`: L1 transactions including HogEx, plus `mweb_block`) shall not exceed **`MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB`** (25,800,195 bytes = `MAX_BLOCK_SERIALIZED_SIZE` 4,000,000 + `mw::MAX_BLOCK_BYTES`, the pessimistic extension body at full `mw::MAX_BLOCK_WEIGHT`).
+* The full wire-serialized block (`GetSerializeSize(TX_WITH_WITNESS(block))`: L1 transactions including HogEx, plus `mweb_block`) shall not exceed **`MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB`** (16,777,214 bytes = `MAX_BLOCK_SERIALIZED_SIZE_BIP324`).
 * This is a **consensus** rule (reject reason `bad-blk-serialized-size`), enforced early in `CheckBlock` before expensive MWEB verification.
-* Two non-consensus limits sit below it:
-  * `MAX_BLOCK_SERIALIZED_SIZE_BIP324` = 16,777,214 (`(2^24 − 1) − 1`: BIP324's 3-byte length field minus the one-byte short message type). A node refuses to send a larger block body to a BIP324 v2 peer (`CanSendBlockBodyOnPeer`) and disconnects it; such blocks are still accepted, stored, and served over v1. Compact blocks (version 3) carry the MWEB block, so the same applies to them: a v2 peer's request for a compact block that doesn't fit, or for the full block sent instead of a deep compact block, is refused the same way, and a v2 high-bandwidth peer is announced the block with `headers` instead of a compact block. `MAX_PROTOCOL_MESSAGE_LENGTH` (32,000,000) leaves v1 room for any consensus-valid block.
+* Two limits match it:
+  * `MAX_BLOCK_SERIALIZED_SIZE_BIP324` = 16,777,214 (`(2^24 − 1) − 1`: BIP324's 3-byte length field minus the one-byte short message type), so every consensus-valid block fits inside a BIP324 v2 frame.
   * `MAX_BLOCK_SERIALIZED_SIZE_MINE` (default = the BIP324 value) caps block templates. See [mining-changes.md](./mining-changes.md#template-size-constraint-this-fork).
 * Intentional divergence from Litecoin mining policy: Litecoin's default miner soft-caps extension weight at `MAX_MINE_WEIGHT` (20,000) and has no BIP324 transport; this tree allows full `mw::MAX_BLOCK_WEIGHT` subject to the mine size cap.
 
@@ -234,7 +234,7 @@ For kernel-specific rules (feature bits, feature-gated fields, and kernel signat
   * The new `HogEx.vout[0]` amount must equal <code>H<sub>prev</sub> + supply_change</code>, where <code>supply_change = P - (pegouts + fees)</code>.
 * Pegout maturity handling:
   * `HogEx.vout[0]` is not a pegout and is exempt from pegout maturity.
-  * `HogEx.vout[1..]` are pegouts and require 6 confirmations before spending.
+  * `HogEx.vout[1..]` are pegouts and require 9 confirmations before spending.
   * Undo data records the peg-out flag of each spent coin (see [store.md](./store.md#cblockundo)), so maturity is still enforced after a reorg returns those spends to the mempool.
 * Current consensus does **not** globally forbid HogAddr-looking scripts outside `HogEx.vout[0]`; only the first output of `HogEx` is interpreted as the mandatory HogAddr commitment.
 

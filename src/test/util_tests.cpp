@@ -1545,7 +1545,7 @@ BOOST_AUTO_TEST_CASE(message_verify)
 
     BOOST_CHECK_EQUAL(
         MessageVerify(
-            "NteDfBqe2RC4zLJHrHsDtfusMtPCG2LRTD",
+            "SWgeXAXER3MxMEZ554s6FoMx2RhghyJaDT",
             "signature should be irrelevant",
             "message too"),
         MessageVerificationResult::ERR_ADDRESS_NO_KEY);

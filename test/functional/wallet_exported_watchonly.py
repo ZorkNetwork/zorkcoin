@@ -286,9 +286,9 @@ class WalletExportedWatchOnly(BitcoinTestFramework):
         os.makedirs(self.export_path, exist_ok=True)
 
         # Mine some blocks, and verify disconnected
-        self.generate(self.online, 101, sync_fun=self.no_op)
+        self.generate(self.online, 120, sync_fun=self.no_op)
         assert_not_equal(self.online.getbestblockhash(), self.offline.getbestblockhash())
-        assert_equal(self.online.getblockcount(), 101)
+        assert_equal(self.online.getblockcount(), 120)
         assert_equal(self.offline.getblockcount(), 0)
 
         self.test_basic_export()

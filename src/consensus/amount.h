@@ -16,11 +16,10 @@ inline constexpr CAmount COIN{100'000'000};
 
 /** No amount larger than this (in satoshi) is valid.
  *
- * Theoretical max issuance with base subsidy `1<<32` and halvings every `1<<20`
- * blocks is `2 * (1<<32) * (1<<20) = 1<<53` satoshis. This constant is a
- * consensus-critical sanity check (not merely documentation of supply).
+ * Maximum coin supply is 90,071,992.53692420 Zorkcoins (0x001FFFFF_FFF00004).
+ * This constant is a consensus-critical sanity check.
  */
-inline constexpr CAmount MAX_MONEY{(CAmount{1} << 32) * 2 * (CAmount{1} << 20)}; // 2^53
+inline constexpr CAmount MAX_MONEY{9'007'199'253'692'420LL}; // 0x001FFFFF_FFF00004
 inline bool MoneyRange(const CAmount& nValue) { return (nValue >= 0 && nValue <= MAX_MONEY); }
 
 #endif // BITCOIN_CONSENSUS_AMOUNT_H

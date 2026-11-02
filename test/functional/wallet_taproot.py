@@ -272,7 +272,7 @@ class WalletTaprootTest(BitcoinTestFramework):
 
         self.log.info("Mining blocks...")
         gen_addr = self.boring.getnewaddress()
-        self.generatetoaddress(self.nodes[0], 101, gen_addr, sync_fun=self.no_op)
+        self.generatetoaddress(self.nodes[0], 120, gen_addr, sync_fun=self.no_op)
 
         self.do_test(
             "tr(XPRV)",

@@ -1,6 +1,6 @@
 # Mainnet block 1 launch lock
 
-**T0 (launch instant):** 2026-09-14 12:59:09.696 UTC — mainnet genesis `nTime = 1789390749696`. See `ZORKCOIN_LAUNCH_OPS_CHECKLIST.md` for ceremony timing.
+**T0 (launch instant):** 2026-11-21 21:25:29.728 UTC — mainnet genesis `nTime = 1795296329728`. See `ZORKCOIN_LAUNCH_OPS_CHECKLIST.md` for ceremony timing.
 
 Release binaries may ship before T0. **Consensus still rejects mainnet block 1** until the coinbase carries a qualifying embedded Bitcoin header (see below).
 
@@ -83,7 +83,7 @@ All checks use only the bytes in the `OP_RETURN`. No HTTP, RPC, or live lookup t
 
 ### 1. Timestamp
 
-`nTime = ReadLE32(header + 68)` must be **≥ 1789390750** (2026-09-14 12:59:10 UTC) — the first whole Bitcoin second strictly after genesis.
+`nTime = ReadLE32(header + 68)` must be **≥ 1795296330** (2026-11-21 21:25:30 UTC) — the first whole Bitcoin second strictly after genesis.
 
 Headers copied from real post-T0 Bitcoin blocks satisfy this. A header claiming an earlier time is rejected.
 
@@ -136,7 +136,7 @@ Pinned constants (`BTC_LAUNCH_MIN_UNIX`, `BTC_LAUNCH_NBITS_FLOOR`) live in `src/
 **What consensus does not prove**
 
 - That the header is on Bitcoin’s best chain at validation time (membership would need heavy proofs or non-deterministic fetches). Launch practice uses headers from the public Bitcoin chain; nodes treat the blob as self-contained evidence of timestamp, difficulty, and PoW.
-- That operators waited for wall-clock T0 before copying (social launch discipline). Consensus enforces `nTime ≥ 1789390750`, not human ceremony timing.
+- That operators waited for wall-clock T0 before copying (social launch discipline). Consensus enforces `nTime ≥ 1795296330`, not human ceremony timing.
 
 **Offline grind (out of band):** A party could grind an 80-byte blob that passes the three checks without copying a live Bitcoin block. That is costly (floor work) and **not** part of launch practice. The product rule is observe-and-copy after T0, not pre-stockpile before T0.
 

@@ -108,8 +108,8 @@ def keyhash_to_p2pkh(hash, main=False):
 
 def scripthash_to_p2sh(hash, main=False):
     assert_equal(len(hash), 20)
-    # EncodeDestination uses SCRIPT_ADDRESS2 (54 main / 58 test+regtest).
-    version = 54 if main else 58
+    # EncodeDestination uses SCRIPT_ADDRESS2 (63 main / 58 test+regtest).
+    version = 63 if main else 58
     return byte_to_base58(hash, version)
 
 def key_to_p2pkh(key, main=False):

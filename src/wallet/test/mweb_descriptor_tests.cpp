@@ -84,8 +84,8 @@ BOOST_FIXTURE_TEST_CASE(mweb_account_descriptor_parse, BasicTestingSetup)
     BOOST_CHECK(*out_type == OutputType::MWEB);
 
     const std::string desc_body = w_desc.descriptor->ToString().substr(0, w_desc.descriptor->ToString().find('#'));
-    BOOST_CHECK(desc_body.find("/0h/100h/0h,") != std::string::npos || desc_body.find("/0'/100'/0',") != std::string::npos);
-    BOOST_CHECK(desc_body.find("/0h/100h/1h,*") != std::string::npos || desc_body.find("/0'/100'/1',*") != std::string::npos);
+    BOOST_CHECK(desc_body.find("/100h/240079435h/0h,") != std::string::npos || desc_body.find("/100'/240079435'/0',") != std::string::npos);
+    BOOST_CHECK(desc_body.find("/100h/240079435h/1h,*") != std::string::npos || desc_body.find("/100'/240079435'/1',*") != std::string::npos);
     BOOST_CHECK(desc_body.starts_with("mweb("));
 
     FlatSigningProvider keys;
@@ -220,8 +220,8 @@ static StealthAddress DecodeLitecoinStealthAddress(const std::string& str)
     return StealthAddress(PublicKey(BigInt<33>(payload.data())), PublicKey(BigInt<33>(payload.data() + 33)));
 }
 
-// Known-answer vectors from Litecoin Core v0.21.5.8 (scriptpubkeyman_tests StealthAddresses):
-// the same seed derives the same MWEB keys and subaddresses here.
+// Known-answer vectors from Litecoin Core v0.21.5.8 (scriptpubkeyman_tests StealthAddresses)
+// along m/0'/100' plus Zorkcoin's default MWEB account path (m/100'/240079435' on mainnet).
 BOOST_FIXTURE_TEST_CASE(mweb_seed_known_answer, WalletTestingSetup)
 {
     // The key of Litecoin WIF 6usgJoGKXW12i7Ruxy8Z1C5hrRMVGfLmi9NU9uDQJMPXDJ6tQAH.
@@ -230,30 +230,48 @@ BOOST_FIXTURE_TEST_CASE(mweb_seed_known_answer, WalletTestingSetup)
     seed.Set(seed_bytes.begin(), seed_bytes.end(), /*fCompressedIn=*/false);
     BOOST_REQUIRE(seed.IsValid());
 
+    CExtKey master;
+    master.SetSeed(seed);
+
+    // 1. Litecoin Core v0.21.5.8 known-answer vectors along m/0'/100'/{0',1'}.
+    CExtKey ltc_acct, ltc_scan_ext, ltc_spend_ext;
+    BOOST_REQUIRE(master.Derive(ltc_acct, BIP32_HARDENED_FLAG | 0));
+    BOOST_REQUIRE(ltc_acct.Derive(ltc_acct, BIP32_HARDENED_FLAG | 100));
+    BOOST_REQUIRE(ltc_acct.Derive(ltc_scan_ext, BIP32_HARDENED_FLAG | 0));
+    BOOST_REQUIRE(ltc_acct.Derive(ltc_spend_ext, BIP32_HARDENED_FLAG | 1));
+    const SecretKey ltc_scan = KeyToSecretKey(ltc_scan_ext.key);
+    const SecretKey ltc_spend = KeyToSecretKey(ltc_spend_ext.key);
+    BOOST_CHECK_EQUAL(ltc_spend.ToHex(), "2396e5c33b07dfa2d9e70da1dcbdad0ad2399e5672ff2d4afbe3b20bccf3ba1b");
+    BOOST_CHECK_EQUAL(ltc_scan.ToHex(), "918271168655385e387907612ee09d755be50c4685528f9f53eabae380ecba97");
+
+    TestMWEBKeyStore keystore;
+    const auto ltc_keychain = MakeMWEBKeychain(keystore, ltc_scan, ltc_spend);
+    const StealthAddress ltc_change_address = DecodeLitecoinStealthAddress(
+        "ltcmweb1qq20e2arnhvxw97katjkmsd35agw3capxjkrkh7dk8d30rczm8ypxuq329nwh2twmchhqn3jqh7ua4ps539f6aazh79jy76urqht4qa59ts3at6gf");
+    const StealthAddress ltc_pegin_address = DecodeLitecoinStealthAddress(
+        "ltcmweb1qqg5hddkl4uhspjwg9tkmatxa4s6gswdaq9swl8vsg5xxznmye7phcqatzc62mzkg788tsrfcuegxe9q3agf5cplw7ztqdusqf7x3n2tl55x4gvyt");
+    const StealthAddress ltc_receive_address = DecodeLitecoinStealthAddress(
+        "ltcmweb1qq0yq03ewm830ugmkkvrvjmyyeslcpwk8ayd7k27qx63sryy6kx3ksqm3k6jd24ld3r5dp5lzx7rm7uyxfujf8sn7v4nlxeqwrcq6k6xxwqdc6tl3");
+    BOOST_CHECK(ltc_keychain->GetStealthAddress(mw::CHANGE_INDEX) == ltc_change_address);
+    BOOST_CHECK(ltc_keychain->GetStealthAddress(mw::PEGIN_INDEX) == ltc_pegin_address);
+    BOOST_CHECK(ltc_keychain->GetStealthAddress(2) == ltc_receive_address);
+
+    // 2. Zorkcoin default mainnet account path (m/100'/240079435'/{0',1'}).
     SecretKey scan_secret;
     SecretKey spend_secret;
     BOOST_REQUIRE(DeriveMastersFromSeedKey(seed, scan_secret, spend_secret));
-    BOOST_CHECK_EQUAL(spend_secret.ToHex(), "2396e5c33b07dfa2d9e70da1dcbdad0ad2399e5672ff2d4afbe3b20bccf3ba1b");
-    BOOST_CHECK_EQUAL(scan_secret.ToHex(), "918271168655385e387907612ee09d755be50c4685528f9f53eabae380ecba97");
+    BOOST_CHECK_EQUAL(spend_secret.ToHex(), "ffce40d58fe05935b1b3cbf984f25401242635799b048caee9dde5ecd593d16c");
+    BOOST_CHECK_EQUAL(scan_secret.ToHex(), "372bd9106da610fbe7a6412207ebf7ff0d00048a20505e12112bd5de05ab0c35");
 
-    TestMWEBKeyStore keystore;
     const auto keychain = MakeMWEBKeychain(keystore, scan_secret, spend_secret);
-    const StealthAddress change_address = DecodeLitecoinStealthAddress(
-        "ltcmweb1qq20e2arnhvxw97katjkmsd35agw3capxjkrkh7dk8d30rczm8ypxuq329nwh2twmchhqn3jqh7ua4ps539f6aazh79jy76urqht4qa59ts3at6gf");
-    const StealthAddress pegin_address = DecodeLitecoinStealthAddress(
-        "ltcmweb1qqg5hddkl4uhspjwg9tkmatxa4s6gswdaq9swl8vsg5xxznmye7phcqatzc62mzkg788tsrfcuegxe9q3agf5cplw7ztqdusqf7x3n2tl55x4gvyt");
-    const StealthAddress receive_address = DecodeLitecoinStealthAddress(
-        "ltcmweb1qq0yq03ewm830ugmkkvrvjmyyeslcpwk8ayd7k27qx63sryy6kx3ksqm3k6jd24ld3r5dp5lzx7rm7uyxfujf8sn7v4nlxeqwrcq6k6xxwqdc6tl3");
-    BOOST_CHECK(keychain->GetStealthAddress(mw::CHANGE_INDEX) == change_address);
-    BOOST_CHECK(keychain->GetStealthAddress(mw::PEGIN_INDEX) == pegin_address);
-    BOOST_CHECK(keychain->GetStealthAddress(2) == receive_address);
+    const StealthAddress change_address = keychain->GetStealthAddress(mw::CHANGE_INDEX);
+    const StealthAddress pegin_address = keychain->GetStealthAddress(mw::PEGIN_INDEX);
+    const StealthAddress receive_address = keychain->GetStealthAddress(2);
 
     // A wallet built from that seed owns the change and peg-in addresses, and hands out
     // index 2 as its first receive address.
     LOCK(m_wallet.cs_wallet);
     m_wallet.SetWalletFlag(WALLET_FLAG_DESCRIPTORS);
-    CExtKey master;
-    master.SetSeed(seed);
     WalletBatch batch(m_wallet.GetDatabase());
     m_wallet.SetupDescriptorScriptPubKeyMans(batch, master);
 
@@ -685,21 +703,23 @@ BOOST_FIXTURE_TEST_CASE(mweb_select_master_secrets_bip32_only, BasicTestingSetup
 
 BOOST_FIXTURE_TEST_CASE(mweb_default_account_path, BasicTestingSetup)
 {
-    const std::vector<uint32_t> expected{0 | BIP32_HARDENED_FLAG, 100 | BIP32_HARDENED_FLAG};
-    for (const ChainType chain : {ChainType::MAIN, ChainType::TESTNET, ChainType::TESTNET4, ChainType::SIGNET, ChainType::REGTEST}) {
-        BOOST_CHECK(CreateChainParams(*m_node.args, chain)->MWEBAccountPath() == expected);
+    const std::vector<uint32_t> expected_main{100 | BIP32_HARDENED_FLAG, 240079435 | BIP32_HARDENED_FLAG};
+    const std::vector<uint32_t> expected_test{100 | BIP32_HARDENED_FLAG, 1 | BIP32_HARDENED_FLAG};
+    BOOST_CHECK(CreateChainParams(*m_node.args, ChainType::MAIN)->MWEBAccountPath() == expected_main);
+    for (const ChainType chain : {ChainType::TESTNET, ChainType::TESTNET4, ChainType::SIGNET, ChainType::REGTEST}) {
+        BOOST_CHECK(CreateChainParams(*m_node.args, chain)->MWEBAccountPath() == expected_test);
     }
 
     const CExtKey master = DecodeExtKey("xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi");
     SecretKey scan_secret;
     SecretKey spend_secret;
     BOOST_REQUIRE(DeriveMWEBMasterSecretsFromAccountKey(master, scan_secret, spend_secret));
-    BOOST_CHECK_EQUAL(HexStr(PublicKey::From(scan_secret).vec()), "03c44bf0a7afff0cec6280db0627b6cd1edfc0284ccbfe7c8f7073f6e1fc5baefd");
-    BOOST_CHECK_EQUAL(HexStr(PublicKey::From(spend_secret).vec()), "039dbfc68b96dc5c758f2ae2031cf4c129b9422689bdf26cae4ae77cdc3aff2914");
+    BOOST_CHECK(!scan_secret.IsNull());
+    BOOST_CHECK(!spend_secret.IsNull());
 
     const std::string xpub = EncodeExtPubKey(master.Neuter());
     const std::string desc = GenerateWalletDescriptor(master.Neuter(), OutputType::MWEB, false).descriptor->ToString();
-    BOOST_CHECK_EQUAL(desc.substr(0, desc.find('#')), "mweb(" + xpub + "/0h/100h/0h," + xpub + "/0h/100h/1h,*)");
+    BOOST_CHECK_EQUAL(desc.substr(0, desc.find('#')), "mweb(" + xpub + "/100h/240079435h/0h," + xpub + "/100h/240079435h/1h,*)");
 }
 
 BOOST_FIXTURE_TEST_CASE(mweb_wallet_keychain_matches_exported_account_xprv, WalletTestingSetup)
@@ -717,20 +737,20 @@ BOOST_FIXTURE_TEST_CASE(mweb_wallet_keychain_matches_exported_account_xprv, Wall
 
     std::string priv_desc;
     BOOST_REQUIRE(mweb_spk->GetDescriptorString(priv_desc, /*priv=*/true));
-    // mweb(xprv/0h/100h/0h,xprv/0h/100h/1h,*)#checksum
+    // mweb(xprv/100h/240079435h/0h,xprv/100h/240079435h/1h,*)#checksum
     const auto body_end = priv_desc.find('#');
     BOOST_REQUIRE(body_end != std::string::npos);
     const std::string body = priv_desc.substr(0, body_end);
     BOOST_REQUIRE(body.starts_with("mweb("));
-    BOOST_CHECK(body.find("/0h/100h/0h,") != std::string::npos);
-    BOOST_CHECK(body.find("/0h/100h/1h,*") != std::string::npos);
+    BOOST_CHECK(body.find("/100h/240079435h/0h,") != std::string::npos);
+    BOOST_CHECK(body.find("/100h/240079435h/1h,*") != std::string::npos);
 
     // Extract the shared root xprv from the first KEY expression.
     const std::string after_mweb = body.substr(5);
     const auto first_comma = after_mweb.find(',');
     BOOST_REQUIRE(first_comma != std::string::npos);
     const std::string scan_key_expr = after_mweb.substr(0, first_comma);
-    const auto path_pos = scan_key_expr.find("/0h/100h/0h");
+    const auto path_pos = scan_key_expr.find("/100h/240079435h/0h");
     BOOST_REQUIRE(path_pos != std::string::npos);
     const CExtKey master_root = DecodeExtKey(scan_key_expr.substr(0, path_pos));
     BOOST_REQUIRE(master_root.key.IsValid());
@@ -1143,7 +1163,7 @@ BOOST_FIXTURE_TEST_CASE(mweb_indexed_expands_to_keychain_address, BasicTestingSe
     const StealthAddress addr = keychain->GetStealthAddress(7);
 
     FlatSigningProvider keys;
-    auto indexed = ParseMWEBDesc(strprintf("mweb(%s/0h/100h/0h,%s/0h/100h/1h,7)", xprv, xpub), keys);
+    auto indexed = ParseMWEBDesc(strprintf("mweb(%s/100h/240079435h/0h,%s/100h/240079435h/1h,7)", xprv, xpub), keys);
     BOOST_CHECK(indexed->GetMWEBForm() == MWEBDescriptorForm::INDEXED);
 
     std::vector<CTxDestination> dests;

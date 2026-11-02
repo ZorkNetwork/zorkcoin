@@ -173,17 +173,17 @@ class WalletBackupTest(BitcoinTestFramework):
         self.log.info("Test loading backup on a pruned node when the backup was created close to the prune height of the restoring node")
         node = self.nodes[3]
         self.restart_node(3, ["-prune=1", "-fastprune=1"])
-        # Ensure the chain tip is at height 214, because this test assumes it is.
-        assert_equal(node.getchaintips()[0]["height"], 214)
+        # Ensure the chain tip is at height 252, because this test assumes it is.
+        assert_equal(node.getchaintips()[0]["height"], 252)
         # We need a few more blocks so we can actually get above an realistic
         # minimal prune height
         self.generate(node, 50, sync_fun=self.no_op)
-        # Backup created at block height 264
+        # Backup created at block height 302
         node.backupwallet(node.datadir_path / 'wallet_pruned.bak')
         # Generate more blocks so we can actually prune the older blocks
         self.generate(node, 300, sync_fun=self.no_op)
-        # This gives us an actual prune height roughly in the range of 220 - 240
-        node.pruneblockchain(250)
+        # This gives us an actual prune height roughly in the range of 250 - 270
+        node.pruneblockchain(290)
         # The backup should be updated with the latest height (locator) for
         # the backup to load successfully this close to the prune height
         node.restorewallet('pruned', node.datadir_path / 'wallet_pruned.bak')
@@ -229,9 +229,9 @@ class WalletBackupTest(BitcoinTestFramework):
         balance3 = self.nodes[3].getbalance()
         total = balance0 + balance1 + balance2 + balance3
 
-        # At this point, there are 214 blocks (103 for setup, then 10 rounds, then 101.)
-        # 114 are mature, so the sum of all wallets should be 114 * 50 = 114 * BLOCK_SUBSIDY.
-        assert_equal(total, 114 * BLOCK_SUBSIDY)
+        # At this point, there are 252 blocks (122 for setup, then 10 rounds, then 120.)
+        # 133 are mature, so the sum of all wallets should be 133 * BLOCK_SUBSIDY.
+        assert_equal(total, 133 * BLOCK_SUBSIDY)
 
         ##
         # Test restoring spender wallets from backups

@@ -137,20 +137,20 @@ BOOST_AUTO_TEST_CASE(test_assumeutxo)
 
     // These heights don't have assumeutxo configurations associated, per the contents
     // of kernel/chainparams.cpp.
-    std::vector<int> bad_heights{0, 100, 111, 115, 209, 211};
+    std::vector<int> bad_heights{0, 100, 110, 111, 115, 209, 211};
 
     for (auto empty : bad_heights) {
         const auto out = params->AssumeutxoForHeight(empty);
         BOOST_CHECK(!out);
     }
 
-    const auto out110 = *params->AssumeutxoForHeight(110);
-    BOOST_CHECK_EQUAL(out110.hash_serialized.ToString(), "35d3eeddf22f7ef9dd1a3bdd86dd7547cfc02ef3d1380e5207fd1d766764f62d");
-    BOOST_CHECK_EQUAL(out110.m_chain_tx_count, 111U);
+    const auto out129 = *params->AssumeutxoForHeight(129);
+    BOOST_CHECK_EQUAL(out129.hash_serialized.ToString(), "806e70263042ecbfd6865913e5540a594820d9c6e4edee2c743db42bdb1c8d2b");
+    BOOST_CHECK_EQUAL(out129.m_chain_tx_count, 130U);
 
-    const auto out110_2 = *params->AssumeutxoForBlockhash(uint256{"f559dee5f05011b02ac30eb556b81c6fa3ed2d7ccc4da8dd0f383c10084ac52a"});
-    BOOST_CHECK_EQUAL(out110_2.hash_serialized.ToString(), "35d3eeddf22f7ef9dd1a3bdd86dd7547cfc02ef3d1380e5207fd1d766764f62d");
-    BOOST_CHECK_EQUAL(out110_2.m_chain_tx_count, 111U);
+    const auto out129_2 = *params->AssumeutxoForBlockhash(uint256{"332f80e6392351be303a49c5552c6e941deefe5cb5f388aa9f68757c4c9e4a60"});
+    BOOST_CHECK_EQUAL(out129_2.hash_serialized.ToString(), "806e70263042ecbfd6865913e5540a594820d9c6e4edee2c743db42bdb1c8d2b");
+    BOOST_CHECK_EQUAL(out129_2.m_chain_tx_count, 130U);
 }
 
 BOOST_AUTO_TEST_CASE(block_malleation)

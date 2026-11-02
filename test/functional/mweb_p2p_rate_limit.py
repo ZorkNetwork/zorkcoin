@@ -82,7 +82,7 @@ class MWEBP2PRateLimitTest(BitcoinTestFramework):
 
     def activate_mweb(self, node, extra_pegins=0):
         if node.getblockcount() < FIRST_MWEB_HEIGHT:
-            generate(node, 101)
+            generate(node, 120)
             node.sendtoaddress(node.getnewaddress(), 10)
             generate(node, 1)
             remaining = FIRST_MWEB_HEIGHT - 1 - node.getblockcount()

@@ -14,7 +14,7 @@ from test_framework.util import assert_equal, assert_raises_rpc_error
 from test_framework.wallet import MiniWallet
 
 # Matches consensus/consensus.h PEGOUT_MATURITY.
-PEGOUT_MATURITY = 6
+PEGOUT_MATURITY = 9
 
 
 class MWEBNoWalletConsensusTest(BitcoinTestFramework):

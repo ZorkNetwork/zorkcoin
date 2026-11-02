@@ -499,7 +499,7 @@ class MWEBP2PTest(BitcoinTestFramework):
         light_client = node.add_p2p_connection(MockLightClient(), services=MWEB_LIGHT_CLIENT_SERVICES)
 
         self.log.info("Fund block source before MWEB activation")
-        generate(node, 101)
+        generate(node, 120)
         self.sync_all()
         node.sendtoaddress(block_source.getnewaddress(), 25)
         generate(node, 1)
