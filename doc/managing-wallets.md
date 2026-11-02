@@ -49,7 +49,7 @@ $ bitcoin-cli -rpcwallet="wallet-mnemonic" -named createwalletdescriptor type=be
 ```
 
 Repeat `createwalletdescriptor` for other address types you need (`legacy`,
-`p2sh-segwit`, `bech32m`), passing the same `hdkey`. Omit `mnemonic` on
+`p2sh-segwit`, `bech32m`, `mweb`), passing the same `hdkey`. Omit `mnemonic` on
 `addhdkey_mnemonic` to generate (the result includes the phrase **once**). Pass
 `mnemonic` to import. Optional arguments: `passphrase` (BIP39 passphrase),
 `wordcount` (12/15/18/21/24 when generating; default 24), `language` (when

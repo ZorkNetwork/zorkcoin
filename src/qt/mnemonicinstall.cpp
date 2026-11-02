@@ -108,7 +108,7 @@ bool InstallMnemonicHdKey(interfaces::Node& node, const QString& wallet_name,
         // addhdkey_mnemonic only stores unused(xprv), matching addhdkey. A new mnemonic
         // wallet also needs active descriptors so getnewaddress works (same follow-up as
         // after addhdkey in normal scripting). Idempotent: skip types that already exist.
-        static const char* const types[] = {"legacy", "p2sh-segwit", "bech32", "bech32m"};
+        static const char* const types[] = {"legacy", "p2sh-segwit", "bech32", "bech32m", "mweb"};
         for (const char* type : types) {
             UniValue cparams(UniValue::VARR);
             cparams.push_back(type);
@@ -127,7 +127,7 @@ bool InstallMnemonicHdKey(interfaces::Node& node, const QString& wallet_name,
             }
         }
         if (restore) {
-            // Scan only after all L1 descriptors exist. Use the existing
+            // Scan only after all L1 and MWEB descriptors exist. Use the existing
             // RPC so pruning checks, cancellation, passphrase protection and scan
             // failures follow the same contract as an explicit wallet rescan.
             UniValue params(UniValue::VARR);

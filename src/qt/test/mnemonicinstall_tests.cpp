@@ -55,8 +55,10 @@ namespace {
 constexpr auto MNEMONIC_A{"abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"};
 constexpr auto MNEMONIC_B{"legal winner thank year wave sausage worth useful legal winner thank yellow"};
 constexpr uint64_t BLANK_DESCRIPTOR_FLAGS{wallet::WALLET_FLAG_DESCRIPTORS | wallet::WALLET_FLAG_BLANK_WALLET};
-//! Output types InstallMnemonicHdKey sets up; each gets an active receive and change descriptor.
-const char* const INSTALLED_TYPES[]{"legacy", "p2sh-segwit", "bech32", "bech32m"};
+//! Output types InstallMnemonicHdKey sets up. Each gets an active receive and change
+//! descriptor, except MWEB which has a single active descriptor.
+const char* const INSTALLED_TYPES[]{"legacy", "p2sh-segwit", "bech32", "bech32m", "mweb"};
+const size_t ACTIVE_DESCRIPTORS{2 * (std::size(INSTALLED_TYPES) - 1) + 1};
 
 //! Node with a wallet loader whose RPCs are reachable through interfaces::Node.
 struct WalletNodeSetup {
@@ -288,7 +290,7 @@ void MnemonicInstallTests::resumeAfterMasterAdded()
                                   SecureString{MNEMONIC_A}, error),
              qPrintable(error));
     QCOMPARE(HdXpubs(m_node, "mn_resume"), std::vector<std::string>{ExpectedXpub(MNEMONIC_A, "")});
-    QCOMPARE(ActiveDescriptorCount(m_node, "mn_resume"), 2 * std::size(INSTALLED_TYPES));
+    QCOMPARE(ActiveDescriptorCount(m_node, "mn_resume"), ACTIVE_DESCRIPTORS);
     for (const char* type : INSTALLED_TYPES) {
         QVERIFY2(CanGetNewAddress(m_node, "mn_resume", type), type);
     }
@@ -327,8 +329,9 @@ void MnemonicInstallTests::installIntoEncryptedWallet()
              qPrintable(error));
     QVERIFY(wallet.isLocked());
     QCOMPARE(HdXpubs(m_node, "mn_enc"), std::vector<std::string>{ExpectedXpub(MNEMONIC_A, "TREZOR")});
-    QCOMPARE(ActiveDescriptorCount(m_node, "mn_enc"), 2 * std::size(INSTALLED_TYPES));
+    QCOMPARE(ActiveDescriptorCount(m_node, "mn_enc"), ACTIVE_DESCRIPTORS);
     QVERIFY(CanGetNewAddress(m_node, "mn_enc", "bech32"));
+    QVERIFY(CanGetNewAddress(m_node, "mn_enc", "mweb"));
 }
 
 void MnemonicInstallTests::installIntoEncryptedWalletWrongPassphrase()
@@ -399,7 +402,7 @@ void MnemonicInstallTests::createWalletActivityImportsPhrase()
     QVERIFY(created);
     QCOMPARE(created->getWalletName(), QStringLiteral("mn_import"));
     QCOMPARE(HdXpubs(m_node, "mn_import"), std::vector<std::string>{ExpectedXpub(MNEMONIC_A, "TREZOR")});
-    QCOMPARE(ActiveDescriptorCount(m_node, "mn_import"), 2 * std::size(INSTALLED_TYPES));
+    QCOMPARE(ActiveDescriptorCount(m_node, "mn_import"), ACTIVE_DESCRIPTORS);
     // The payment predates the restored wallet and its descriptors. Correct key
     // derivation alone cannot populate this transaction without the Restore scan.
     const UniValue info{m_node.executeRpc("getwalletinfo", UniValue(UniValue::VARR), WalletUri("mn_import"))};
@@ -432,7 +435,7 @@ void MnemonicInstallTests::restoreScanCancellationAndRetry()
     QVERIFY(scan_started);
     QVERIFY(error.contains(QStringLiteral("Rescan aborted")));
     QVERIFY(wallet.isLocked());
-    QCOMPARE(ActiveDescriptorCount(m_node, "mn_scan_cancel"), 2 * std::size(INSTALLED_TYPES));
+    QCOMPARE(ActiveDescriptorCount(m_node, "mn_scan_cancel"), ACTIVE_DESCRIPTORS);
     QCOMPARE(HdXpubs(m_node, "mn_scan_cancel"), std::vector<std::string>{ExpectedXpub(MNEMONIC_A, "")});
 
     // Cancellation preserves installed descriptors; retry must complete without
@@ -442,7 +445,7 @@ void MnemonicInstallTests::restoreScanCancellationAndRetry()
     QVERIFY2(InstallMnemonicIntoNewWallet(m_node, wallet, encryption_passphrase,
                                          SecureString{MNEMONIC_A}, SecureString{}, error, /*restore=*/true), qPrintable(error));
     QVERIFY(wallet.isLocked());
-    QCOMPARE(ActiveDescriptorCount(m_node, "mn_scan_cancel"), 2 * std::size(INSTALLED_TYPES));
+    QCOMPARE(ActiveDescriptorCount(m_node, "mn_scan_cancel"), ACTIVE_DESCRIPTORS);
 }
 
 void MnemonicInstallTests::createWalletDefaultOptionStates()

@@ -14,7 +14,7 @@ class Node;
 class Wallet;
 } // namespace interfaces
 
-/** Install BIP39 mnemonic as unused HD master and create active descriptors.
+/** Install BIP39 mnemonic as unused HD master and create active descriptors (incl. MWEB).
  *  When restoring, finish with the wallet RPC historical rescan. A failed or aborted
  *  scan leaves the installed keys available for a later retry. */
 bool InstallMnemonicHdKey(interfaces::Node& node, const QString& wallet_name,

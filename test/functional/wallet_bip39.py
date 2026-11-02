@@ -7,17 +7,19 @@
 from decimal import Decimal
 
 from test_framework.test_framework import BitcoinTestFramework
+from test_framework.mweb_util import FIRST_MWEB_HEIGHT, mweb_extra_args
 from test_framework.util import (
     assert_equal,
     assert_raises_rpc_error,
 )
+from test_framework.wallet_util import WalletUnlock
 
 
 class WalletBIP39Test(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 1
-        self.extra_args = [["-keypool=2"]]
+        self.extra_args = mweb_extra_args(["-keypool=2", "-mwebkeypool=2"])
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -54,10 +56,11 @@ class WalletBIP39Test(BitcoinTestFramework):
         # addhdkey_mnemonic only installs unused(xprv); create active descriptors
         # so getnewaddress works (same follow-up as after addhdkey).
         self.log.info("createwalletdescriptor after mnemonic enables getnewaddress")
-        for addr_type in ["legacy", "p2sh-segwit", "bech32", "bech32m"]:
+        for addr_type in ["legacy", "p2sh-segwit", "bech32", "bech32m", "mweb"]:
             wi.createwalletdescriptor(type=addr_type, hdkey=xpub)
         assert wi.getnewaddress()
         assert wi.getnewaddress(address_type="bech32m")
+        assert wi.getnewaddress(address_type="mweb")
 
     def test_wordcount_and_language(self):
         self.log.info("Generate with custom wordcount")
@@ -102,7 +105,9 @@ class WalletBIP39Test(BitcoinTestFramework):
         w.createwalletdescriptor(type="bech32", hdkey=xpub)
         # Second call for same type fails at RPC level; GUI install skips this error.
         assert_raises_rpc_error(-4, "Descriptor already exists", w.createwalletdescriptor, type="bech32", hdkey=xpub)
+        w.createwalletdescriptor(type="mweb", hdkey=xpub)
         assert w.getnewaddress()
+        assert w.getnewaddress(address_type="mweb")
 
     def test_noprivs(self):
         self.log.info("Unavailable without private keys")
@@ -132,11 +137,11 @@ class WalletBIP39Test(BitcoinTestFramework):
         assert c["xpub"] != d["xpub"]
 
     def test_descriptor_recovery(self):
-        self.log.info("Restoring a mnemonic preserves L1 descriptors and address sequences")
+        self.log.info("Restoring a mnemonic preserves L1 and MWEB descriptors and address sequences")
         node = self.nodes[0]
         mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
         passphrase = "TREZOR"
-        address_types = ["legacy", "p2sh-segwit", "bech32", "bech32m"]
+        address_types = ["legacy", "p2sh-segwit", "bech32", "bech32m", "mweb"]
         wallets = []
         masters = []
         active_descriptors = []
@@ -148,14 +153,27 @@ class WalletBIP39Test(BitcoinTestFramework):
                 wallet.createwalletdescriptor(type=address_type, hdkey=xpub)
 
             active = [d for d in wallet.listdescriptors()["descriptors"] if d["active"]]
-            # Four L1 receive/change pairs use the mnemonic master.
-            assert_equal(len(active), 8)
+            # Four L1 receive/change pairs and one MWEB account use the mnemonic master.
+            assert_equal(len(active), 9)
             hdkey, = wallet.gethdkeys(active_only=True)
             assert_equal(hdkey["xpub"], xpub)
             assert_equal(hdkey["has_private"], True)
-            assert_equal({d["desc"] for d in hdkey["descriptors"]},
-                         {d["desc"] for d in active})
+            assert_equal({d["desc"] for d in hdkey["descriptors"] if not d["desc"].startswith("mweb(")},
+                         {d["desc"] for d in active if not d["desc"].startswith("mweb(")})
             assert all(d["active"] for d in hdkey["descriptors"])
+
+            # gethdkeys links the stored account's hardened derivations to the master xpub.
+            hd_account, = [d["desc"] for d in hdkey["descriptors"] if d["desc"].startswith("mweb(")]
+            assert_equal(hd_account.split("#")[0].replace("'", "h"),
+                         f"mweb({xpub}/0h/100h/0h,{xpub}/0h/100h/1h,*)")
+
+            account, = [d["desc"] for d in active if d["desc"].startswith("mweb(")]
+            # listdescriptors exports scan-WIF/spend-pubkey KEYs with their derived origins.
+            scan, spend, wildcard = account.split("#")[0][5:-1].replace("'", "h").split(",")
+            fingerprint = scan[1:9]
+            assert scan.startswith(f"[{fingerprint}/0h/100h/0h]")
+            assert spend.startswith(f"[{fingerprint}/0h/100h/1h]")
+            assert_equal(wildcard, "*")
 
             wallets.append(wallet)
             masters.append(xpub)
@@ -168,6 +186,8 @@ class WalletBIP39Test(BitcoinTestFramework):
         for _ in range(2):
             addresses = {address_type: original.getnewaddress(address_type=address_type) for address_type in address_types}
             assert_equal(addresses, {address_type: restored.getnewaddress(address_type=address_type) for address_type in address_types})
+            assert_equal(original.getaddressinfo(addresses["mweb"])["hdmasterfingerprint"],
+                         original.getaddressinfo(addresses["bech32"])["hdmasterfingerprint"])
             issued.append(addresses)
 
         self.log.info("Reloading a restored mnemonic wallet preserves ownership and the next address indices")
@@ -183,14 +203,33 @@ class WalletBIP39Test(BitcoinTestFramework):
             assert_equal(restored.getnewaddress(address_type=address_type), next_address)
             assert all(next_address != addresses[address_type] for addresses in issued)
 
+        self.log.info("An encrypted mnemonic wallet issues the same MWEB addresses while locked, including after reload")
+        node.createwallet(wallet_name="bip39_encrypted", blank=True, passphrase="wallet encryption")
+        encrypted = node.get_wallet_rpc("bip39_encrypted")
+        assert_raises_rpc_error(-13, "walletpassphrase", encrypted.addhdkey_mnemonic, passphrase, mnemonic)
+        with WalletUnlock(encrypted, "wallet encryption"):
+            xpub = encrypted.addhdkey_mnemonic(passphrase=passphrase, mnemonic=mnemonic)["xpub"]
+            assert_equal(xpub, masters[0])
+            encrypted.createwalletdescriptor(type="mweb", hdkey=xpub)
+        assert_equal(encrypted.getwalletinfo()["unlocked_until"], 0)
+        assert_equal(encrypted.getnewaddress(address_type="mweb"), issued[0]["mweb"])
+        node.unloadwallet("bip39_encrypted")
+        node.loadwallet("bip39_encrypted")
+        assert_equal(encrypted.getwalletinfo()["unlocked_until"], 0)
+        assert_equal(encrypted.gethdkeys(active_only=True)[0]["xpub"], masters[0])
+        assert_equal(encrypted.getaddressinfo(issued[0]["mweb"])["ismine"], True)
+        assert_equal(encrypted.getnewaddress(address_type="mweb"), issued[1]["mweb"])
+
     def test_funded_history_recovery(self):
-        self.log.info("Recover confirmed canonical funds before reporting recovery complete")
+        self.log.info("Recover confirmed canonical and activated-MWEB funds before reporting recovery complete")
         node = self.nodes[0]
         funder = node.get_wallet_rpc(self.default_wallet_name)
-        self.generate(node, 101)
+        self.generate(node, FIRST_MWEB_HEIGHT - 1)
+        funder.sendtoaddress(funder.getnewaddress(address_type="mweb"), 1)
+        self.generate(node, 1)
         words = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
         passphrase = "funded historical recovery"
-        address_types = ["legacy", "p2sh-segwit", "bech32", "bech32m"]
+        address_types = ["legacy", "p2sh-segwit", "bech32", "bech32m", "mweb"]
         node.createwallet(wallet_name="bip39_history_original", blank=True)
         original = node.get_wallet_rpc("bip39_history_original")
         master = original.addhdkey_mnemonic(passphrase=passphrase, mnemonic=words)["xpub"]
@@ -199,8 +238,8 @@ class WalletBIP39Test(BitcoinTestFramework):
         addresses = {t: original.getnewaddress(address_type=t) for t in address_types}
         # No wallet containing this master is loaded when the payments arrive.
         node.unloadwallet("bip39_history_original")
-        for address in addresses.values():
-            funder.sendtoaddress(address, 1)
+        for address_type, address in addresses.items():
+            funder.sendtoaddress(address, 2 if address_type == "mweb" else 1)
         self.generate(node, 6)
 
         node.createwallet(wallet_name="bip39_history_restored", blank=True, load_on_startup=True)
@@ -215,10 +254,10 @@ class WalletBIP39Test(BitcoinTestFramework):
         assert_equal(restored.getwalletinfo()["txcount"], 0)
         scan = restored.rescanblockchain(0)
         assert_equal(scan, {"start_height": 0, "stop_height": node.getblockcount()})
-        assert_equal(restored.getbalance(), 4)
+        assert_equal(restored.getbalance(), 6)
         coins = restored.listunspent()
         assert_equal({c["address"]: c["amount"] for c in coins},
-                     {a: Decimal(1) for a in addresses.values()})
+                     {a: Decimal(2 if t == "mweb" else 1) for t, a in addresses.items()})
         assert all(c["spendable"] for c in coins)
         assert_equal(restored.getwalletinfo()["scanning"], False)
         history = restored.listtransactions(count=100)
@@ -228,20 +267,22 @@ class WalletBIP39Test(BitcoinTestFramework):
         node = self.nodes[0]
         restored = node.get_wallet_rpc("bip39_history_restored")
         funder = node.get_wallet_rpc(self.default_wallet_name)
-        assert_equal(restored.getbalance(), 4)
+        assert_equal(restored.getbalance(), 6)
         assert_equal({c["address"]: c["amount"] for c in restored.listunspent()},
                      {c["address"]: c["amount"] for c in coins})
 
-        self.log.info("Spend every recovered canonical address type")
-        l1_inputs = [{"txid": c["txid"], "vout": c["vout"]} for c in coins]
+        self.log.info("Spend every recovered canonical address type and the recovered MWEB coin")
+        l1_inputs = [{"txid": c["txid"], "vout": c["vout"]} for c in coins if c["address"] != addresses["mweb"]]
         assert_equal(len(l1_inputs), 4)
         raw = restored.createrawtransaction(l1_inputs, [{funder.getnewaddress(): Decimal("3.9999")}])
         signed = restored.signrawtransactionwithwallet(raw)
         assert_equal(signed["complete"], True)
         l1_spend = node.sendrawtransaction(signed["hex"])
-        assert l1_spend in set(node.getrawmempool())
+        mweb_spend = restored.sendtoaddress(funder.getnewaddress(address_type="mweb"), 1)
+        assert {l1_spend, mweb_spend}.issubset(set(node.getrawmempool()))
         self.generate(node, 1)
         assert_equal(restored.gettransaction(l1_spend)["confirmations"], 1)
+        assert_equal(restored.gettransaction(mweb_spend)["confirmations"], 1)
         assert all(c["address"] not in addresses.values() for c in restored.listunspent())
 
     def test_extended_phrase_import(self):
