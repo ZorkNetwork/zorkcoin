@@ -364,14 +364,14 @@ BOOST_AUTO_TEST_CASE(rpc_ban)
     ar = r.get_array();
     BOOST_CHECK_EQUAL(ar.size(), 0U);
 
-    BOOST_CHECK_NO_THROW(r = CallRPC(std::string("setban 127.0.0.0/24 add 9907731200 true")));
+    BOOST_CHECK_NO_THROW(r = CallRPC(std::string("setban 127.0.0.0/24 add ") + std::to_string(9907731200LL * 1000) + " true"));
     BOOST_CHECK_NO_THROW(r = CallRPC(std::string("listbanned")));
     ar = r.get_array();
     o1 = ar[0].get_obj();
     adr = o1.find_value("address");
     int64_t banned_until{o1.find_value("banned_until").getInt<int64_t>()};
     BOOST_CHECK_EQUAL(adr.get_str(), "127.0.0.0/24");
-    BOOST_CHECK_EQUAL(banned_until, 9907731200); // absolute time check
+    BOOST_CHECK_EQUAL(banned_until, 9907731200 * 1000); // absolute time check (stored in ms)
 
     BOOST_CHECK_NO_THROW(CallRPC(std::string("clearbanned")));
 
@@ -384,12 +384,13 @@ BOOST_AUTO_TEST_CASE(rpc_ban)
     o1 = ar[0].get_obj();
     adr = o1.find_value("address");
     banned_until = o1.find_value("banned_until").getInt<int64_t>();
-    const int64_t ban_created{o1.find_value("ban_created").getInt<int64_t>()};
     const int64_t ban_duration{o1.find_value("ban_duration").getInt<int64_t>()};
     const int64_t time_remaining{o1.find_value("time_remaining").getInt<int64_t>()};
     BOOST_CHECK_EQUAL(adr.get_str(), "127.0.0.0/24");
-    BOOST_CHECK_EQUAL(banned_until, time_remaining_expected + TicksSinceEpoch<std::chrono::seconds>(NodeClock::now()));
-    BOOST_CHECK_EQUAL(ban_duration, banned_until - ban_created);
+    const int64_t now = GetTime();
+    BOOST_CHECK(banned_until > now);
+    BOOST_CHECK(banned_until - now <= 200 * 1000);
+    BOOST_CHECK_EQUAL(ban_duration, 200);
     BOOST_CHECK_EQUAL(time_remaining, time_remaining_expected);
 
     // must throw an exception because 127.0.0.1 is in already banned subnet range

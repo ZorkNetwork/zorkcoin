@@ -100,9 +100,11 @@ bool LoadMempool(CTxMemPool& pool, const fs::path& load_path, Chainstate& active
             if (amountdelta && opts.apply_fee_delta_priority) {
                 pool.PrioritiseTransaction(tx->GetHash(), amountdelta);
             }
+            // Dump stores entry time in seconds; AcceptToMemoryPool expects
+            // GetTime()-style milliseconds and divides by 1000 before staging.
             if (nTime > TicksSinceEpoch<std::chrono::seconds>(now - pool.m_opts.expiry)) {
                 LOCK(cs_main);
-                const auto& accepted = AcceptToMemoryPool(active_chainstate, tx, nTime, /*bypass_limits=*/false, /*test_accept=*/false);
+                const auto& accepted = AcceptToMemoryPool(active_chainstate, tx, nTime * 1000, /*bypass_limits=*/false, /*test_accept=*/false);
                 if (accepted.m_result_type == MempoolAcceptResult::ResultType::VALID) {
                     ++count;
                 } else {

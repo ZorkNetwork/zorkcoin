@@ -1441,7 +1441,7 @@ int btck_chain_contains(const btck_Chain* chain, const btck_BlockTreeEntry* entr
 
 btck_BlockHeader* btck_block_header_create(const void* raw_block_header, size_t raw_block_header_len)
 {
-    assert(raw_block_header != nullptr && raw_block_header_len == 80);
+    assert(raw_block_header != nullptr && raw_block_header_len == 88);
     auto header{std::make_unique<CBlockHeader>()};
     SpanReader stream{std::span{reinterpret_cast<const std::byte*>(raw_block_header), raw_block_header_len}};
 
@@ -1470,7 +1470,7 @@ const btck_BlockHash* btck_block_header_get_prev_hash(const btck_BlockHeader* he
     return btck_BlockHash::ref(&btck_BlockHeader::get(header).hashPrevBlock);
 }
 
-uint32_t btck_block_header_get_timestamp(const btck_BlockHeader* header)
+uint64_t btck_block_header_get_timestamp(const btck_BlockHeader* header)
 {
     return btck_BlockHeader::get(header).nTime;
 }
@@ -1485,15 +1485,15 @@ int32_t btck_block_header_get_version(const btck_BlockHeader* header)
     return btck_BlockHeader::get(header).nVersion;
 }
 
-uint32_t btck_block_header_get_nonce(const btck_BlockHeader* header)
+uint64_t btck_block_header_get_nonce(const btck_BlockHeader* header)
 {
     return btck_BlockHeader::get(header).nNonce;
 }
 
-int btck_block_header_to_bytes(const btck_BlockHeader* header, unsigned char output[80])
+int btck_block_header_to_bytes(const btck_BlockHeader* header, unsigned char output[88])
 {
     try {
-        SpanWriter{std::as_writable_bytes(std::span{output, 80})} << btck_BlockHeader::get(header);
+        SpanWriter{std::as_writable_bytes(std::span{output, 88})} << btck_BlockHeader::get(header);
         return 0;
     } catch (...) {
         return -1;

@@ -101,20 +101,20 @@ private:
      * prev_time, and with a fixed merkle root hash.
      */
     std::vector<CBlockHeader> GenerateHeaders(size_t count,
-            uint256 prev_hash, int32_t nVersion, uint32_t prev_time,
+            uint256 prev_hash, int32_t nVersion, uint64_t prev_time,
             const uint256& merkle_root, uint32_t nBits);
 };
 
 void HeadersGeneratorSetup::FindProofOfWork(CBlockHeader& starting_header)
 {
-    while (!CheckProofOfWork(starting_header.GetHash(), starting_header.nBits, Params().GetConsensus())) {
+    while (!CheckProofOfWork(starting_header.GetPoWHash(), starting_header.nBits, Params().GetConsensus())) {
         ++starting_header.nNonce;
     }
 }
 
 std::vector<CBlockHeader> HeadersGeneratorSetup::GenerateHeaders(
         const size_t count, uint256 prev_hash, const int32_t nVersion,
-        uint32_t prev_time, const uint256& merkle_root, const uint32_t nBits)
+        uint64_t prev_time, const uint256& merkle_root, const uint32_t nBits)
 {
     std::vector<CBlockHeader> headers(count);
     for (auto& next_header : headers) {
@@ -255,7 +255,7 @@ BOOST_AUTO_TEST_CASE(too_little_work)
 
 BOOST_AUTO_TEST_CASE(system_clock_lagging_behind_chain_start)
 {
-    FakeNodeClock clock{(chain_start.GetBlockTime() - MAX_FUTURE_BLOCK_TIME) * 1s};
+    FakeNodeClock clock{std::chrono::milliseconds{chain_start.GetBlockTime() - MAX_FUTURE_BLOCK_TIME}};
     BOOST_CHECK_NO_THROW(CreateState());
 
     clock -= 1s;

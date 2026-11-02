@@ -4,7 +4,9 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <arith_uint256.h>
 #include <crypto/kheavyhash.h>
+#include <primitives/block.h>
 #include <uint256.h>
 
 #include <cstdlib>
@@ -132,6 +134,45 @@ BOOST_AUTO_TEST_CASE(kheavyhash_testvectors)
                    "000001957332a6dd",
                    "2a2000c903eaeb86",
                    "774361f7f99199c3e1a2290ffbaae0cc6fae5ffcd0bdf69c0000000000000000");
+}
+
+static void CheckGenesisPoW(CBlockHeader header, uint64_t nonce)
+{
+    arith_uint256 target;
+    bool neg{false};
+    bool over{false};
+    target.SetCompact(header.nBits, &neg, &over);
+    BOOST_REQUIRE(!neg && !over && target != 0);
+    header.nNonce = nonce;
+    BOOST_CHECK(UintToArith256(header.GetPoWHash()) <= target);
+}
+
+BOOST_AUTO_TEST_CASE(genesis_pow_nonces)
+{
+    CBlockHeader header;
+    header.nVersion = 1;
+    header.hashMerkleRoot = uint256{"4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"};
+
+    header.nTime = 1296688602ULL * 1000;
+    header.nBits = 0x207fffff;
+    CheckGenesisPoW(header, 1);
+
+    header.nTime = 1231006505ULL * 1000;
+    header.nBits = 0x1e0ffff0;
+    CheckGenesisPoW(header, 1206541);
+
+    header.nTime = 1296688602ULL * 1000;
+    header.nBits = 0x1e0ffff0;
+    CheckGenesisPoW(header, 7561);
+
+    header.nTime = 1598918400ULL * 1000;
+    header.nBits = 0x1e0377ae;
+    CheckGenesisPoW(header, 3050857);
+
+    header.hashMerkleRoot = uint256{"7aa0a7ae1e223414cb807e40cd57e667b718e42aaf9306db9102fe28912b7b4e"};
+    header.nTime = 1714777860ULL * 1000;
+    header.nBits = 0x1e0ffff0;
+    CheckGenesisPoW(header, 653310);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

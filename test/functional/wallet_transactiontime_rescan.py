@@ -118,14 +118,14 @@ class TransactionTimeRescanTest(BitcoinTestFramework):
         self.log.info('Check transaction times')
         for tx in wo_wallet.listtransactions():
             if tx['address'] == wo1:
-                assert_equal(tx['blocktime'], cur_time + ten_days)
-                assert_equal(tx['time'], cur_time + ten_days)
+                assert_equal(tx['blocktime'], (cur_time + ten_days) * 1000)
+                assert_equal(tx['time'], (cur_time + ten_days) * 1000)
             elif tx['address'] == wo2:
-                assert_equal(tx['blocktime'], cur_time + ten_days + ten_days)
-                assert_equal(tx['time'], cur_time + ten_days + ten_days)
+                assert_equal(tx['blocktime'], (cur_time + ten_days + ten_days) * 1000)
+                assert_equal(tx['time'], (cur_time + ten_days + ten_days) * 1000)
             elif tx['address'] == wo3:
-                assert_equal(tx['blocktime'], cur_time + ten_days + ten_days + ten_days)
-                assert_equal(tx['time'], cur_time + ten_days + ten_days + ten_days)
+                assert_equal(tx['blocktime'], (cur_time + ten_days + ten_days + ten_days) * 1000)
+                assert_equal(tx['time'], (cur_time + ten_days + ten_days + ten_days) * 1000)
 
         # restore user wallet without rescan
         self.log.info('Restore user wallet on another node without rescan')
@@ -168,14 +168,14 @@ class TransactionTimeRescanTest(BitcoinTestFramework):
         self.log.info('Check transaction times after restoration')
         for tx in restorewo_wallet.listtransactions():
             if tx['address'] == wo1:
-                assert_equal(tx['blocktime'], cur_time + ten_days)
-                assert_equal(tx['time'], cur_time + ten_days)
+                assert_equal(tx['blocktime'], (cur_time + ten_days) * 1000)
+                assert_equal(tx['time'], (cur_time + ten_days) * 1000)
             elif tx['address'] == wo2:
-                assert_equal(tx['blocktime'], cur_time + ten_days + ten_days)
-                assert_equal(tx['time'], cur_time + ten_days + ten_days)
+                assert_equal(tx['blocktime'], (cur_time + ten_days + ten_days) * 1000)
+                assert_equal(tx['time'], (cur_time + ten_days + ten_days) * 1000)
             elif tx['address'] == wo3:
-                assert_equal(tx['blocktime'], cur_time + ten_days + ten_days + ten_days)
-                assert_equal(tx['time'], cur_time + ten_days + ten_days + ten_days)
+                assert_equal(tx['blocktime'], (cur_time + ten_days + ten_days + ten_days) * 1000)
+                assert_equal(tx['time'], (cur_time + ten_days + ten_days + ten_days) * 1000)
 
 
         self.log.info('Test handling of invalid parameters for rescanblockchain')

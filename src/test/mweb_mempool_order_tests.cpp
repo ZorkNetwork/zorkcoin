@@ -37,10 +37,11 @@ namespace {
 
 struct MWEBMempoolOrderSetup : public TestChain100Setup {
     MWEBMempoolOrderSetup()
-        : TestChain100Setup(ChainType::REGTEST, {.extra_args = {"-vbparams=mweb:1601450001:9999999999"}}) {}
+        : TestChain100Setup(ChainType::REGTEST, {.extra_args = {"-vbparams=mweb:1601450001000:9999999999000"}}) {}
 };
 
-constexpr uint32_t MWEB_VB_START_TIME = 1601450001;
+constexpr int64_t MWEB_VB_START_TIME = 1601450001LL * 1000;
+constexpr int64_t MWEB_VB_START_TIME_SEC = 1601450001;
 constexpr int FIRST_MWEB_HEIGHT = 432;
 
 void MineMwebEraBlock(node::NodeContext& node, const CScript& coinbase_script)
@@ -48,12 +49,12 @@ void MineMwebEraBlock(node::NodeContext& node, const CScript& coinbase_script)
     std::shared_ptr<CBlock> block = PrepareBlock(node, {.coinbase_output_script = coinbase_script});
     {
         LOCK(::cs_main);
-        const uint32_t mtp = Assert(node.chainman)->ActiveChain().Tip()->GetMedianTimePast();
+        const int64_t mtp = Assert(node.chainman)->ActiveChain().Tip()->GetMedianTimePast();
         block->nTime = std::max({mtp + 1, MWEB_VB_START_TIME});
     }
     block->hashMerkleRoot = BlockMerkleRoot(*block);
     node::RegenerateCommitments(*block, *Assert(node.chainman));
-    while (!CheckProofOfWork(block->GetHash(), block->nBits, Params().GetConsensus())) {
+    while (!CheckProofOfWork(block->GetPoWHash(), block->nBits, Params().GetConsensus())) {
         ++block->nNonce;
         assert(block->nNonce);
     }
@@ -91,7 +92,7 @@ void SubmitPeginToMempool(TestChain100Setup& setup, node::NodeContext& node, CAm
 void MineToMwebChain(TestChain100Setup& setup, node::NodeContext& node, int post_activation_blocks = 4)
 {
     const CScript coinbase_script{CScript() << OP_TRUE};
-    SetMockTime(std::chrono::seconds{MWEB_VB_START_TIME});
+    SetMockTime(std::chrono::seconds{MWEB_VB_START_TIME_SEC});
 
     int height{WITH_LOCK(::cs_main, return Assert(node.chainman)->ActiveHeight())};
     while (height < FIRST_MWEB_HEIGHT - 1) {

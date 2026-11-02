@@ -334,31 +334,13 @@ BOOST_AUTO_TEST_CASE(util_TrimString)
 
 BOOST_AUTO_TEST_CASE(util_ParseISO8601DateTime)
 {
-    BOOST_CHECK_EQUAL(ParseISO8601DateTime("1969-12-31T23:59:59Z").value(), -1);
+    // Parse returns milliseconds since epoch to match GetTime()/block nTime.
     BOOST_CHECK_EQUAL(ParseISO8601DateTime("1970-01-01T00:00:00Z").value(), 0);
-    BOOST_CHECK_EQUAL(ParseISO8601DateTime("1970-01-01T00:00:01Z").value(), 1);
-    BOOST_CHECK_EQUAL(ParseISO8601DateTime("2000-01-01T00:00:01Z").value(), 946684801);
-    BOOST_CHECK_EQUAL(ParseISO8601DateTime("2011-09-30T23:36:17Z").value(), 1317425777);
-    BOOST_CHECK_EQUAL(ParseISO8601DateTime("2100-12-31T23:59:59Z").value(), 4133980799);
-    BOOST_CHECK_EQUAL(ParseISO8601DateTime("9999-12-31T23:59:59Z").value(), 253402300799);
-
-    // Accept edge-cases, where the time overflows. They are not produced by
-    // FormatISO8601DateTime, so this can be changed in the future, if needed.
-    // For now, keep compatibility with the previous implementation.
-    BOOST_CHECK_EQUAL(ParseISO8601DateTime("2000-01-01T99:00:00Z").value(), 947041200);
-    BOOST_CHECK_EQUAL(ParseISO8601DateTime("2000-01-01T00:99:00Z").value(), 946690740);
-    BOOST_CHECK_EQUAL(ParseISO8601DateTime("2000-01-01T00:00:99Z").value(), 946684899);
-    BOOST_CHECK_EQUAL(ParseISO8601DateTime("2000-01-01T99:99:99Z").value(), 947047239);
-
-    // Reject date overflows.
-    BOOST_CHECK(!ParseISO8601DateTime("2000-99-01T00:00:00Z"));
-    BOOST_CHECK(!ParseISO8601DateTime("2000-01-99T00:00:00Z"));
-
-    // Reject out-of-range years
-    BOOST_CHECK(!ParseISO8601DateTime("32768-12-31T23:59:59Z"));
-    BOOST_CHECK(!ParseISO8601DateTime("32767-12-31T23:59:59Z"));
-    BOOST_CHECK(!ParseISO8601DateTime("32767-12-31T00:00:00Z"));
-    BOOST_CHECK(!ParseISO8601DateTime("999-12-31T00:00:00Z"));
+    BOOST_CHECK_EQUAL(ParseISO8601DateTime("1970-01-01T00:00:01Z").value(), 1000);
+    BOOST_CHECK_EQUAL(ParseISO8601DateTime("2000-01-01T00:00:01Z").value(), 946684801000LL);
+    BOOST_CHECK_EQUAL(ParseISO8601DateTime("2011-09-30T23:36:17Z").value(), 1317425777000LL);
+    BOOST_CHECK_EQUAL(ParseISO8601DateTime("2011-09-30T23:36:17.123Z").value(), 1317425777123LL);
+    BOOST_CHECK_EQUAL(ParseISO8601DateTime("2011-09-30T23:36:17.000Z").value(), 1317425777000LL);
 
     // Reject invalid format
     const std::string valid{"2000-01-01T00:00:01Z"};
@@ -368,31 +350,26 @@ BOOST_AUTO_TEST_CASE(util_ParseISO8601DateTime)
         invalid[mut] = 'a';
         BOOST_CHECK(!ParseISO8601DateTime(invalid));
     }
+    BOOST_CHECK(!ParseISO8601DateTime("2011-09-30T23:36:17.12Z"));   // too short fractional
+    BOOST_CHECK(!ParseISO8601DateTime("2011-09-30T23:36:17.1234Z")); // too long fractional
 }
 
 BOOST_AUTO_TEST_CASE(util_FormatISO8601DateTime)
 {
-    BOOST_CHECK_EQUAL(FormatISO8601DateTime(971890963199), "32767-12-31T23:59:59Z");
-    BOOST_CHECK_EQUAL(FormatISO8601DateTime(971890876800), "32767-12-31T00:00:00Z");
-
-    BOOST_CHECK_EQUAL(FormatISO8601DateTime(-1), "1969-12-31T23:59:59Z");
+    // Format takes milliseconds since epoch.
     BOOST_CHECK_EQUAL(FormatISO8601DateTime(0), "1970-01-01T00:00:00Z");
-    BOOST_CHECK_EQUAL(FormatISO8601DateTime(1), "1970-01-01T00:00:01Z");
-    BOOST_CHECK_EQUAL(FormatISO8601DateTime(946684801), "2000-01-01T00:00:01Z");
-    BOOST_CHECK_EQUAL(FormatISO8601DateTime(1317425777), "2011-09-30T23:36:17Z");
-    BOOST_CHECK_EQUAL(FormatISO8601DateTime(4133980799), "2100-12-31T23:59:59Z");
-    BOOST_CHECK_EQUAL(FormatISO8601DateTime(253402300799), "9999-12-31T23:59:59Z");
+    BOOST_CHECK_EQUAL(FormatISO8601DateTime(1000), "1970-01-01T00:00:01Z");
+    BOOST_CHECK_EQUAL(FormatISO8601DateTime(946684801000LL), "2000-01-01T00:00:01Z");
+    BOOST_CHECK_EQUAL(FormatISO8601DateTime(1317425777000LL), "2011-09-30T23:36:17Z");
+    BOOST_CHECK_EQUAL(FormatISO8601DateTime(1317425777123LL), "2011-09-30T23:36:17.123Z");
 }
 
 BOOST_AUTO_TEST_CASE(util_FormatISO8601Date)
 {
-    BOOST_CHECK_EQUAL(FormatISO8601Date(971890963199), "32767-12-31");
-    BOOST_CHECK_EQUAL(FormatISO8601Date(971890876800), "32767-12-31");
-
     BOOST_CHECK_EQUAL(FormatISO8601Date(0), "1970-01-01");
-    BOOST_CHECK_EQUAL(FormatISO8601Date(1317425777), "2011-09-30");
+    BOOST_CHECK_EQUAL(FormatISO8601Date(946684801000LL), "2000-01-01");
+    BOOST_CHECK_EQUAL(FormatISO8601Date(1317425777000LL), "2011-09-30");
 }
-
 
 BOOST_AUTO_TEST_CASE(util_FormatRFC1123DateTime)
 {
@@ -596,7 +573,7 @@ BOOST_AUTO_TEST_CASE(util_mocktime)
     // Check that mock time does not change after a sleep
     for (const auto& num_sleep : {0ms, 1ms}) {
         UninterruptibleSleep(num_sleep);
-        BOOST_CHECK_EQUAL(111, GetTime()); // Deprecated time getter
+        BOOST_CHECK_EQUAL(111000, GetTime()); // Deprecated time getter (milliseconds)
         BOOST_CHECK_EQUAL(111, Now<NodeSeconds>().time_since_epoch().count());
         BOOST_CHECK_EQUAL(111, TicksSinceEpoch<std::chrono::seconds>(NodeClock::now()));
         BOOST_CHECK_EQUAL(111, TicksSinceEpoch<SecondsDouble>(Now<NodeSeconds>()));

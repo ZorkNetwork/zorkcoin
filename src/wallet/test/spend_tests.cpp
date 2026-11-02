@@ -43,7 +43,8 @@ BOOST_FIXTURE_TEST_CASE(SubtractFee, TestChain100Setup)
     // leftover input amount which would have been change to the recipient
     // instead of the miner.
     auto check_tx = [&wallet](CAmount leftover_input_amount) {
-        CRecipient recipient{PubKeyDestination({}), 50 * COIN - leftover_input_amount, /*subtract_fee=*/true};
+        // Regtest coinbase subsidy is 1<<32 sat (not 50*COIN).
+        CRecipient recipient{PubKeyDestination({}), static_cast<CAmount>(1ULL << 32) - leftover_input_amount, /*subtract_fee=*/true};
         CCoinControl coin_control;
         coin_control.m_feerate.emplace(10000);
         coin_control.fOverrideFeeRate = true;

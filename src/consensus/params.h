@@ -122,11 +122,12 @@ struct Params {
       */
     bool enforce_BIP94;
     bool fPowNoRetargeting;
-    int64_t nPowTargetSpacing;
-    int64_t nPowTargetTimespan;
-    std::chrono::seconds PowTargetSpacing() const
+    int64_t nPowTargetSpacing; // milliseconds
+    int64_t nPowTargetTimespan; // milliseconds
+    int64_t nASERTHalfLife;     // milliseconds
+    std::chrono::milliseconds PowTargetSpacing() const
     {
-        return std::chrono::seconds{nPowTargetSpacing};
+        return std::chrono::milliseconds{nPowTargetSpacing};
     }
     int64_t DifficultyAdjustmentInterval() const { return nPowTargetTimespan / nPowTargetSpacing; }
     /** The best chain should have at least this much work */

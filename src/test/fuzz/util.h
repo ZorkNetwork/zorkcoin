@@ -366,7 +366,7 @@ void ReadFromStream(FuzzedDataProvider& fuzzed_data_provider, Stream& stream) no
 
 inline void FinalizeHeader(CBlockHeader& header, const ChainstateManager& chainman)
 {
-    while (!CheckProofOfWork(header.GetHash(), header.nBits, chainman.GetParams().GetConsensus())) {
+    while (!CheckProofOfWork(header.GetPoWHash(), header.nBits, chainman.GetParams().GetConsensus())) {
         ++(header.nNonce);
     }
 }

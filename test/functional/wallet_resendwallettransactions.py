@@ -51,9 +51,11 @@ class ResendWalletTransactionsTest(BitcoinTestFramework):
         # Create and submit a block without the transaction.
         # Transactions are only rebroadcast if there has been a block at least five minutes
         # after the last time we tried to broadcast. Use mocktime and give an extra minute to be sure.
-        block_time = int(time.time()) + 6 * 60
-        node.setmocktime(block_time)
-        block = create_block(int(node.getbestblockhash(), 16), height=node.getblockcount() + 1, ntime=block_time)
+        block_time_s = int(time.time()) + 6 * 60
+        node.setmocktime(block_time_s)
+        # Header nTime is milliseconds; setmocktime RPC still takes seconds.
+        block = create_block(int(node.getbestblockhash(), 16), height=node.getblockcount() + 1,
+                             ntime=block_time_s * 1000)
         block.solve()
         node.submitblock(block.serialize().hex())
 
@@ -89,15 +91,16 @@ class ResendWalletTransactionsTest(BitcoinTestFramework):
             entry_time = node.getmempoolentry(child_txid)["time"]
 
             # tx must be at least 5 minutes older than the last block to be rebroadcast
-            block_time = entry_time + 5 * 60 + 1
-            node.setmocktime(block_time)
-            block = create_block(int(node.getbestblockhash(), 16), height=node.getblockcount() + 1, ntime=block_time)
+            block_time_s = entry_time + 5 * 60 + 1
+            node.setmocktime(block_time_s)
+            block = create_block(int(node.getbestblockhash(), 16), height=node.getblockcount() + 1,
+                                 ntime=block_time_s * 1000)
             block.solve()
             node.submitblock(block.serialize().hex())
             # Set correct m_best_block_time, which is used in ResubmitWalletTransactions
             node.syncwithvalidationinterfacequeue()
 
-            evict_time = block_time + 60 * 60 * DEFAULT_MEMPOOL_EXPIRY_HOURS + 5
+            evict_time = block_time_s + 60 * 60 * DEFAULT_MEMPOOL_EXPIRY_HOURS + 5
             # Flush out currently scheduled resubmit attempt now so that there can't be one right between eviction and check.
             with node.assert_debug_log(['resubmit 2 unconfirmed transactions'], timeout=2):
                 node.setmocktime(evict_time)
@@ -143,7 +146,8 @@ class ResendWalletTransactionsTest(BitcoinTestFramework):
 
         self.log.info("Create a block without the transaction")
         node1.bumpmocktime(6 * 60)
-        block = create_block(int(node1.getbestblockhash(), 16), height=node1.getblockcount() + 1, ntime=node1.mocktime)
+        block = create_block(int(node1.getbestblockhash(), 16), height=node1.getblockcount() + 1,
+                             ntime=node1.mocktime * 1000)
         block.solve()
         node1.submitblock(block.serialize().hex())
         node1.syncwithvalidationinterfacequeue()

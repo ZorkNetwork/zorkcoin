@@ -16,16 +16,19 @@ Post-MWEB AssumeUTXO testing extends this same chain in feature_assumeutxo.py
 from test_framework.util import assert_equal
 from test_framework.wallet import MiniWallet
 
-# Functional-test cache height (see test_framework.py _initialize_chain).
+# Functional-test on-disk cache tip (see test_framework.py _initialize_chain).
+# setup_nodes mines one additional wall-clock block to leave IBD; assumeutxo
+# builders invalidate that block so the chain from height 199 is deterministic.
 ASSUMEUTXO_CACHE_HEIGHT = 199
+ASSUMEUTXO_START_HEIGHT = 200  # after setup_nodes' extra block
 
 # Committed in CRegTestParams::m_assumeutxo_data for feature_assumeutxo.py.
 ASSUMEUTXO_BASE_HEIGHT = 299
 ASSUMEUTXO_BASE_BLOCK_HASH = (
-    "0c552ced4721c249a389eb9b08cb8da261cd46f0e7b5f9d064d48f3113406853"
+    "424c640f95920388bb73377b432301a035d40bcac1c22719597c164d21e2f58c"
 )
 ASSUMEUTXO_BASE_HASH_SERIALIZED = (
-    "106b2c56233e378a824cf0d5ff2be42ed32c72f1605c9be288d00942908a40ac"
+    "19f09db6d1dfaa004671b4eb1a09de9fd59d6b015a70d67d3475b5a902a0c2e9"
 )
 ASSUMEUTXO_BASE_CHAIN_TX_COUNT = 334
 
@@ -38,8 +41,14 @@ def build_assumeutxo_base_chain(test, node, *, sync_fun=None):
     """
     sync = sync_fun if sync_fun is not None else test.sync_all
 
+    # Drop the non-deterministic wall-clock block from setup_nodes when present.
+    tip_height = node.getblockcount()
+    if tip_height == ASSUMEUTXO_START_HEIGHT:
+        node.invalidateblock(node.getbestblockhash())
     assert_equal(node.getblockcount(), ASSUMEUTXO_CACHE_HEIGHT)
-    node.setmocktime(node.getblockheader(node.getbestblockhash())['time'])
+
+    tip_ms = node.getblockheader(node.getbestblockhash())['time']
+    node.setmocktime(tip_ms // 1000)
 
     mini_wallet = MiniWallet(node)
     blocks_to_mine = ASSUMEUTXO_BASE_HEIGHT - node.getblockcount()

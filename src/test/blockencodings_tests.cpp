@@ -52,7 +52,7 @@ static CBlock BuildBlockTestCase(FastRandomContext& ctx) {
     bool mutated;
     block.hashMerkleRoot = BlockMerkleRoot(block, &mutated);
     assert(!mutated);
-    while (!CheckProofOfWork(block.GetHash(), block.nBits, Params().GetConsensus())) ++block.nNonce;
+    while (!CheckProofOfWork(block.GetPoWHash(), block.nBits, Params().GetConsensus())) ++block.nNonce;
     return block;
 }
 
@@ -296,7 +296,7 @@ BOOST_AUTO_TEST_CASE(EmptyBlockRoundTripTest)
     bool mutated;
     block.hashMerkleRoot = BlockMerkleRoot(block, &mutated);
     assert(!mutated);
-    while (!CheckProofOfWork(block.GetHash(), block.nBits, Params().GetConsensus())) ++block.nNonce;
+    while (!CheckProofOfWork(block.GetPoWHash(), block.nBits, Params().GetConsensus())) ++block.nNonce;
 
     // Test simple header round-trip with only coinbase
     {
@@ -337,7 +337,7 @@ BOOST_AUTO_TEST_CASE(ReceiveWithExtraTransactions) {
     mtx.vin[0].prevout.hash = Txid::FromUint256(rand_ctx.rand256());
     block.vtx.push_back(MakeTransactionRef(std::move(mtx)));
     block.hashMerkleRoot = BlockMerkleRoot(block);
-    while (!CheckProofOfWork(block.GetHash(), block.nBits, Params().GetConsensus())) ++block.nNonce;
+    while (!CheckProofOfWork(block.GetPoWHash(), block.nBits, Params().GetConsensus())) ++block.nNonce;
 
     std::vector<std::pair<Wtxid, CTransactionRef>> extra_txn;
     extra_txn.resize(10);

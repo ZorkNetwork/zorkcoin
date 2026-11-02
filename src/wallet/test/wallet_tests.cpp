@@ -146,7 +146,7 @@ BOOST_FIXTURE_TEST_CASE(scan_for_wallet_transactions, TestChain100Setup)
         BOOST_CHECK(result.last_failed_block.IsNull());
         BOOST_CHECK_EQUAL(result.last_scanned_block, newTip->GetBlockHash());
         BOOST_CHECK_EQUAL(*result.last_scanned_height, newTip->nHeight);
-        BOOST_CHECK_EQUAL(GetBalance(wallet).m_mine_immature, 100 * COIN);
+        BOOST_CHECK_EQUAL(GetBalance(wallet).m_mine_immature, static_cast<CAmount>(2ULL << 32));
 
         {
             CBlockLocator locator;
@@ -183,7 +183,7 @@ BOOST_FIXTURE_TEST_CASE(scan_for_wallet_transactions, TestChain100Setup)
         BOOST_CHECK_EQUAL(result.last_failed_block, oldTip->GetBlockHash());
         BOOST_CHECK_EQUAL(result.last_scanned_block, newTip->GetBlockHash());
         BOOST_CHECK_EQUAL(*result.last_scanned_height, newTip->nHeight);
-        BOOST_CHECK_EQUAL(GetBalance(wallet).m_mine_immature, 50 * COIN);
+        BOOST_CHECK_EQUAL(GetBalance(wallet).m_mine_immature, static_cast<CAmount>(1ULL << 32));
     }
 
     // Prune the remaining block file.
@@ -309,24 +309,24 @@ static int64_t AddTx(ChainstateManager& chainman, CWallet& wallet, uint32_t lock
 BOOST_AUTO_TEST_CASE(ComputeTimeSmart)
 {
     // New transaction should use clock time if lower than block time.
-    BOOST_CHECK_EQUAL(AddTx(*m_node.chainman, m_wallet, 1, 100s, 120), 100);
+    BOOST_CHECK_EQUAL(AddTx(*m_node.chainman, m_wallet, 1, 100s, 120000), 100000);
 
     // Test that updating existing transaction does not change smart time.
-    BOOST_CHECK_EQUAL(AddTx(*m_node.chainman, m_wallet, 1, 200s, 220), 100);
+    BOOST_CHECK_EQUAL(AddTx(*m_node.chainman, m_wallet, 1, 200s, 220000), 100000);
 
     // New transaction should use clock time if there's no block time.
-    BOOST_CHECK_EQUAL(AddTx(*m_node.chainman, m_wallet, 2, 300s, 0), 300);
+    BOOST_CHECK_EQUAL(AddTx(*m_node.chainman, m_wallet, 2, 300s, 0), 300000);
 
     // New transaction should use block time if lower than clock time.
-    BOOST_CHECK_EQUAL(AddTx(*m_node.chainman, m_wallet, 3, 420s, 400), 400);
+    BOOST_CHECK_EQUAL(AddTx(*m_node.chainman, m_wallet, 3, 420s, 400000), 400000);
 
     // New transaction should use latest entry time if higher than
     // min(block time, clock time).
-    BOOST_CHECK_EQUAL(AddTx(*m_node.chainman, m_wallet, 4, 500s, 390), 400);
+    BOOST_CHECK_EQUAL(AddTx(*m_node.chainman, m_wallet, 4, 500s, 390000), 400000);
 
     // If there are future entries, new transaction should use time of the
-    // newest entry that is no more than 300 seconds ahead of the clock time.
-    BOOST_CHECK_EQUAL(AddTx(*m_node.chainman, m_wallet, 5, 50s, 600), 300);
+    // newest entry that is no more than 5 minutes ahead of the clock time.
+    BOOST_CHECK_EQUAL(AddTx(*m_node.chainman, m_wallet, 5, 50s, 600000), 300000);
 }
 
 void TestLoadWallet(const std::string& name, DatabaseFormat format, std::function<void(std::shared_ptr<CWallet>)> f)
@@ -440,7 +440,7 @@ BOOST_FIXTURE_TEST_CASE(ListCoinsTest, ListCoinsTestingSetup)
     BOOST_CHECK_EQUAL(list.begin()->second.size(), 1U);
 
     // Check initial balance from one mature coinbase transaction.
-    BOOST_CHECK_EQUAL(50 * COIN, WITH_LOCK(wallet->cs_wallet, return AvailableCoins(*wallet).GetTotalAmount()));
+    BOOST_CHECK_EQUAL(static_cast<CAmount>(1ULL << 32), WITH_LOCK(wallet->cs_wallet, return AvailableCoins(*wallet).GetTotalAmount()));
 
     // Add a transaction creating a change address, and confirm ListCoins still
     // returns the coin associated with the change address underneath the

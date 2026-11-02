@@ -27,7 +27,7 @@
  * Maximum amount of time that a block timestamp is allowed to exceed the
  * current time before the block will be accepted.
  */
-inline constexpr int64_t MAX_FUTURE_BLOCK_TIME = 2 * 60 * 60;
+inline constexpr int64_t MAX_FUTURE_BLOCK_TIME = 2 * 60 * 60 * 1000;
 
 /**
  * Timestamp window used as a grace period by code that compares external
@@ -145,9 +145,9 @@ public:
     //! block header
     int32_t nVersion{0};
     uint256 hashMerkleRoot{};
-    uint32_t nTime{0};
+    uint64_t nTime{0};
     uint32_t nBits{0};
-    uint32_t nNonce{0};
+    uint64_t nNonce{0};
 
     //! MWEB data (only populated when BLOCK_HAVE_MWEB is set)
     mw::Header::CPtr mweb_header{nullptr};
@@ -160,7 +160,7 @@ public:
     int32_t nSequenceId{SEQ_ID_INIT_FROM_DISK};
 
     //! (memory only) Maximum nTime in the chain up to and including this block.
-    unsigned int nTimeMax{0};
+    uint64_t nTimeMax{0};
 
     explicit CBlockIndex(const CBlockHeader& block)
         : nVersion{block.nVersion},
@@ -212,6 +212,11 @@ public:
         return *phashBlock;
     }
 
+    uint256 GetBlockPoWHash() const
+    {
+        return GetBlockHeader().GetPoWHash();
+    }
+
     /**
      * Check whether this block and all previous blocks back to the genesis block or an assumeutxo snapshot block have
      * reached VALID_TRANSACTIONS and had transactions downloaded (and stored to disk) at some point.
@@ -224,9 +229,10 @@ public:
      */
     bool HaveNumChainTxs() const { return m_chain_tx_count != 0; }
 
+    //! Block header nTime is milliseconds; expose seconds for age comparisons.
     NodeSeconds Time() const
     {
-        return NodeSeconds{std::chrono::seconds{nTime}};
+        return NodeSeconds{std::chrono::seconds{static_cast<int64_t>(nTime / 1000)}};
     }
 
     int64_t GetBlockTime() const
@@ -318,7 +324,7 @@ inline arith_uint256 GetBlockProof(const CBlockIndex& block) { return GetBitsPro
 /** Compute how much work a block header corresponds to. */
 inline arith_uint256 GetBlockProof(const CBlockHeader& header) { return GetBitsProof(header.nBits); }
 
-/** Return the time it would take to redo the work difference between from and to, assuming the current hashrate corresponds to the difficulty at tip, in seconds. */
+/** Return the time it would take to redo the work difference between from and to, assuming the current hashrate corresponds to the difficulty at tip, in milliseconds. */
 int64_t GetBlockProofEquivalentTime(const CBlockIndex& to, const CBlockIndex& from, const CBlockIndex& tip, const Consensus::Params&);
 /** Find the forking point between two chain tips. */
 const CBlockIndex* LastCommonAncestor(const CBlockIndex* pa, const CBlockIndex* pb);

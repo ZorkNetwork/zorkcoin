@@ -11,6 +11,7 @@ from test_framework.descriptors import descsum_create
 from test_framework.extendedkey import ExtendedPrivateKey
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
+    BLOCK_SUBSIDY,
     assert_not_equal,
     assert_equal,
     assert_fee_amount,
@@ -375,7 +376,7 @@ class WalletSendTest(BitcoinTestFramework):
         res = self.test_send(from_wallet=w0, to_wallet=w1, amount=51, inputs=[], add_to_wallet=False)
         assert res["complete"]
         utxo1 = w0.listunspent()[0]
-        assert_equal(utxo1["amount"], 50)
+        assert_equal(utxo1["amount"], BLOCK_SUBSIDY)
         ERR_NOT_ENOUGH_PRESET_INPUTS = "The preselected coins total amount does not cover the transaction target. " \
                                        "Please allow other inputs to be automatically selected or include more coins manually"
         self.test_send(from_wallet=w0, to_wallet=w1, amount=51, inputs=[utxo1],

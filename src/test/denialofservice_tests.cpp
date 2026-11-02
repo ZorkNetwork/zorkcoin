@@ -21,6 +21,7 @@
 #include <util/time.h>
 #include <validation.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 
@@ -154,7 +155,10 @@ BOOST_FIXTURE_TEST_CASE(stale_tip_peer_management, OutboundTest)
 
     const auto time_init{Now<NodeSeconds>()};
     FakeNodeClock clock{time_init};
-    const auto delta{3 * std::chrono::seconds{m_node.chainman->GetConsensus().nPowTargetSpacing} + 1s};
+    // Tip is stale after 3*spacing; the eviction timer only re-evaluates every 10 minutes.
+    const auto delta{std::max(std::chrono::duration_cast<std::chrono::seconds>(
+                                  3 * m_node.chainman->GetConsensus().PowTargetSpacing() + 1s),
+                              10min + 1s)};
     connman->Init(options);
     std::vector<CNode *> vNodes;
 

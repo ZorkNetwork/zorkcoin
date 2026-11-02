@@ -775,7 +775,7 @@ class PSBTTest(BitcoinTestFramework):
                                 self.nodes[0].walletcreatefundedpsbt, [{"txid": utxo1['txid'], "vout": utxo1['vout']}], {self.nodes[2].getnewaddress():90})
 
         psbtx1 = self.nodes[0].walletcreatefundedpsbt([{"txid": utxo1['txid'], "vout": utxo1['vout']}], {self.nodes[2].getnewaddress():90}, 0, {"add_inputs": True})['psbt']
-        assert_equal(len(self.nodes[0].decodepsbt(psbtx1)['inputs']), 2)
+        assert_equal(len(self.nodes[0].decodepsbt(psbtx1)['inputs']), 3)
 
         # Inputs argument can be null
         self.nodes[0].walletcreatefundedpsbt(None, {self.nodes[2].getnewaddress():10})
@@ -1356,7 +1356,9 @@ class PSBTTest(BitcoinTestFramework):
         assert_equal(analysis['error'], 'PSBT is not valid. Input 0 spends unspendable output')
 
         self.log.info("PSBT with invalid values should have error message and Creator as next")
-        analysis = self.nodes[0].analyzepsbt('cHNidP8BAHECAAAAAfA00BFgAm6tp86RowwH6BMImQNL5zXUcTT97XoLGz0BAAAAAAD/////AgD5ApUAAAAAFgAUKNw0x8HRctAgmvoevm4u1SbN7XL87QKVAAAAABYAFPck4gF7iL4NL4wtfRAKgQbghiTUAAAAAAABAR8AgIFq49AHABYAFJUDtxf2PHo641HEOBOAIvFMNTr2AAAA')
+        # Amount MAX_MONEY+1 (2^53+1 sats) exceeds Zorkcoin MAX_MONEY. Bitcoin Core's
+        # historical vector used 22M which only exceeds Bitcoin's 21M cap.
+        analysis = self.nodes[0].analyzepsbt('cHNidP8BAFICAAAAAREAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQDh9QUAAAAAFgAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEBHwEAAAAAACAAFgAUEREREREREREREREREREREREREREAAA==')
         assert_equal(analysis['next'], 'creator')
         assert_equal(analysis['error'], 'PSBT is not valid. Input 0 has invalid value')
 
@@ -1364,7 +1366,8 @@ class PSBTTest(BitcoinTestFramework):
         analysis = self.nodes[0].analyzepsbt('cHNidP8BAHECAAAAAZYezcxdnbXoQCmrD79t/LzDgtUo9ERqixk8wgioAobrAAAAAAD9////AlDDAAAAAAAAFgAUy/UxxZuzZswcmFnN/E9DGSiHLUsuGPUFAAAAABYAFLsH5o0R38wXx+X2cCosTMCZnQ4baAAAAAABAR8A4fUFAAAAABYAFOBI2h5thf3+Lflb2LGCsVSZwsltIgIC/i4dtVARCRWtROG0HHoGcaVklzJUcwo5homgGkSNAnJHMEQCIGx7zKcMIGr7cEES9BR4Kdt/pzPTK3fKWcGyCJXb7MVnAiALOBgqlMH4GbC1HDh/HmylmO54fyEy4lKde7/BT/PWxwEBAwQBAAAAIgYC/i4dtVARCRWtROG0HHoGcaVklzJUcwo5homgGkSNAnIYDwVpQ1QAAIABAACAAAAAgAAAAAAAAAAAAAAiAgL+CIiB59NSCssOJRGiMYQK1chahgAaaJpIXE41Cyir+xgPBWlDVAAAgAEAAIAAAACAAQAAAAAAAAAA')
         assert_equal(analysis['next'], 'finalizer')
 
-        analysis = self.nodes[0].analyzepsbt('cHNidP8BAHECAAAAAfA00BFgAm6tp86RowwH6BMImQNL5zXUcTT97XoLGz0BAAAAAAD/////AgCAgWrj0AcAFgAUKNw0x8HRctAgmvoevm4u1SbN7XL87QKVAAAAABYAFPck4gF7iL4NL4wtfRAKgQbghiTUAAAAAAABAR8A8gUqAQAAABYAFJUDtxf2PHo641HEOBOAIvFMNTr2AAAA')
+        # Output amount MAX_MONEY+1 with valid MAX_MONEY input UTXO.
+        analysis = self.nodes[0].analyzepsbt('cHNidP8BAFICAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/////AQEAAAAAACAAFgAUEREREREREREREREREREREREREREAAAAAAAEBHwAAAAAAACAAFgAUEREREREREREREREREREREREREREAAA==')
         assert_equal(analysis['next'], 'creator')
         assert_equal(analysis['error'], 'PSBT is not valid. Output amount invalid')
 

@@ -143,7 +143,8 @@ static UniValue GetNetworkHashPS(int lookup, int height, const CChain& active_ch
     arith_uint256 workDiff = pb->nChainWork - pb0->nChainWork;
     int64_t timeDiff = maxTime - minTime;
 
-    return workDiff.getdouble() / timeDiff;
+    // Block times are milliseconds; report hashes per second.
+    return workDiff.getdouble() * 1000.0 / timeDiff;
 }
 
 static RPCMethod getnetworkhashps()
@@ -177,14 +178,14 @@ static bool GenerateBlock(ChainstateManager& chainman, CBlock&& block, uint64_t&
     block_out.reset();
     block.hashMerkleRoot = BlockMerkleRoot(block);
 
-    while (max_tries > 0 && block.nNonce < std::numeric_limits<uint32_t>::max() && !CheckProofOfWork(block.GetHash(), block.nBits, chainman.GetConsensus()) && !chainman.m_interrupt) {
+    while (max_tries > 0 && block.nNonce < std::numeric_limits<uint64_t>::max() && !CheckProofOfWork(block.GetPoWHash(), block.nBits, chainman.GetConsensus()) && !chainman.m_interrupt) {
         ++block.nNonce;
         --max_tries;
     }
     if (max_tries == 0 || chainman.m_interrupt) {
         return false;
     }
-    if (block.nNonce == std::numeric_limits<uint32_t>::max()) {
+    if (block.nNonce == std::numeric_limits<uint64_t>::max()) {
         return true;
     }
 
@@ -746,7 +747,7 @@ static RPCMethod getblocktemplate()
                 {RPCResult::Type::NUM, "coinbasevalue", "maximum allowable input to coinbase transaction, including the generation award and transaction fees (in satoshis)"},
                 {RPCResult::Type::STR, "longpollid", "an id to include with a request to longpoll on an update to this template"},
                 {RPCResult::Type::STR, "target", "The hash target"},
-                {RPCResult::Type::NUM_TIME, "mintime", "The minimum timestamp appropriate for the next block time, expressed in " + UNIX_EPOCH_TIME + ". Adjusted for the proposed BIP94 timewarp rule."},
+                {RPCResult::Type::NUM_TIME, "mintime", "The minimum timestamp appropriate for the next block time, expressed in " + UNIX_EPOCH_TIME_MS + ". Adjusted for the proposed BIP94 timewarp rule."},
                 {RPCResult::Type::ARR, "mutable", "list of ways the block template may be changed",
                 {
                     {RPCResult::Type::STR, "value", "A way the block template may be changed, e.g. 'time', 'transactions', 'prevblock'"},
@@ -755,7 +756,7 @@ static RPCMethod getblocktemplate()
                 {RPCResult::Type::NUM, "sigoplimit", "limit of sigops in blocks"},
                 {RPCResult::Type::NUM, "sizelimit", "limit of block size"},
                 {RPCResult::Type::NUM, "weightlimit", /*optional=*/true, "limit of block weight"},
-                {RPCResult::Type::NUM_TIME, "curtime", "current timestamp in " + UNIX_EPOCH_TIME + ". Adjusted for the proposed BIP94 timewarp rule."},
+                {RPCResult::Type::NUM_TIME, "curtime", "current timestamp in " + UNIX_EPOCH_TIME_MS + ". Adjusted for the proposed BIP94 timewarp rule."},
                 {RPCResult::Type::STR, "bits", "compressed target of next block"},
                 {RPCResult::Type::NUM, "height", "The height of the next block"},
                 {RPCResult::Type::STR_HEX, "signet_challenge", /*optional=*/true, "Only on signet"},

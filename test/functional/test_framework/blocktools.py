@@ -53,9 +53,12 @@ MAX_STANDARD_TX_SIGOPS = 4000
 MAX_STANDARD_TX_WEIGHT = 400000
 
 # Genesis block time (regtest)
-TIME_GENESIS_BLOCK = 1296688602
+# Header / getblock* RPC times are milliseconds; setmocktime still takes seconds.
+TIME_GENESIS_BLOCK_MS = 1296688602 * 1000
+TIME_GENESIS_BLOCK = TIME_GENESIS_BLOCK_MS // 1000
 
-MAX_FUTURE_BLOCK_TIME = 2 * 60 * 60
+MAX_FUTURE_BLOCK_TIME = 2 * 60 * 60 * 1000  # consensus: milliseconds
+MAX_FUTURE_BLOCK_TIME_SEC = MAX_FUTURE_BLOCK_TIME // 1000
 
 # Coinbase transaction outputs can only be spent after this number of new blocks (network rule)
 COINBASE_MATURITY = 100
@@ -101,7 +104,7 @@ def create_block(hashprev=None, coinbase=None, *, ntime=None, height=None, versi
     if tmpl is None:
         tmpl = {}
     block.nVersion = version or tmpl.get('version') or VERSIONBITS_LAST_OLD_BLOCK_VERSION
-    block.nTime = ntime or tmpl.get('curtime') or int(time.time() + 600)
+    block.nTime = ntime or tmpl.get('curtime') or int(time.time() * 1000 + 600 * 1000)
     block.hashPrevBlock = hashprev or int(tmpl['previousblockhash'], 0x10)
     if tmpl and tmpl.get('bits') is not None:
         block.nBits = struct.unpack('>I', bytes.fromhex(tmpl['bits']))[0]
@@ -125,7 +128,7 @@ def create_empty_fork(node, fork_length=FORK_LENGTH):
     '''
     tip = int(node.getbestblockhash(), 16)
     height = node.getblockcount()
-    block_time = node.getblock(node.getbestblockhash())['time'] + 1
+    block_time = node.getblock(node.getbestblockhash())['time'] + 1000
 
     blocks = []
     for _ in range(fork_length):
@@ -133,7 +136,7 @@ def create_empty_fork(node, fork_length=FORK_LENGTH):
         block.solve()
         blocks.append(block)
         tip = block.hash_int
-        block_time += 1
+        block_time += 1000
         height += 1
 
     return blocks
@@ -171,23 +174,37 @@ def script_BIP34_coinbase_height(height, *, padding=True):
     return CScript([CScriptNum(height)])
 
 
-def create_coinbase(height, pubkey=None, *, script_pubkey=None, extra_output_script=None, fees=0, nValue=50, halving_period=REGTEST_RETARGET_PERIOD):
+def create_coinbase(height, pubkey=None, *, script_pubkey=None, extra_output_script=None, fees=0, nValue=None, halving_period=REGTEST_RETARGET_PERIOD):
     """Create a coinbase transaction.
 
     If pubkey is passed in, the coinbase output will be a P2PK output;
     otherwise an anyone-can-spend output.
 
     If extra_output_script is given, make a 0-value output to that
-    script. This is useful to pad block weight/sigops as needed. """
+    script. This is useful to pad block weight/sigops as needed.
+
+    Default subsidy matches GetBlockSubsidy base (1<<32 sat) with regtest
+    halvings every `halving_period` (150). Pass nValue as whole ZORK only for
+    intentional overrides; prefer leaving default for consensus-valid blocks.
+    """
     coinbase = CTransaction()
     coinbase.nLockTime = height - 1
     coinbase.vin.append(CTxIn(NULL_OUTPOINT, script_BIP34_coinbase_height(height), MAX_SEQUENCE_NONFINAL))
     coinbaseoutput = CTxOut()
-    coinbaseoutput.nValue = nValue * COIN
-    if nValue == 50:
+    if nValue is None:
+        coinbaseoutput.nValue = 1 << 32
         halvings = int(height / halving_period)
         coinbaseoutput.nValue >>= halvings
         coinbaseoutput.nValue += fees
+    else:
+        coinbaseoutput.nValue = nValue * COIN
+        if nValue == 50:
+            # Legacy Bitcoin-style path used by a few fixtures that still assume 50 COIN.
+            halvings = int(height / halving_period)
+            coinbaseoutput.nValue >>= halvings
+            coinbaseoutput.nValue += fees
+        else:
+            coinbaseoutput.nValue += fees
     if pubkey is not None:
         coinbaseoutput.scriptPubKey = key_to_p2pk_script(pubkey)
     elif script_pubkey is not None:

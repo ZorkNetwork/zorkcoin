@@ -131,10 +131,11 @@ struct TransactionsDelta final : public CValidationInterface {
 
 void MockTime(FuzzedDataProvider& fuzzed_data_provider, const Chainstate& chainstate)
 {
-    const auto time = ConsumeTime(fuzzed_data_provider,
-                                  chainstate.m_chain.Tip()->GetMedianTimePast() + 1,
-                                  std::numeric_limits<decltype(chainstate.m_chain.Tip()->nTime)>::max());
-    SetMockTime(time);
+    // Tip times / MTP are milliseconds; ConsumeTime()'s bounds are seconds.
+    // Setting via int64_t uses the millisecond mock clock directly.
+    static const int64_t time_max_ms{ParseISO8601DateTime("2100-12-31T23:59:59Z").value()};
+    const int64_t min_ms{chainstate.m_chain.Tip()->GetMedianTimePast() + 1};
+    SetMockTime(fuzzed_data_provider.ConsumeIntegralInRange<int64_t>(min_ms, std::max(min_ms, time_max_ms)));
 }
 
 std::unique_ptr<CTxMemPool> MakeMempool(FuzzedDataProvider& fuzzed_data_provider, const NodeContext& node)
@@ -226,7 +227,7 @@ FUZZ_TARGET(ephemeral_package_eval, .init = initialize_tx_pool)
     std::unordered_map<COutPoint, CAmount, SaltedOutpointHasher> outpoints_value;
     for (const auto& outpoint : g_outpoints_coinbase_init_mature) {
         Assert(mempool_outpoints.insert(outpoint).second);
-        outpoints_value[outpoint] = 50 * COIN;
+        outpoints_value[outpoint] = CAmount{1} << 32; // Zorkcoin unhalved subsidy
     }
 
     auto outpoints_updater = std::make_shared<OutpointsUpdater>(mempool_outpoints);
@@ -380,7 +381,7 @@ FUZZ_TARGET(tx_package_eval, .init = initialize_tx_pool)
     std::unordered_map<COutPoint, CAmount, SaltedOutpointHasher> outpoints_value;
     for (const auto& outpoint : g_outpoints_coinbase_init_mature) {
         Assert(mempool_outpoints.insert(outpoint).second);
-        outpoints_value[outpoint] = 50 * COIN;
+        outpoints_value[outpoint] = CAmount{1} << 32; // Zorkcoin unhalved subsidy
     }
 
     auto outpoints_updater = std::make_shared<OutpointsUpdater>(mempool_outpoints);

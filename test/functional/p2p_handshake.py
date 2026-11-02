@@ -86,11 +86,16 @@ class P2PHandshakeTest(BitcoinTestFramework):
         self.test_desirable_service_flags(node, [NODE_NETWORK | NODE_WITNESS],
                                           DESIRABLE_SERVICE_FLAGS_FULL, expect_disconnect=False)
 
-        self.log.info("Check that limited peers are only desired if the local chain is close to the tip (<24h)")
-        self.generate_at_mocktime(int(time.time()) - 25 * 3600)  # tip outside the 24h window, should fail
+        self.log.info("Check that limited peers are only desired if the local chain is close to the tip")
+        # ApproximateBestBlockDepth = age_ms / nPowTargetSpacing; limited peers allowed when depth < 144.
+        # With spacing 1<<17 ms, that is roughly < ~5.24h (Bitcoin's test used 24h at 600s spacing).
+        spacing_ms = 1 << 17
+        outside_age_s = ((144 + 10) * spacing_ms) // 1000
+        inside_age_s = ((144 - 10) * spacing_ms) // 1000
+        self.generate_at_mocktime(int(time.time()) - outside_age_s)  # tip outside limited-peer window
         self.test_desirable_service_flags(node, [NODE_NETWORK_LIMITED | NODE_WITNESS],
                                           DESIRABLE_SERVICE_FLAGS_FULL, expect_disconnect=True)
-        self.generate_at_mocktime(int(time.time()) - 23 * 3600)  # tip inside the 24h window, should succeed
+        self.generate_at_mocktime(int(time.time()) - inside_age_s)  # tip inside limited-peer window
         self.test_desirable_service_flags(node, [NODE_NETWORK_LIMITED | NODE_WITNESS],
                                           DESIRABLE_SERVICE_FLAGS_PRUNED, expect_disconnect=False)
 

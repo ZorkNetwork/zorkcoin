@@ -16,6 +16,7 @@ from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.test_node import ErrorMatch
 from test_framework.util import (
+    BLOCK_SUBSIDY,
     assert_equal,
     assert_raises_rpc_error,
     ensure_for,
@@ -249,7 +250,7 @@ class MultiWalletTest(BitcoinTestFramework):
         node.loadwallet("w5")
         assert_equal(set(node.listwallets()), {"w4", "w5"})
         w5 = get_wallet(node, "w5")
-        assert_equal(w5.getbalances()["mine"]["immature"], 50)
+        assert_equal(w5.getbalances()["mine"]["immature"], BLOCK_SUBSIDY)
 
         competing_wallet_dir = os.path.join(self.options.tmpdir, 'competing_walletdir')
         os.mkdir(competing_wallet_dir)
@@ -273,7 +274,7 @@ class MultiWalletTest(BitcoinTestFramework):
         self.generatetoaddress(node, nblocks=1, address=wallets[0].getnewaddress(), sync_fun=self.no_op)
         for wallet_name, wallet in zip(wallet_names, wallets):
             info = wallet.getwalletinfo()
-            assert_equal(wallet.getbalances()["mine"]["immature"], 50 if wallet is wallets[0] else 0)
+            assert_equal(wallet.getbalances()["mine"]["immature"], BLOCK_SUBSIDY if wallet is wallets[0] else 0)
             assert_equal(info['walletname'], wallet_name)
 
         # accessing invalid wallet fails
@@ -284,7 +285,7 @@ class MultiWalletTest(BitcoinTestFramework):
 
         w1, w2, w3, w4, *_ = wallets
         self.generatetoaddress(node, nblocks=COINBASE_MATURITY + 1, address=w1.getnewaddress(), sync_fun=self.no_op)
-        assert_equal(w1.getbalance(), 100)
+        assert_equal(w1.getbalance(), 2 * BLOCK_SUBSIDY)
         assert_equal(w2.getbalance(), 0)
         assert_equal(w3.getbalance(), 0)
         assert_equal(w4.getbalance(), 0)

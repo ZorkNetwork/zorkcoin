@@ -104,7 +104,7 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
         tx = self.wallet.create_self_transfer()['tx']  # Pick a random coin(base) to spend
         tx.vout.append(deepcopy(tx.vout[0]))
         tx.vout[0].nValue = int(0.3 * COIN)
-        tx.vout[1].nValue = int(49 * COIN)
+        tx.vout[1].nValue = int(4294967296 - COIN)
         raw_tx_in_block = tx.serialize().hex()
         txid_in_block = self.wallet.sendrawtransaction(from_node=node, tx_hex=raw_tx_in_block)
         self.generate(node, 1)
@@ -149,7 +149,7 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
         tx.vout[0].nValue = int(output_amount * COIN)
         raw_tx_final = tx.serialize().hex()
         tx = tx_from_hex(raw_tx_final)
-        fee_expected = Decimal('50.0') - output_amount
+        fee_expected = Decimal('42.94967296') - output_amount
         self.check_mempool_result(
             result_expected=[{'txid': tx.txid_hex, 'allowed': True, 'vsize_adjusted': tx.get_vsize(), 'vsize': tx.get_vsize(), 'vsize_bip141': tx.get_vsize(), 'fees': {'base': fee_expected}}],
             rawtxs=[tx.serialize().hex()],

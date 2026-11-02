@@ -913,8 +913,8 @@ static RPCMethod listbanned()
         rec.pushKV("address", entry.first.ToString());
         rec.pushKV("ban_created", banEntry.nCreateTime);
         rec.pushKV("banned_until", banEntry.nBanUntil);
-        rec.pushKV("ban_duration", (banEntry.nBanUntil - banEntry.nCreateTime));
-        rec.pushKV("time_remaining", (banEntry.nBanUntil - current_time));
+        rec.pushKV("ban_duration", (banEntry.nBanUntil - banEntry.nCreateTime) / 1000);
+        rec.pushKV("time_remaining", (banEntry.nBanUntil - current_time) / 1000);
 
         bannedAddresses.push_back(std::move(rec));
     }

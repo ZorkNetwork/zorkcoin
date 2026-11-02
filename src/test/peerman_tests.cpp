@@ -38,7 +38,7 @@ static void mineBlock(node::NodeContext& node, FakeNodeClock& clock, std::chrono
     auto block_template{mining->createNewBlock({}, /*cooldown=*/false)};
     BOOST_REQUIRE(block_template);
     CBlock block{block_template->getBlock()};
-    while (!CheckProofOfWork(block.GetHash(), block.nBits, node.chainman->GetConsensus())) ++block.nNonce;
+    while (!CheckProofOfWork(block.GetPoWHash(), block.nBits, node.chainman->GetConsensus())) ++block.nNonce;
     block.fChecked = true; // little speedup
     clock.set(curr_time); // process block at current time
     Assert(node.chainman->ProcessNewBlock(std::make_shared<const CBlock>(block), /*force_processing=*/true, /*min_pow_checked=*/true, nullptr));
@@ -60,17 +60,17 @@ BOOST_AUTO_TEST_CASE(connections_desirable_service_flags)
     auto tip = WITH_LOCK(::cs_main, return m_node.chainman->ActiveChain().Tip());
     uint64_t tip_block_time = tip->GetBlockTime();
     int tip_block_height = tip->nHeight;
-    peerman->SetBestBlock(tip_block_height, std::chrono::seconds{tip_block_time});
+    peerman->SetBestBlock(tip_block_height, std::chrono::milliseconds{tip_block_time});
 
-    clock.set(std::chrono::seconds{tip_block_time + 1}); // Set node time to tip time
+    clock.set(std::chrono::milliseconds{tip_block_time} + 1s); // Set node time to tip time
     BOOST_CHECK(peerman->GetDesirableServiceFlags(peer_flags) == DESIRABLE_LIMITED);
 
     // Check we don't disallow limited peers connections when we are behind but still recoverable (below the connection safety window)
-    clock += std::chrono::seconds{consensus.nPowTargetSpacing * (NODE_NETWORK_LIMITED_ALLOW_CONN_BLOCKS - 1)};
+    clock += consensus.PowTargetSpacing() * (NODE_NETWORK_LIMITED_ALLOW_CONN_BLOCKS - 1);
     BOOST_CHECK(peerman->GetDesirableServiceFlags(peer_flags) == DESIRABLE_LIMITED);
 
     // Check we disallow limited peers connections when we are further than the limited peers safety window
-    clock += std::chrono::seconds{consensus.nPowTargetSpacing * 2};
+    clock += consensus.PowTargetSpacing() * 2;
     BOOST_CHECK(peerman->GetDesirableServiceFlags(peer_flags) == DESIRABLE_FULL);
 
     // By now, we tested that the connections desirable services flags change based on the node's time proximity to the tip.
@@ -79,7 +79,7 @@ BOOST_AUTO_TEST_CASE(connections_desirable_service_flags)
 
     // First, verify a block in the past doesn't enable limited peers connections
     // At this point, our time is (NODE_NETWORK_LIMITED_ALLOW_CONN_BLOCKS + 1) * 10 minutes ahead the tip's time.
-    mineBlock(m_node, clock, /*block_time=*/std::chrono::seconds{tip_block_time + 1});
+    mineBlock(m_node, clock, /*block_time=*/std::chrono::duration_cast<std::chrono::seconds>(std::chrono::milliseconds{tip_block_time}) + 1s);
     BOOST_CHECK(peerman->GetDesirableServiceFlags(peer_flags) == DESIRABLE_FULL);
 
     // Verify a block close to the tip enables limited peers connections
@@ -87,7 +87,7 @@ BOOST_AUTO_TEST_CASE(connections_desirable_service_flags)
     BOOST_CHECK(peerman->GetDesirableServiceFlags(peer_flags) == DESIRABLE_LIMITED);
 
     // Lastly, verify the stale tip checks can disallow limited peers connections after not receiving blocks for a prolonged period.
-    clock += std::chrono::seconds{consensus.nPowTargetSpacing * NODE_NETWORK_LIMITED_ALLOW_CONN_BLOCKS + 1};
+    clock += consensus.PowTargetSpacing() * NODE_NETWORK_LIMITED_ALLOW_CONN_BLOCKS + 1s;
     BOOST_CHECK(peerman->GetDesirableServiceFlags(peer_flags) == DESIRABLE_FULL);
 }
 

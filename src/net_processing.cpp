@@ -128,11 +128,11 @@ static constexpr auto MINIMUM_CONNECT_TIME{30s};
 /** SHA256("main address relay")[0:8] */
 static constexpr uint64_t RANDOMIZER_ID_ADDRESS_RELAY = 0x3cac0035b5866b90ULL;
 /// Age after which a stale block will no longer be served if requested as
-/// protection against fingerprinting. Set to one month, denominated in seconds.
-static constexpr int STALE_RELAY_AGE_LIMIT = 30 * 24 * 60 * 60;
+/// protection against fingerprinting. Set to one month, denominated in milliseconds.
+static constexpr int64_t STALE_RELAY_AGE_LIMIT = 30LL * 24 * 60 * 60 * 1000;
 /// Age after which a block is considered historical for purposes of rate
-/// limiting block relay. Set to one week, denominated in seconds.
-static constexpr int HISTORICAL_BLOCK_AGE = 7 * 24 * 60 * 60;
+/// limiting block relay. Set to one week, denominated in milliseconds.
+static constexpr int64_t HISTORICAL_BLOCK_AGE = 7LL * 24 * 60 * 60 * 1000;
 /** Time between pings automatically sent out for latency probing and keepalive */
 static constexpr auto PING_INTERVAL{2min};
 /** The maximum number of entries in a locator */
@@ -621,7 +621,7 @@ public:
     void SendPings() override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
     void InitiateTxBroadcastToAll(const Wtxid& wtxid) override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, !m_inv_to_send_mutex);
     node::TransactionError InitiateTxBroadcastPrivate(const CTransactionRef& tx) override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
-    void SetBestBlock(int height, std::chrono::seconds time) override
+    void SetBestBlock(int height, std::chrono::milliseconds time) override
     {
         m_best_height = height;
         m_best_block_time = time;
@@ -900,7 +900,7 @@ private:
     /** The height of the best chain */
     std::atomic<int> m_best_height{-1};
     /** The time of the best chain tip block */
-    std::atomic<std::chrono::seconds> m_best_block_time{0s};
+    std::atomic<std::chrono::milliseconds> m_best_block_time{0ms};
 
     /** Next time to check for stale tip */
     std::chrono::seconds m_stale_tip_check_time GUARDED_BY(cs_main){0s};
@@ -999,7 +999,7 @@ private:
      *   - nullopt: the sync is in REDOWNLOAD phase (phase 2).
      *   - {height, timestamp}: the sync has the specified tip height and block timestamp (phase 1).
      */
-    using HeadersPresyncStats = std::pair<arith_uint256, std::optional<std::pair<int64_t, uint32_t>>>;
+    using HeadersPresyncStats = std::pair<arith_uint256, std::optional<std::pair<int64_t, uint64_t>>>;
     /** Statistics for all peers in low-work headers sync. */
     std::map<NodeId, HeadersPresyncStats> m_headers_presync_stats GUARDED_BY(m_headers_presync_mutex) {};
     /** The peer with the most-work entry in m_headers_presync_stats. */
@@ -1485,12 +1485,12 @@ bool PeerManagerImpl::TipMayBeStale()
     if (m_last_tip_update.load() == 0s) {
         m_last_tip_update = GetTime<std::chrono::seconds>();
     }
-    return m_last_tip_update.load() < GetTime<std::chrono::seconds>() - std::chrono::seconds{consensusParams.nPowTargetSpacing * 3} && mapBlocksInFlight.empty();
+    return m_last_tip_update.load() < GetTime<std::chrono::seconds>() - std::chrono::duration_cast<std::chrono::seconds>(consensusParams.PowTargetSpacing() * 3) && mapBlocksInFlight.empty();
 }
 
 int64_t PeerManagerImpl::ApproximateBestBlockDepth() const
 {
-    return (GetTime<std::chrono::seconds>() - m_best_block_time.load()).count() / m_chainparams.GetConsensus().nPowTargetSpacing;
+    return (GetTime<std::chrono::milliseconds>() - std::chrono::duration_cast<std::chrono::milliseconds>(m_best_block_time.load())).count() / m_chainparams.GetConsensus().nPowTargetSpacing;
 }
 
 bool PeerManagerImpl::CanDirectFetch()
@@ -2519,7 +2519,7 @@ void PeerManagerImpl::NewPoWValidBlock(const CBlockIndex *pindex, const std::sha
  */
 void PeerManagerImpl::UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlockIndex *pindexFork, bool fInitialDownload)
 {
-    SetBestBlock(pindexNew->nHeight, std::chrono::seconds{pindexNew->GetBlockTime()});
+    SetBestBlock(pindexNew->nHeight, std::chrono::milliseconds{pindexNew->GetBlockTime()});
     UpdateLocalMwebServices(pindexNew);
 
     // Don't relay inventory during initial block download.
@@ -4886,7 +4886,7 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
             }
             // If pruning, don't inv blocks unless we have on disk and are likely to still have
             // for some reasonable time window (1 hour) that block relay might require.
-            const int nPrunedBlocksLikelyToHave = MIN_BLOCKS_TO_KEEP - 3600 / m_chainparams.GetConsensus().nPowTargetSpacing;
+            const int nPrunedBlocksLikelyToHave = MIN_BLOCKS_TO_KEEP - 3'600'000 / m_chainparams.GetConsensus().nPowTargetSpacing;
             if (m_chainman.m_blockman.IsPruneMode() && (!(pindex->nStatus & BLOCK_HAVE_DATA) || pindex->nHeight <= m_chainman.ActiveChain().Tip()->nHeight - nPrunedBlocksLikelyToHave)) {
                 LogDebug(BCLog::NET, " getblocks stopping, pruned or too old block at %d %s\n", pindex->nHeight, pindex->GetBlockHash().ToString());
                 break;
@@ -6567,7 +6567,7 @@ bool PeerManagerImpl::SendMessages(CNode& node)
                          // Convert HEADERS_DOWNLOAD_TIMEOUT_PER_HEADER to microseconds before scaling
                          // to maintain precision
                          std::chrono::microseconds{HEADERS_DOWNLOAD_TIMEOUT_PER_HEADER} *
-                         Ticks<std::chrono::seconds>(NodeClock::now() - m_chainman.m_best_header->Time()) / consensusParams.nPowTargetSpacing
+                         Ticks<std::chrono::milliseconds>(NodeClock::now() - m_chainman.m_best_header->Time()) / consensusParams.nPowTargetSpacing
                         );
                     nSyncStarted++;
                 }
@@ -6868,7 +6868,7 @@ bool PeerManagerImpl::SendMessages(CNode& node)
         if (state.vBlocksInFlight.size() > 0) {
             QueuedBlock &queuedBlock = state.vBlocksInFlight.front();
             int nOtherPeersWithValidatedDownloads = m_peers_downloading_from - 1;
-            if (current_time > state.m_downloading_since + std::chrono::seconds{consensusParams.nPowTargetSpacing} * (BLOCK_DOWNLOAD_TIMEOUT_BASE + BLOCK_DOWNLOAD_TIMEOUT_PER_PEER * nOtherPeersWithValidatedDownloads)) {
+            if (current_time > state.m_downloading_since + consensusParams.PowTargetSpacing() * (BLOCK_DOWNLOAD_TIMEOUT_BASE + BLOCK_DOWNLOAD_TIMEOUT_PER_PEER * nOtherPeersWithValidatedDownloads)) {
                 LogInfo("Timeout downloading block %s, %s", queuedBlock.pindex->GetBlockHash().ToString(), node.DisconnectMsg());
                 node.fDisconnect = true;
                 return true;

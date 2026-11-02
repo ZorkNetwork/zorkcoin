@@ -27,6 +27,10 @@ from typing import Optional, Union
 
 SATOSHI_PRECISION = Decimal('0.00000001')
 
+# Zorkcoin consensus base subsidy (matches GetBlockSubsidy / create_coinbase default).
+BLOCK_SUBSIDY_SATS = 1 << 32
+BLOCK_SUBSIDY = Decimal(BLOCK_SUBSIDY_SATS) / Decimal(100_000_000)  # 42.94967296
+
 logger = logging.getLogger("TestFramework.utils")
 
 class JSONRPCException(Exception):

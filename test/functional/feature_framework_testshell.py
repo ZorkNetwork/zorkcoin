@@ -40,7 +40,7 @@ def run_testshell_doc_example(functional_tests_dir):
             assert_equal(len(res), 101)
             test.sync_blocks()
             assert_equal(test.nodes[1].getblockchaininfo()["blocks"], 101)
-            assert_equal(test.nodes[0].getbalance(), Decimal('50.0'))
+            assert_equal(test.nodes[0].getbalance(), Decimal('42.94967296'))
             test.nodes[0].log.info("Successfully mined regtest chain!")
     finally:
         test.shutdown()

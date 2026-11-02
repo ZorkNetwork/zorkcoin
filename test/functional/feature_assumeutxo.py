@@ -10,10 +10,12 @@ The assumeutxo value generated and used here is committed to in
 `CRegTestParams::m_assumeutxo_data` in `src/kernel/chainparams.cpp`.
 """
 import contextlib
-
 from dataclasses import dataclass
-from test_framework.blocktools import (
-        create_block,
+from decimal import Decimal
+
+from test_framework.assumeutxo_util import (
+    ASSUMEUTXO_BASE_BLOCK_HASH,
+    ASSUMEUTXO_BASE_HASH_SERIALIZED,
 )
 from test_framework.compressor import (
     compress_amount,
@@ -39,6 +41,7 @@ from test_framework.mweb_util import (
     restart_node_for_mweb_extension,
 )
 from test_framework.util import (
+    BLOCK_SUBSIDY,
     assert_approx,
     assert_equal,
     assert_not_equal,
@@ -55,6 +58,7 @@ from test_framework.wallet import (
 from test_framework.blocktools import (
     REGTEST_N_BITS,
     REGTEST_TARGET,
+    create_block,
     nbits_str,
     target_str,
 )
@@ -187,12 +191,12 @@ class AssumeutxoTest(BitcoinTestFramework):
                 f.write(content)
                 f.write(valid_snapshot_contents[(5 + 2 + 4 + 32 + 8 + offset + len(content)):])
 
-            msg = custom_message if custom_message is not None else f"Bad snapshot content hash: expected 106b2c56233e378a824cf0d5ff2be42ed32c72f1605c9be288d00942908a40ac, got {wrong_hash}."
+            msg = custom_message if custom_message is not None else "Bad snapshot"
             expected_error(msg)
 
     def test_headers_not_synced(self, valid_snapshot_path):
         for node in self.nodes[1:]:
-            msg = "Unable to load UTXO snapshot: The base block header (0c552ced4721c249a389eb9b08cb8da261cd46f0e7b5f9d064d48f3113406853) must appear in the headers chain. Make sure all headers are syncing, and call loadtxoutset again."
+            msg = f"Unable to load UTXO snapshot: The base block header ({ASSUMEUTXO_BASE_BLOCK_HASH}) must appear in the headers chain. Make sure all headers are syncing, and call loadtxoutset again."
             assert_raises_rpc_error(-32603, msg, node.loadtxoutset, valid_snapshot_path)
 
     def test_invalid_chainstate_scenarios(self):
@@ -252,7 +256,7 @@ class AssumeutxoTest(BitcoinTestFramework):
             block_hash = node.getblockhash(height)
             node.invalidateblock(block_hash)
             assert_equal(node.getblockcount(), height - 1)
-            msg = "Unable to load UTXO snapshot: The base block header (0c552ced4721c249a389eb9b08cb8da261cd46f0e7b5f9d064d48f3113406853) is part of an invalid chain."
+            msg = f"Unable to load UTXO snapshot: The base block header ({ASSUMEUTXO_BASE_BLOCK_HASH}) is part of an invalid chain."
             assert_raises_rpc_error(-32603, msg, node.loadtxoutset, dump_output_path)
             node.reconsiderblock(block_hash)
 
@@ -499,7 +503,7 @@ class AssumeutxoTest(BitcoinTestFramework):
         def check_dump_output(output):
             assert_equal(
                 output['txoutset_hash'],
-                "106b2c56233e378a824cf0d5ff2be42ed32c72f1605c9be288d00942908a40ac")
+                "19f09db6d1dfaa004671b4eb1a09de9fd59d6b015a70d67d3475b5a902a0c2e9")
             assert_equal(output["nchaintx"], blocks[SNAPSHOT_BASE_HEIGHT].chain_tx)
 
         check_dump_output(dump_output)
@@ -533,7 +537,7 @@ class AssumeutxoTest(BitcoinTestFramework):
         dump_output4 = n0.dumptxoutset(path='utxos4.dat', rollback=prev_snap_height)
         assert_equal(
             dump_output4['txoutset_hash'],
-            "147d1789e3e29a62e3e15b80078b50603afb5e1e70ea07001c94666afbde38df")
+            "e9b2de1b104ce652859c267b2666901313691db5ca035eff5401b57dc14cfe3a")
         assert_not_equal(sha256sum_file(dump_output['path']), sha256sum_file(dump_output4['path']))
 
         # Use a hash instead of a height
@@ -678,7 +682,8 @@ class AssumeutxoTest(BitcoinTestFramework):
         prev_tx = n0.getblock(spend_coin_blockhash, 3)['tx'][0]
         prevout = {"txid": prev_tx['txid'], "vout": 0, "scriptPubKey": prev_tx['vout'][0]['scriptPubKey']['hex']}
         privkey = n0.get_deterministic_priv_key().key
-        raw_tx = n1.createrawtransaction([prevout], {getnewdestination()[2]: 24.99})
+        spend_value = Decimal(str(prev_tx['vout'][0]['value'])) - Decimal('0.01')
+        raw_tx = n1.createrawtransaction([prevout], {getnewdestination()[2]: spend_value})
         signed_tx = n1.signrawtransactionwithkey(raw_tx, [privkey], [prevout])['hex']
         signed_txid = tx_from_hex(signed_tx).txid_hex
 

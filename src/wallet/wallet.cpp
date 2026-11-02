@@ -1353,7 +1353,7 @@ CWalletTx* CWallet::AddToWallet(CTransactionRef tx, const TxState& state, const 
         if (!wtx.GetTx()->mweb_tx.GetSpentIDs().empty()) PruneMWEBDescriptors();
     }
     if (fInsertedNew) {
-        wtx.nTimeReceived = GetTime();
+        wtx.nTimeReceived = GetTime<std::chrono::milliseconds>().count();
         wtx.nOrderPos = IncOrderPosNext(&batch);
         wtx.m_it_wtxOrdered = wtxOrdered.insert(std::make_pair(wtx.nOrderPos, &wtx));
         wtx.nTimeSmart = ComputeTimeSmart(wtx, rescanning_old_block);
@@ -2097,7 +2097,7 @@ void CWallet::blockDisconnected(const interfaces::BlockInfo& block)
 
 void CWallet::updatedBlockTip()
 {
-    m_best_block_time = GetTime();
+    m_best_block_time = GetTime<std::chrono::milliseconds>().count();
 }
 
 void CWallet::BlockUntilSyncedToCurrentChain() const {
@@ -2654,7 +2654,7 @@ void CWallet::ResubmitWalletTransactions(node::TxBroadcast broadcast_method, boo
 
             // Attempt to rebroadcast all txes more than 5 minutes older than
             // the last block, or all txs if forcing.
-            if (!force && wtx.nTimeReceived > m_best_block_time - 5 * 60) continue;
+            if (!force && wtx.nTimeReceived > m_best_block_time - 5 * 60 * 1000) continue;
             to_submit.insert(&wtx);
         }
         // Now try submitting the transactions to the memory pool and (optionally) relay them.
@@ -3502,7 +3502,7 @@ void CWallet::ListLockedCoins(std::vector<mw::Hash>& output_ids) const
  * https://bitcointalk.org/?topic=54527, or
  * https://github.com/bitcoin/bitcoin/pull/1393.
  */
-unsigned int CWallet::ComputeTimeSmart(const CWalletTx& wtx, bool rescanning_old_block) const
+uint64_t CWallet::ComputeTimeSmart(const CWalletTx& wtx, bool rescanning_old_block) const
 {
     std::optional<uint256> block_hash;
     if (auto* conf = wtx.state<TxStateConfirmed>()) {
@@ -3511,7 +3511,7 @@ unsigned int CWallet::ComputeTimeSmart(const CWalletTx& wtx, bool rescanning_old
         block_hash = conf->conflicting_block_hash;
     }
 
-    unsigned int nTimeSmart = wtx.nTimeReceived;
+    uint64_t nTimeSmart = wtx.nTimeReceived;
     if (block_hash) {
         int64_t blocktime;
         int64_t block_max_time;
@@ -3523,7 +3523,7 @@ unsigned int CWallet::ComputeTimeSmart(const CWalletTx& wtx, bool rescanning_old
                 int64_t latestEntry = 0;
 
                 // Tolerate times up to the last timestamp in the wallet not more than 5 minutes into the future
-                int64_t latestTolerated = latestNow + 300;
+                int64_t latestTolerated = latestNow + 300 * 1000;
                 const TxItems& txOrdered = wtxOrdered;
                 for (auto it = txOrdered.rbegin(); it != txOrdered.rend(); ++it) {
                     CWalletTx* const pwtx = it->second;

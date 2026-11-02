@@ -42,7 +42,7 @@ BOOST_AUTO_TEST_CASE(MiningInterface)
 
     // Set node time a few minutes past the testnet4 genesis block
     const auto template_time{3min + WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Tip()->Time())};
-    FakeNodeClock clock{template_time};
+    FakeNodeClock clock{std::chrono::time_point_cast<std::chrono::seconds>(template_time)};
 
     block_template = mining->createNewBlock({}, /*cooldown=*/false);
     BOOST_REQUIRE(block_template);

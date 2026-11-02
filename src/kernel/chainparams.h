@@ -164,6 +164,8 @@ public:
         DeploymentOptions dep_opts{};
         bool fastprune{false};
         bool enforce_bip94{false};
+        /** When true, enable ASERT retargeting on regtest (default: no retargeting). */
+        bool asert_retargeting{false};
     };
 
     struct MainNetOptions {

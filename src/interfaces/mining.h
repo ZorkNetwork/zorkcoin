@@ -74,11 +74,11 @@ public:
      *
      * @returns true if the block was accepted as a new block
      */
-    virtual bool submitSolution(uint32_t version, uint32_t timestamp, uint32_t nonce, CTransactionRef coinbase, std::string& reason, std::string& debug) = 0;
+    virtual bool submitSolution(uint32_t version, uint64_t timestamp, uint64_t nonce, CTransactionRef coinbase, std::string& reason, std::string& debug) = 0;
 
     //! Deprecated older method preserved to return an explicit error for IPC
     //! clients using mining.capnp @7.
-    virtual bool submitSolutionOld7(uint32_t, uint32_t, uint32_t, CTransactionRef)
+    virtual bool submitSolutionOld7(uint32_t, uint64_t, uint64_t, CTransactionRef)
     {
         throw std::runtime_error("Old submitSolution (@7) not supported. Please update your client!");
     }

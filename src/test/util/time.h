@@ -58,6 +58,10 @@ public:
     /// Initialize with the given time.
     explicit FakeNodeClock(NodeSeconds init_time) { set(init_time); }
     explicit FakeNodeClock(std::chrono::seconds init_time) { set(init_time); }
+    explicit FakeNodeClock(NodeMilliseconds init_time)
+    {
+        set(std::chrono::time_point_cast<std::chrono::seconds>(init_time));
+    }
     /// Initialize with current time.
     explicit FakeNodeClock() { set(Now<NodeSeconds>()); }
 
@@ -68,12 +72,25 @@ public:
     FakeNodeClock& operator=(const FakeNodeClock&) = delete;
 
     /// Set mocktime.
-    void set(NodeSeconds t) { SetMockTime(m_t = t); }
+    void set(NodeSeconds t)
+    {
+        m_t = t;
+        SetMockTime(TicksSinceEpoch<std::chrono::milliseconds>(t));
+    }
     void set(std::chrono::seconds t) { set(NodeSeconds{t}); }
+    void set(std::chrono::milliseconds t) { set(NodeSeconds{std::chrono::duration_cast<std::chrono::seconds>(t)}); }
 
     /// Change mocktime by the given duration delta.
-    void operator+=(std::chrono::seconds d) { set(m_t += d); }
-    void operator-=(std::chrono::seconds d) { set(m_t -= d); }
+    template <class Rep, class Period>
+    void operator+=(std::chrono::duration<Rep, Period> d)
+    {
+        set(m_t += std::chrono::duration_cast<std::chrono::seconds>(d));
+    }
+    template <class Rep, class Period>
+    void operator-=(std::chrono::duration<Rep, Period> d)
+    {
+        set(m_t -= std::chrono::duration_cast<std::chrono::seconds>(d));
+    }
 };
 
 #endif // BITCOIN_TEST_UTIL_TIME_H

@@ -154,7 +154,7 @@ namespace BCLog {
 
         std::string Format(const util::log::Entry& entry) const;
 
-        std::string LogTimestampStr(SystemClock::time_point now, std::chrono::seconds mocktime) const;
+        std::string LogTimestampStr(SystemClock::time_point now, int64_t mocktime_ms) const;
 
         /** Slots that connect to the print signal */
         std::list<std::function<void(const std::string&)>> m_print_callbacks GUARDED_BY(m_cs){};

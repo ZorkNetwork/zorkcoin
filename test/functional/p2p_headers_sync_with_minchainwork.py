@@ -80,12 +80,14 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
 
         check_node3_chaintips(2, self.nodes[0].getbestblockhash(), NODE1_BLOCKS_REQUIRED-1)
 
+        # Hardcoded genesis hash is regtest-specific (ms nTime genesis).
+        REGTEST_GENESIS = 'f1c2b04f4fc9cacae4a4fb143bced0793faf917a96826c981afa4c89042b0a24'
         for node in self.nodes[1:3]:
             chaintips = node.getchaintips()
             assert_equal(len(chaintips), 1)
             assert {
                 'height': 0,
-                'hash': '0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206',
+                'hash': REGTEST_GENESIS,
                 'branchlen': 0,
                 'status': 'active',
             } in chaintips
@@ -100,7 +102,7 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
 
         assert {
             'height': 0,
-            'hash': '0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206',
+            'hash': 'f1c2b04f4fc9cacae4a4fb143bced0793faf917a96826c981afa4c89042b0a24',
             'branchlen': 0,
             'status': 'active',
         } in self.nodes[2].getchaintips()

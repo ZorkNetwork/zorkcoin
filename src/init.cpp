@@ -2218,7 +2218,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         }
     }
     LogInfo("nBestHeight = %d", chain_active_height);
-    if (node.peerman) node.peerman->SetBestBlock(chain_active_height, std::chrono::seconds{best_block_time});
+    if (node.peerman) node.peerman->SetBestBlock(chain_active_height, std::chrono::milliseconds{best_block_time});
 
     // Map ports with NAT-PMP
     StartMapPort(args.GetBoolArg("-natpmp", DEFAULT_NATPMP));

@@ -24,7 +24,7 @@ BOOST_FIXTURE_TEST_SUITE(validation_tests, BasicTestingSetup)
 static void TestBlockSubsidyHalvings(const Consensus::Params& consensusParams)
 {
     int maxHalvings = 64;
-    CAmount nInitialSubsidy = 50 * COIN;
+    CAmount nInitialSubsidy = static_cast<CAmount>(1ULL << 32);
 
     CAmount nPreviousSubsidy = nInitialSubsidy * 2; // for height == 0
     BOOST_CHECK_EQUAL(nPreviousSubsidy, nInitialSubsidy * 2);
@@ -57,13 +57,16 @@ BOOST_AUTO_TEST_CASE(subsidy_limit_test)
 {
     const auto chainParams = CreateChainParams(*m_node.args, ChainType::MAIN);
     CAmount nSum = 0;
-    for (int nHeight = 0; nHeight < 14000000; nHeight += 1000) {
+    for (int nHeight = 0; nHeight < 56000000; nHeight += 1000) {
         CAmount nSubsidy = GetBlockSubsidy(nHeight, chainParams->GetConsensus());
-        BOOST_CHECK(nSubsidy <= 50 * COIN);
+        BOOST_CHECK(nSubsidy <= static_cast<CAmount>(1ULL << 32));
+        BOOST_CHECK(MoneyRange(nSubsidy));
         nSum += nSubsidy * 1000;
-        BOOST_CHECK(MoneyRange(nSum));
+        // Coarse (*1000) sampling can slightly exceed theoretical MAX_MONEY (=2^53);
+        // do not MoneyRange the running sum — pin the sampled total instead.
     }
-    BOOST_CHECK_EQUAL(nSum, CAmount{2099999997690000});
+    BOOST_CHECK_EQUAL(nSum, CAmount{9009454821715000});
+    BOOST_CHECK(nSum > MAX_MONEY); // documents sampling overshoot vs exact 2^53 cap
 }
 
 BOOST_AUTO_TEST_CASE(signet_parse_tests)
@@ -142,11 +145,11 @@ BOOST_AUTO_TEST_CASE(test_assumeutxo)
     }
 
     const auto out110 = *params->AssumeutxoForHeight(110);
-    BOOST_CHECK_EQUAL(out110.hash_serialized.ToString(), "86e9a1205b418b16dde3a18a78c730e30137e28466bda5dbf6b33ab8fc05447c");
+    BOOST_CHECK_EQUAL(out110.hash_serialized.ToString(), "35d3eeddf22f7ef9dd1a3bdd86dd7547cfc02ef3d1380e5207fd1d766764f62d");
     BOOST_CHECK_EQUAL(out110.m_chain_tx_count, 111U);
 
-    const auto out110_2 = *params->AssumeutxoForBlockhash(uint256{"135eec25a6fb277884e5824e7aa7d052c4868161c99a5122170b5266f86c273d"});
-    BOOST_CHECK_EQUAL(out110_2.hash_serialized.ToString(), "86e9a1205b418b16dde3a18a78c730e30137e28466bda5dbf6b33ab8fc05447c");
+    const auto out110_2 = *params->AssumeutxoForBlockhash(uint256{"f559dee5f05011b02ac30eb556b81c6fa3ed2d7ccc4da8dd0f383c10084ac52a"});
+    BOOST_CHECK_EQUAL(out110_2.hash_serialized.ToString(), "35d3eeddf22f7ef9dd1a3bdd86dd7547cfc02ef3d1380e5207fd1d766764f62d");
     BOOST_CHECK_EQUAL(out110_2.m_chain_tx_count, 111U);
 }
 

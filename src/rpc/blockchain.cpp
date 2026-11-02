@@ -28,6 +28,7 @@
 #include <interfaces/mining.h>
 #include <interfaces/types.h>
 #include <kernel/coinstats.h>
+#include <limits>
 #include <logging/timer.h>
 #include <mw/file/file_path.h>
 #include <mw/models/block/block.h>
@@ -815,8 +816,8 @@ static RPCMethod getblockheader()
                             {RPCResult::Type::NUM, "version", "The block version"},
                             {RPCResult::Type::STR_HEX, "versionHex", "The block version formatted in hexadecimal"},
                             {RPCResult::Type::STR_HEX, "merkleroot", "The merkle root"},
-                            {RPCResult::Type::NUM_TIME, "time", "The block time expressed in " + UNIX_EPOCH_TIME},
-                            {RPCResult::Type::NUM_TIME, "mediantime", "The median block time expressed in " + UNIX_EPOCH_TIME},
+                            {RPCResult::Type::NUM_TIME, "time", "The block time expressed in " + UNIX_EPOCH_TIME_MS},
+                            {RPCResult::Type::NUM_TIME, "mediantime", "The median block time expressed in " + UNIX_EPOCH_TIME_MS},
                             {RPCResult::Type::NUM, "nonce", "The nonce"},
                             {RPCResult::Type::STR_HEX, "bits", "nBits: compact representation of the block difficulty target"},
                             {RPCResult::Type::STR_HEX, "target", "The difficulty target"},
@@ -958,8 +959,8 @@ static std::vector<RPCResult> GetBlockFields(RPCResult tx_result, std::optional<
         {RPCResult::Type::STR_HEX, "merkleroot", "The merkle root"},
     };
     fields.push_back(std::move(tx_result));
-    fields.emplace_back(RPCResult::Type::NUM_TIME, "time", "The block time expressed in " + UNIX_EPOCH_TIME);
-    fields.emplace_back(RPCResult::Type::NUM_TIME, "mediantime", "The median block time expressed in " + UNIX_EPOCH_TIME);
+    fields.emplace_back(RPCResult::Type::NUM_TIME, "time", "The block time expressed in " + UNIX_EPOCH_TIME_MS);
+    fields.emplace_back(RPCResult::Type::NUM_TIME, "mediantime", "The median block time expressed in " + UNIX_EPOCH_TIME_MS);
     fields.emplace_back(RPCResult::Type::NUM, "nonce", "The nonce");
     fields.emplace_back(RPCResult::Type::STR_HEX, "bits", "nBits: compact representation of the block difficulty target");
     fields.emplace_back(RPCResult::Type::STR_HEX, "target", "The difficulty target");
@@ -1125,7 +1126,7 @@ static RPCMethod pruneblockchain()
                 "Attempts to delete block and undo data up to a specified height or timestamp, if eligible for pruning.\n"
                 "Requires `-prune` to be enabled at startup. While pruned data may be re-fetched in some cases (e.g., via `getblockfrompeer`), local deletion is irreversible.\n",
                 {
-                    {"height", RPCArg::Type::NUM, RPCArg::Optional::NO, "The block height to prune up to. May be set to a discrete height, or to a " + UNIX_EPOCH_TIME + "\n"
+                    {"height", RPCArg::Type::NUM, RPCArg::Optional::NO, "The block height to prune up to. May be set to a discrete height, or to a " + UNIX_EPOCH_TIME_MS + "\n"
             "                  to prune blocks whose block time is at least 2 hours older than the provided timestamp."},
                 },
                 RPCResult{
@@ -1145,20 +1146,26 @@ static RPCMethod pruneblockchain()
     Chainstate& active_chainstate = chainman.ActiveChainstate();
     CChain& active_chain = active_chainstate.m_chain;
 
-    int heightParam = request.params[0].getInt<int>();
-    if (heightParam < 0) {
+    // int64: height is small, but timestamp mode uses Unix epoch milliseconds.
+    const int64_t height_or_time{request.params[0].getInt<int64_t>()};
+    if (height_or_time < 0) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Negative block height.");
     }
 
-    // Height value more than a billion is too high to be a block height, and
-    // too low to be a block time (corresponds to timestamp from Sep 2001).
-    if (heightParam > 1000000000) {
+    // Values above 1e11 are treated as millisecond timestamps (year ~1973+ in
+    // ms). Plain block heights never reach that range.
+    int heightParam;
+    if (height_or_time > 100'000'000'000LL) {
         // Add a 2 hour buffer to include blocks which might have had old timestamps
-        const CBlockIndex* pindex = active_chain.FindEarliestAtLeast(heightParam - TIMESTAMP_WINDOW, 0);
+        const CBlockIndex* pindex = active_chain.FindEarliestAtLeast(height_or_time - TIMESTAMP_WINDOW, 0);
         if (!pindex) {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Could not find block with at least the specified timestamp.");
         }
         heightParam = pindex->nHeight;
+    } else if (height_or_time > std::numeric_limits<int>::max()) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Block height out of range.");
+    } else {
+        heightParam = static_cast<int>(height_or_time);
     }
 
     unsigned int height = (unsigned int) heightParam;
@@ -1585,8 +1592,8 @@ RPCMethod getblockchaininfo()
                 {RPCResult::Type::STR_HEX, "bits", "nBits: compact representation of the block difficulty target"},
                 {RPCResult::Type::STR_HEX, "target", "the difficulty target"},
                 {RPCResult::Type::NUM, "difficulty", "the current difficulty"},
-                {RPCResult::Type::NUM_TIME, "time", "the block time expressed in " + UNIX_EPOCH_TIME},
-                {RPCResult::Type::NUM_TIME, "mediantime", "the median block time expressed in " + UNIX_EPOCH_TIME},
+                {RPCResult::Type::NUM_TIME, "time", "the block time expressed in " + UNIX_EPOCH_TIME_MS},
+                {RPCResult::Type::NUM_TIME, "mediantime", "the median block time expressed in " + UNIX_EPOCH_TIME_MS},
                 {RPCResult::Type::NUM, "verificationprogress", "estimate of verification progress [0..1]"},
                 {RPCResult::Type::BOOL, "initialblockdownload", "(debug information) estimate of whether this node is in Initial Block Download mode"},
                 {RPCResult::Type::OBJ, "backgroundvalidation", /*optional=*/true, "state info regarding background validation process",
@@ -1594,7 +1601,7 @@ RPCMethod getblockchaininfo()
                     {RPCResult::Type::NUM, "snapshotheight", "the height of the snapshot block. Background validation verifies the chain from genesis up to this height"},
                     {RPCResult::Type::NUM, "blocks", "the height of the most-work background fully-validated chain. The genesis block has height 0"},
                     {RPCResult::Type::STR, "bestblockhash", "the hash of the currently best block validated in the background"},
-                    {RPCResult::Type::NUM_TIME, "mediantime", "the median block time expressed in " + UNIX_EPOCH_TIME},
+                    {RPCResult::Type::NUM_TIME, "mediantime", "the median block time expressed in " + UNIX_EPOCH_TIME_MS},
                     {RPCResult::Type::NUM, "verificationprogress", "estimate of background verification progress [0..1]"},
                     {RPCResult::Type::STR_HEX, "chainwork", "total amount of work in background validated chain, in hexadecimal"},
                 }},
@@ -2029,7 +2036,7 @@ static RPCMethod getchaintxstats()
                 RPCResult{
                     RPCResult::Type::OBJ, "", "",
                     {
-                        {RPCResult::Type::NUM_TIME, "time", "The timestamp for the final block in the window, expressed in " + UNIX_EPOCH_TIME},
+                        {RPCResult::Type::NUM_TIME, "time", "The timestamp for the final block in the window, expressed in " + UNIX_EPOCH_TIME_MS},
                         {RPCResult::Type::NUM, "txcount", /*optional=*/true,
                          "The total number of transactions in the chain up to that point, if known. "
                          "It may be unknown when using assumeutxo."},
@@ -2052,7 +2059,7 @@ static RPCMethod getchaintxstats()
 {
     ChainstateManager& chainman = EnsureAnyChainman(request.context);
     const CBlockIndex* pindex;
-    int blockcount = 30 * 24 * 60 * 60 / chainman.GetParams().GetConsensus().nPowTargetSpacing; // By default: 1 month
+    int blockcount = static_cast<int>(30LL * 24 * 60 * 60 * 1000 / chainman.GetParams().GetConsensus().nPowTargetSpacing); // By default: 1 month
 
     if (request.params[1].isNull()) {
         LOCK(cs_main);
@@ -2093,12 +2100,15 @@ static RPCMethod getchaintxstats()
     ret.pushKV("window_final_block_height", pindex->nHeight);
     ret.pushKV("window_block_count", blockcount);
     if (blockcount > 0) {
-        ret.pushKV("window_interval", nTimeDiff);
+        // Median times are milliseconds; window_interval is seconds (RPC contract).
+        const int64_t window_interval{nTimeDiff / 1000};
+        ret.pushKV("window_interval", window_interval);
         if (pindex->m_chain_tx_count != 0 && past_block.m_chain_tx_count != 0) {
             const auto window_tx_count = pindex->m_chain_tx_count - past_block.m_chain_tx_count;
             ret.pushKV("window_tx_count", window_tx_count);
-            if (nTimeDiff > 0) {
-                ret.pushKV("txrate", double(window_tx_count) / nTimeDiff);
+            // Help text: txrate only when window_interval > 0 (whole seconds elapsed).
+            if (window_interval > 0) {
+                ret.pushKV("txrate", double(window_tx_count) * 1000.0 / nTimeDiff);
             }
         }
     }

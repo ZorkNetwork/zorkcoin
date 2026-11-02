@@ -83,7 +83,7 @@ class DisconnectBanTest(BitcoinTestFramework):
         assert_equal("192.168.0.1/32", listBeforeShutdown[2]['address'])
 
         self.log.info("setban: test banning with absolute timestamp")
-        self.nodes[1].setban("192.168.0.2", "add", old_time + 120, absolute=True)
+        self.nodes[1].setban("192.168.0.2", "add", (old_time + 120) * 1000, absolute=True)
 
         # Move time forward by 3 seconds so the fourth ban has expired
         self.nodes[1].setmocktime(old_time + 3)

@@ -306,7 +306,7 @@ std::string BCLog::Logger::LogLevelsString() const
     return Join(std::vector<BCLog::Level>{levels.begin(), levels.end()}, ", ", [](BCLog::Level level) { return LogLevelToStr(level); });
 }
 
-std::string BCLog::Logger::LogTimestampStr(SystemClock::time_point now, std::chrono::seconds mocktime) const
+std::string BCLog::Logger::LogTimestampStr(SystemClock::time_point now, int64_t mocktime_ms) const
 {
     std::string strStamped;
 
@@ -314,13 +314,13 @@ std::string BCLog::Logger::LogTimestampStr(SystemClock::time_point now, std::chr
         return strStamped;
 
     const auto now_seconds{std::chrono::time_point_cast<std::chrono::seconds>(now)};
-    strStamped = FormatISO8601DateTime(TicksSinceEpoch<std::chrono::seconds>(now_seconds));
+    strStamped = FormatISO8601DateTime(TicksSinceEpoch<std::chrono::milliseconds>(now_seconds));
     if (m_log_time_micros && !strStamped.empty()) {
         strStamped.pop_back();
         strStamped += strprintf(".%06dZ", Ticks<std::chrono::microseconds>(now - now_seconds));
     }
-    if (mocktime > 0s) {
-        strStamped += " (mocktime: " + FormatISO8601DateTime(count_seconds(mocktime)) + ")";
+    if (mocktime_ms > 0) {
+        strStamped += " (mocktime: " + FormatISO8601DateTime(mocktime_ms) + ")";
     }
     strStamped += ' ';
 

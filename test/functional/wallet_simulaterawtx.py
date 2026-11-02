@@ -9,6 +9,7 @@ from decimal import Decimal
 from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
+    BLOCK_SUBSIDY,
     assert_approx,
     assert_equal,
     assert_raises_rpc_error,
@@ -38,7 +39,7 @@ class SimulateTxTest(BitcoinTestFramework):
         w2 = node.get_wallet_rpc('w2')
 
         self.generatetoaddress(node, COINBASE_MATURITY + 1, w0.getnewaddress())
-        assert_equal(w0.getbalance(), 50.0)
+        assert_equal(w0.getbalance(), BLOCK_SUBSIDY)
         assert_equal(w1.getbalance(), 0.0)
 
         address1 = w1.getnewaddress()

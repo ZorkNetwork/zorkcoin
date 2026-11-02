@@ -9,7 +9,7 @@ import time
 import os
 import shutil
 
-from test_framework.blocktools import MAX_FUTURE_BLOCK_TIME
+from test_framework.blocktools import MAX_FUTURE_BLOCK_TIME_SEC as MAX_FUTURE_BLOCK_TIME
 from test_framework.descriptors import descsum_create
 from test_framework.extendedkey import ExtendedPrivateKey
 from test_framework.test_framework import BitcoinTestFramework

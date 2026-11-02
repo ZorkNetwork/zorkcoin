@@ -72,8 +72,8 @@ class InvalidBlockRequestTest(BitcoinTestFramework):
         # For more information on merkle-root malleability see src/consensus/merkle.cpp.
         self.log.info("Test merkle root malleability.")
 
-        tx1 = create_tx_with_script(block1.vtx[0], 0, script_sig=bytes([OP_TRUE]), amount=50 * COIN)
-        tx2 = create_tx_with_script(tx1, 0, script_sig=bytes([OP_TRUE]), amount=50 * COIN)
+        tx1 = create_tx_with_script(block1.vtx[0], 0, script_sig=bytes([OP_TRUE]), amount=4294967296)
+        tx2 = create_tx_with_script(tx1, 0, script_sig=bytes([OP_TRUE]), amount=4294967296)
         block2 = create_block(tip, height=height, ntime=block_time, txlist=[tx1, tx2])
         block_time += 1
         block2.solve()
@@ -119,7 +119,7 @@ class InvalidBlockRequestTest(BitcoinTestFramework):
 
         # Complete testing of CVE-2018-17144, by checking for the inflation bug.
         # Create a block that spends the output of a tx in a previous block.
-        tx3 = create_tx_with_script(tx2, 0, script_sig=bytes([OP_TRUE]), amount=50 * COIN)
+        tx3 = create_tx_with_script(tx2, 0, script_sig=bytes([OP_TRUE]), amount=4294967296)
         tx3.vin.append(tx3.vin[0])  # Duplicates input
         block4 = create_block(tip, height=height, ntime=block_time, txlist=[tx3])
         block4.solve()
@@ -127,14 +127,15 @@ class InvalidBlockRequestTest(BitcoinTestFramework):
         peer.send_blocks_and_test([block4], node, success=False,  reject_reason='bad-txns-inputs-duplicate')
 
         self.log.info("Test accepting identical block after rejecting it due to a future timestamp.")
-        t = int(time.time())
-        node.setmocktime(t)
-        # Set block time +1 second past max future validity
-        block = create_block(tip, height=height, ntime=t + MAX_FUTURE_BLOCK_TIME + 1)
+        t_sec = int(time.time())
+        t_ms = t_sec * 1000
+        node.setmocktime(t_sec)
+        # Set block time +1 ms past max future validity (header times are milliseconds).
+        block = create_block(tip, height=height, ntime=t_ms + MAX_FUTURE_BLOCK_TIME + 1)
         block.solve()
         # Need force_send because the block will get rejected without a getdata otherwise
         peer.send_blocks_and_test([block], node, force_send=True, success=False, reject_reason='time-too-new')
-        node.setmocktime(t + 1)
+        node.setmocktime(t_sec + 1)
         peer.send_blocks_and_test([block], node, success=True)
 
 

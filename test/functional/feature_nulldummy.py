@@ -31,6 +31,7 @@ from test_framework.script import (
 )
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
+    BLOCK_SUBSIDY,
     assert_equal,
     assert_raises_rpc_error,
 )
@@ -83,25 +84,25 @@ class NULLDUMMYTest(BitcoinTestFramework):
         self.generate(self.nodes[0], COINBASE_MATURITY)  # block height = COINBASE_MATURITY + 2
         self.lastblockhash = self.nodes[0].getbestblockhash()
         self.lastblockheight = COINBASE_MATURITY + 2
-        self.lastblocktime = int(time.time()) + self.lastblockheight
+        self.lastblocktime = int(time.time() * 1000) + self.lastblockheight * 1000
 
         self.log.info(f"Test 1: NULLDUMMY compliant base transactions should be accepted to mempool and mined before activation [{COINBASE_MATURITY + 3}]")
-        test1txs = [self.create_transaction(txid=coinbase_txid[0], addr=self.ms_address, amount=49,
+        test1txs = [self.create_transaction(txid=coinbase_txid[0], addr=self.ms_address, amount=BLOCK_SUBSIDY - 1,
                                             privkey=self.nodes[0].get_deterministic_priv_key().key)]
         txid1 = self.nodes[0].sendrawtransaction(test1txs[0].serialize_with_witness().hex(), 0)
         test1txs.append(self.create_transaction(txid=txid1, input_details=ms_unlock_details,
-                                                addr=self.ms_address, amount=48,
+                                                addr=self.ms_address, amount=BLOCK_SUBSIDY - 2,
                                                 privkey=self.privkey))
         txid2 = self.nodes[0].sendrawtransaction(test1txs[1].serialize_with_witness().hex(), 0)
         test1txs.append(self.create_transaction(txid=coinbase_txid[1],
-                                                addr=self.wit_ms_address, amount=49,
+                                                addr=self.wit_ms_address, amount=BLOCK_SUBSIDY - 1,
                                                 privkey=self.nodes[0].get_deterministic_priv_key().key))
         txid3 = self.nodes[0].sendrawtransaction(test1txs[2].serialize_with_witness().hex(), 0)
         self.block_submit(self.nodes[0], test1txs, accept=True)
 
         self.log.info("Test 2: Non-NULLDUMMY base multisig transaction should not be accepted to mempool before activation")
         test2tx = self.create_transaction(txid=txid2, input_details=ms_unlock_details,
-                                          addr=self.ms_address, amount=47,
+                                          addr=self.ms_address, amount=BLOCK_SUBSIDY - 3,
                                           privkey=self.privkey)
         invalidate_nulldummy_tx(test2tx)
         assert_raises_rpc_error(-26, NULLDUMMY_TX_ERROR, self.nodes[0].sendrawtransaction, test2tx.serialize_with_witness().hex(), 0)
@@ -111,7 +112,7 @@ class NULLDUMMYTest(BitcoinTestFramework):
 
         self.log.info("Test 4: Non-NULLDUMMY base multisig transaction is invalid after activation")
         test4tx = self.create_transaction(txid=test2tx.txid_hex, input_details=ms_unlock_details,
-                                          addr=getnewdestination()[2], amount=46,
+                                          addr=getnewdestination()[2], amount=BLOCK_SUBSIDY - 4,
                                           privkey=self.privkey)
         test6txs = [CTransaction(test4tx)]
         invalidate_nulldummy_tx(test4tx)
@@ -120,8 +121,8 @@ class NULLDUMMYTest(BitcoinTestFramework):
 
         self.log.info("Test 5: Non-NULLDUMMY P2WSH multisig transaction invalid after activation")
         test5tx = self.create_transaction(txid=txid3, input_details={"scriptPubKey": test1txs[2].vout[0].scriptPubKey.hex(),
-                                          "amount": 49, "witnessScript": wms["redeemScript"]},
-                                          addr=getnewdestination(address_type='p2sh-segwit')[2], amount=48,
+                                          "amount": float(BLOCK_SUBSIDY - 1), "witnessScript": wms["redeemScript"]},
+                                          addr=getnewdestination(address_type='p2sh-segwit')[2], amount=BLOCK_SUBSIDY - 2,
                                           privkey=self.privkey)
         test6txs.append(CTransaction(test5tx))
         test5tx.wit.vtxinwit[0].scriptWitness.stack[0] = b'\x01'

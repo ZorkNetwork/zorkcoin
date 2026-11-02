@@ -162,7 +162,8 @@ struct MinedBlock
 // synthetic genesis HogAddr. Keep the coin database on disk for reopen checks.
 class MWEBChainstateTestingSetup : public TestChain100Setup
 {
-    static constexpr uint32_t MWEB_START_TIME{1601450001};
+    static constexpr int64_t MWEB_START_TIME{1601450001LL * 1000};
+    static constexpr int64_t MWEB_START_TIME_SEC{1601450001};
     static constexpr int FIRST_MWEB_HEIGHT{432};
     static constexpr CAmount CANONICAL_FEE{20'000};
     size_t m_funding_index{0};
@@ -170,10 +171,10 @@ class MWEBChainstateTestingSetup : public TestChain100Setup
 public:
     MWEBChainstateTestingSetup()
         : TestChain100Setup(ChainType::REGTEST, {
-              .extra_args = {"-vbparams=mweb:1601450001:9999999999"},
+              .extra_args = {"-vbparams=mweb:1601450001000:9999999999000"},
               .coins_db_in_memory = false})
     {
-        SetMockTime(std::chrono::seconds{MWEB_START_TIME});
+        SetMockTime(std::chrono::seconds{MWEB_START_TIME_SEC});
         while (WITH_LOCK(cs_main, return State().m_chain.Height()) < FIRST_MWEB_HEIGHT - 1) Mine();
     }
 
@@ -204,11 +205,11 @@ public:
         auto block = PrepareBlock(m_node, {.coinbase_output_script = P2WSH_OP_TRUE});
         {
             LOCK(cs_main);
-            block->nTime = std::max<uint32_t>(State().m_chain.Tip()->GetMedianTimePast() + 1, MWEB_START_TIME);
+            block->nTime = std::max<int64_t>(State().m_chain.Tip()->GetMedianTimePast() + 1, MWEB_START_TIME);
         }
         block->hashMerkleRoot = BlockMerkleRoot(*block);
         node::RegenerateCommitments(*block, *Assert(m_node.chainman));
-        while (!CheckProofOfWork(block->GetHash(), block->nBits, Params().GetConsensus())) ++block->nNonce;
+        while (!CheckProofOfWork(block->GetPoWHash(), block->nBits, Params().GetConsensus())) ++block->nNonce;
         BOOST_REQUIRE(!ProcessBlock(m_node, block).IsNull());
         LOCK(cs_main);
         CBlock stored;

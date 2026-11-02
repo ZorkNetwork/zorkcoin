@@ -22,9 +22,9 @@ BOOST_AUTO_TEST_CASE(file)
     {
         const std::string entries_write{
             "{ \"banned_nets\": ["
-            "  { \"version\": 1, \"ban_created\": 0, \"banned_until\": 778, \"address\": \"aaaaaaaaa\" },"
-            "  { \"version\": 2, \"ban_created\": 0, \"banned_until\": 778, \"address\": \"bbbbbbbbb\" },"
-            "  { \"version\": 1, \"ban_created\": 0, \"banned_until\": 778, \"address\": \"1.0.0.0/8\" }"
+            "  { \"version\": 1, \"ban_created\": 0, \"banned_until\": 778000, \"address\": \"aaaaaaaaa\" },"
+            "  { \"version\": 2, \"ban_created\": 0, \"banned_until\": 778000, \"address\": \"bbbbbbbbb\" },"
+            "  { \"version\": 1, \"ban_created\": 0, \"banned_until\": 778000, \"address\": \"1.0.0.0/8\" }"
             "] }",
         };
         BOOST_REQUIRE(WriteBinaryFile(banlist_path + ".json", entries_write));

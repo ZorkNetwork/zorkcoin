@@ -12,7 +12,7 @@
 
 // Our memory analysis in headerssync-params.py assumes this many bytes for a
 // CompressedHeader (we should re-calculate parameters if we compress further).
-static_assert(sizeof(CompressedHeader) == 48);
+static_assert(sizeof(CompressedHeader) == 64);
 
 HeadersSyncState::HeadersSyncState(NodeId id,
                                    const Consensus::Params& consensus_params,
@@ -39,13 +39,13 @@ HeadersSyncState::HeadersSyncState(NodeId id,
     // chain to be longer than this (at the current time -- in the future we
     // could try again, if necessary, to sync a longer chain).
     const auto now{NodeClock::now()};
-    const int64_t max_seconds_since_start{Ticks<std::chrono::seconds>(now - NodeSeconds{std::chrono::seconds{chain_start.GetMedianTimePast()}})
-                                          + MAX_FUTURE_BLOCK_TIME};
+    const int64_t max_seconds_since_start{Ticks<std::chrono::seconds>(now - NodeSeconds{std::chrono::seconds{chain_start.GetMedianTimePast() / 1000}})
+                                          + MAX_FUTURE_BLOCK_TIME / 1000};
     if (max_seconds_since_start < 0) {
         throw SystemClockError{strprintf(
             "System clock is more than %d minutes behind chain start MTP (%s vs %s).",
-            MAX_FUTURE_BLOCK_TIME / 60,
-            FormatISO8601DateTime(TicksSinceEpoch<std::chrono::seconds>(now)),
+            MAX_FUTURE_BLOCK_TIME / (60 * 1000),
+            FormatISO8601DateTime(TicksSinceEpoch<std::chrono::milliseconds>(now)),
             FormatISO8601DateTime(chain_start.GetMedianTimePast()))};
     }
     m_max_commitments = 6 * max_seconds_since_start / m_params.commitment_period;

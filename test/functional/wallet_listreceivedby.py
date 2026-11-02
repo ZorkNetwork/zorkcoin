@@ -8,6 +8,7 @@ from decimal import Decimal
 from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
+    BLOCK_SUBSIDY,
     assert_array_result,
     assert_equal,
     assert_raises_rpc_error,
@@ -198,7 +199,7 @@ class ReceivedByTest(BitcoinTestFramework):
         label = "label"
         address = self.nodes[0].getnewaddress(label)
 
-        reward = Decimal("25")
+        reward = BLOCK_SUBSIDY / 2  # first halving at height 150 on regtest
         self.generatetoaddress(self.nodes[0], 1, address)
         hash = self.nodes[0].getbestblockhash()
 

@@ -6,7 +6,7 @@
 
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.mweb_util import mweb_extra_args
-from test_framework.util import assert_equal, assert_raises_rpc_error
+from test_framework.util import assert_equal, assert_raises_rpc_error, BLOCK_SUBSIDY
 
 class MWEBBasicTest(BitcoinTestFramework):
     def set_test_params(self):
@@ -52,7 +52,8 @@ class MWEBBasicTest(BitcoinTestFramework):
             utxo1 = utxos[0]
 
         assert utxo0['amount'] == 10 and utxo0['address'] == addr0
-        assert 2 < utxo1['amount'] < 2.5  # change from single ~12.5 BTC mature coinbase being spent
+        # After 430+ blocks, subsidy has halved twice (interval 150); pegin spends ~10.74.
+        assert 0 < utxo1['amount'] < 2  # change from halved coinbase after 10 ZORK pegin
 
         self.log.info("MWEB listunspent matches Litecoin Core field set (no synthetic vout/desc)")
         for utxo in utxos:

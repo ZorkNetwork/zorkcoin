@@ -5,16 +5,31 @@
 
 #include <primitives/block.h>
 
+#include <crypto/kheavyhash.h>
 #include <hash.h>
 #include <tinyformat.h>
 
 #include <cassert>
 #include <memory>
+#include <span>
 #include <sstream>
 
 uint256 CBlockHeader::GetHash() const
 {
     return (HashWriter{} << *this).GetHash();
+}
+
+uint256 CBlockHeader::GetPoWHash() const
+{
+    uint256 output;
+    std::span<const unsigned char> time{reinterpret_cast<const unsigned char*>(&nTime), sizeof(uint64_t)};
+    std::span<const unsigned char> nonce{reinterpret_cast<const unsigned char*>(&nNonce), sizeof(uint64_t)};
+
+    const uint256 prePowHash = GetPrePowBlockHeader().GetHash();
+    KHeavyHash work{prePowHash};
+    work.Write(prePowHash).Write(time).Write(uint256::ZERO).Write(nonce);
+    work.Finalize(output);
+    return output;
 }
 
 std::string CBlock::ToString() const

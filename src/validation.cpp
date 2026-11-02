@@ -875,6 +875,8 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
 
     // Copy/alias what we need out of args
     const int64_t nAcceptTime = args.m_accept_time;
+    // Mempool entry times are stored in seconds; GetTime() returns milliseconds.
+    const int64_t nAcceptTimeSec = nAcceptTime / 1000;
     const bool bypass_limits = args.m_bypass_limits;
     std::vector<COutPoint>& coins_to_uncache = args.m_coins_to_uncache;
 
@@ -1053,7 +1055,7 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
     if (!m_subpackage.m_changeset) {
         m_subpackage.m_changeset = m_pool.GetChangeSet();
     }
-    ws.m_tx_handle = m_subpackage.m_changeset->StageAddition(ptx, ws.m_base_fees, nAcceptTime, m_active_chainstate.m_chain.Height(), entry_sequence, fSpendsCoinbase, nSigOpsCost, lock_points.value());
+    ws.m_tx_handle = m_subpackage.m_changeset->StageAddition(ptx, ws.m_base_fees, nAcceptTimeSec, m_active_chainstate.m_chain.Height(), entry_sequence, fSpendsCoinbase, nSigOpsCost, lock_points.value());
 
     // ws.m_modified_fees includes any fee deltas from PrioritiseTransaction
     ws.m_modified_fees = ws.m_tx_handle->GetModifiedFee();
@@ -2013,8 +2015,8 @@ CAmount GetBlockSubsidy(int nHeight, const Consensus::Params& consensusParams)
     if (halvings >= 64)
         return 0;
 
-    CAmount nSubsidy = 50 * COIN;
-    // Subsidy is cut in half every 210,000 blocks which will occur approximately every 4 years.
+    // Base subsidy is 2^32 satoshis (~42.94967296 ZORK).
+    CAmount nSubsidy = static_cast<CAmount>(1ULL << 32);
     nSubsidy >>= halvings;
     return nSubsidy;
 }
@@ -2649,7 +2651,7 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
     if (m_chainman.AssumedValidBlock().IsNull()) {
         script_check_reason = "assumevalid=0 (always verify)";
     } else {
-        constexpr int64_t TWO_WEEKS_IN_SECONDS{60 * 60 * 24 * 7 * 2};
+        constexpr int64_t TWO_WEEKS_IN_MS{60LL * 60 * 24 * 7 * 2 * 1000};
         // We've been configured with the hash of a block which has been externally verified to have a valid history.
         // A suitable default value is included with the software and updated from time to time.  Because validity
         //  relative to a piece of software is an objective fact these defaults can be easily reviewed.
@@ -2664,7 +2666,7 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
             script_check_reason = "block not in best header chain";
         } else if (m_chainman.m_best_header->nChainWork < m_chainman.MinimumChainWork()) {
             script_check_reason = "best header chainwork below minimumchainwork";
-        } else if (GetBlockProofEquivalentTime(*m_chainman.m_best_header, *pindex, *m_chainman.m_best_header, params.GetConsensus()) <= TWO_WEEKS_IN_SECONDS) {
+        } else if (GetBlockProofEquivalentTime(*m_chainman.m_best_header, *pindex, *m_chainman.m_best_header, params.GetConsensus()) <= TWO_WEEKS_IN_MS) {
             script_check_reason = "block too recent relative to best header";
         } else {
             // This block is a member of the assumed verified chain and an ancestor of the best header.
@@ -4240,7 +4242,7 @@ void ChainstateManager::ReceivedBlockTransactions(const CBlock& block, CBlockInd
 static bool CheckBlockHeader(const CBlockHeader& block, BlockValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW = true)
 {
     // Check proof of work matches claimed amount
-    if (fCheckPOW && !CheckProofOfWork(block.GetHash(), block.nBits, consensusParams))
+    if (fCheckPOW && !CheckProofOfWork(block.GetPoWHash(), block.nBits, consensusParams))
         return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "high-hash", "proof of work failed");
 
     return true;
@@ -4447,7 +4449,7 @@ void ChainstateManager::GenerateCoinbaseCommitment(CBlock& block, const CBlockIn
 bool HasValidProofOfWork(std::span<const CBlockHeader> headers, const Consensus::Params& consensusParams)
 {
     return std::ranges::all_of(headers,
-                               [&](const auto& header) { return CheckProofOfWork(header.GetHash(), header.nBits, consensusParams); });
+                               [&](const auto& header) { return CheckProofOfWork(header.GetPoWHash(), header.nBits, consensusParams); });
 }
 
 bool IsBlockMutated(const CBlock& block, bool check_witness_root)
@@ -4531,7 +4533,7 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidatio
     }
 
     // Check timestamp
-    if (block.Time() > NodeClock::now() + std::chrono::seconds{MAX_FUTURE_BLOCK_TIME}) {
+    if (block.Time() > NodeClock::now() + std::chrono::milliseconds{MAX_FUTURE_BLOCK_TIME}) {
         return state.Invalid(BlockValidationResult::BLOCK_TIME_FUTURE, "time-too-new", "block timestamp too far in the future");
     }
 
@@ -4726,7 +4728,7 @@ void ChainstateManager::ReportHeadersPresync(int64_t height, int64_t timestamp)
     bool initial_download = IsInitialBlockDownload();
     GetNotifications().headerTip(GetSynchronizationState(initial_download, m_blockman.m_blockfiles_indexed), height, timestamp, /*presync=*/true);
     if (initial_download) {
-        int64_t blocks_left{(NodeClock::now() - NodeSeconds{std::chrono::seconds{timestamp}}) / GetConsensus().PowTargetSpacing()};
+        int64_t blocks_left{(NodeClock::now() - NodeMilliseconds{std::chrono::milliseconds{timestamp}}) / GetConsensus().PowTargetSpacing()};
         blocks_left = std::max<int64_t>(0, blocks_left);
         const double progress{100.0 * height / (height + blocks_left)};
         LogInfo("Pre-synchronizing blockheaders, height: %d (~%.2f%%)\n", height, progress);
@@ -6033,25 +6035,27 @@ double ChainstateManager::GuessVerificationProgress(const CBlockIndex* pindex) c
         return 0.0;
     }
 
-    const int64_t nNow{TicksSinceEpoch<std::chrono::seconds>(NodeClock::now())};
-    const auto block_time{
-        (Assume(m_best_header) && std::abs(nNow - pindex->GetBlockTime()) <= Ticks<std::chrono::seconds>(2h) &&
+    const int64_t nNow_ms{TicksSinceEpoch<std::chrono::milliseconds>(NodeClock::now())};
+    const int64_t nNow_s{TicksSinceEpoch<std::chrono::seconds>(NodeClock::now())};
+    const auto block_time_ms{
+        (Assume(m_best_header) && std::abs(nNow_ms - pindex->GetBlockTime()) <= Ticks<std::chrono::milliseconds>(2h) &&
          Assume(m_best_header->nHeight >= pindex->nHeight)) ?
             // When the header is known to be recent, switch to a height-based
             // approach. This ensures the returned value is quantized when
             // close to "1.0", because some users expect it to be. This also
             // avoids relying too much on the exact miner-set timestamp, which
             // may be off.
-            nNow - (m_best_header->nHeight - pindex->nHeight) * GetConsensus().nPowTargetSpacing :
+            nNow_ms - (m_best_header->nHeight - pindex->nHeight) * GetConsensus().nPowTargetSpacing :
             pindex->GetBlockTime(),
     };
+    const int64_t block_time{block_time_ms / 1000};
 
     double fTxTotal;
 
     if (pindex->m_chain_tx_count <= data.tx_count) {
-        fTxTotal = data.tx_count + (nNow - data.nTime) * data.dTxRate;
+        fTxTotal = data.tx_count + (nNow_s - data.nTime) * data.dTxRate;
     } else {
-        fTxTotal = pindex->m_chain_tx_count + (nNow - block_time) * data.dTxRate;
+        fTxTotal = pindex->m_chain_tx_count + (nNow_s - block_time) * data.dTxRate;
     }
 
     return std::min<double>(pindex->m_chain_tx_count / fTxTotal, 1.0);

@@ -89,16 +89,14 @@ int64_t UpdateTime(CBlockHeader* pblock, const Consensus::Params& consensusParam
 {
     int64_t nOldTime = pblock->nTime;
     int64_t nNewTime{std::max<int64_t>(GetMinimumTime(pindexPrev, consensusParams.DifficultyAdjustmentInterval()),
-                                       TicksSinceEpoch<std::chrono::seconds>(NodeClock::now()))};
+                                       TicksSinceEpoch<std::chrono::milliseconds>(NodeClock::now()))};
 
     if (nOldTime < nNewTime) {
         pblock->nTime = nNewTime;
     }
 
-    // Updating time can change work required on testnet:
-    if (consensusParams.fPowAllowMinDifficultyBlocks) {
-        pblock->nBits = GetNextWorkRequired(pindexPrev, pblock, consensusParams);
-    }
+    // ASERT (and testnet min-diff) depend on the candidate header time.
+    pblock->nBits = GetNextWorkRequired(pindexPrev, pblock, consensusParams);
 
     return nNewTime - nOldTime;
 }
@@ -143,7 +141,7 @@ void BlockAssembler::resetBlock()
 
     // Serialized-size baseline: header + max CompactSize(vtx) + coinbase pad.
     // MWEB HogEx / extension reserve is added once fIncludeMWEB is known.
-    constexpr size_t BLOCK_HEADER_BYTES = 80;
+    const size_t BLOCK_HEADER_BYTES = ::GetSerializeSize(CBlockHeader{});
     constexpr size_t MAX_COMPACTSIZE_BYTES = 9;
     nBlockSerializedSize = BLOCK_HEADER_BYTES + MAX_COMPACTSIZE_BYTES + MWEB::BLOCK_SERIALIZED_COINBASE_RESERVE;
 
@@ -177,7 +175,7 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
         pblock->nVersion = gArgs.GetIntArg("-blockversion", pblock->nVersion);
     }
 
-    pblock->nTime = TicksSinceEpoch<std::chrono::seconds>(NodeClock::now());
+    pblock->nTime = TicksSinceEpoch<std::chrono::milliseconds>(NodeClock::now());
     m_lock_time_cutoff = pindexPrev->GetMedianTimePast();
 
     // MWEB: Every block after activation needs the extension block and HogEx,
@@ -638,7 +636,7 @@ void BlockAssembler::addChunks()
     AddResidualFill(included);
 }
 
-void AddMerkleRootAndCoinbase(CBlock& block, CTransactionRef coinbase, uint32_t version, uint32_t timestamp, uint32_t nonce)
+void AddMerkleRootAndCoinbase(CBlock& block, CTransactionRef coinbase, uint32_t version, uint64_t timestamp, uint64_t nonce)
 {
     if (block.vtx.size() == 0) {
         block.vtx.emplace_back(coinbase);
@@ -740,8 +738,11 @@ std::unique_ptr<CBlockTemplate> WaitAndCreateNewBlock(ChainstateManager& chainma
 
     // Alternate waiting for a new tip and checking if fees have risen.
     // The latter check is expensive so we only run it once per second.
-    auto now{NodeClock::now()};
-    const auto deadline = now + wait_options.timeout;
+    // Use SteadyClock for the wait deadline: NodeClock may be mocked to a
+    // future launch genesis, and wait_until(NodeClock) would sleep until that
+    // wall-calendar time on the real system clock.
+    auto now_steady{SteadyClock::now()};
+    const auto deadline = now_steady + wait_options.timeout;
     const MillisecondsDouble tick{1000};
     const bool allow_min_difficulty{chainman.GetParams().GetConsensus().fPowAllowMinDifficultyBlocks};
 
@@ -750,7 +751,7 @@ std::unique_ptr<CBlockTemplate> WaitAndCreateNewBlock(ChainstateManager& chainma
         {
             WAIT_LOCK(kernel_notifications.m_tip_block_mutex, lock);
             // Note that wait_until() checks the predicate before waiting
-            kernel_notifications.m_tip_block_cv.wait_until(lock, std::min(now + tick, deadline), [&]() EXCLUSIVE_LOCKS_REQUIRED(kernel_notifications.m_tip_block_mutex) {
+            kernel_notifications.m_tip_block_cv.wait_until(lock, std::min(now_steady + tick, deadline), [&]() EXCLUSIVE_LOCKS_REQUIRED(kernel_notifications.m_tip_block_mutex) {
                 AssertLockHeld(kernel_notifications.m_tip_block_mutex);
                 const auto tip_block{kernel_notifications.TipBlock()};
                 // We assume tip_block is set, because this is an instance
@@ -774,8 +775,8 @@ std::unique_ptr<CBlockTemplate> WaitAndCreateNewBlock(ChainstateManager& chainma
 
         // On test networks return a minimum difficulty block after 20 minutes
         if (!tip_changed && allow_min_difficulty) {
-            const NodeClock::time_point tip_time{std::chrono::seconds{chainman.ActiveChain().Tip()->GetBlockTime()}};
-            if (now > tip_time + 20min) {
+            const NodeClock::time_point tip_time{std::chrono::milliseconds{chainman.ActiveChain().Tip()->GetBlockTime()}};
+            if (NodeClock::now() > tip_time + 20min) {
                 tip_changed = true;
             }
         }
@@ -809,8 +810,8 @@ std::unique_ptr<CBlockTemplate> WaitAndCreateNewBlock(ChainstateManager& chainma
             if (new_fees >= current_fees + wait_options.fee_threshold) return new_tmpl;
         }
 
-        now = NodeClock::now();
-    } while (now < deadline);
+        now_steady = SteadyClock::now();
+    } while (now_steady < deadline);
 
     return nullptr;
 }

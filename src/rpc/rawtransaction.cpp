@@ -367,7 +367,7 @@ static RPCMethod getrawtransaction()
         {RPCResult::Type::STR_HEX, "blockhash", /*optional=*/true, "the block hash"},
         {RPCResult::Type::NUM, "vsize_adjusted", /*optional=*/true, "Sigop-adjusted virtual size in bytes, present for mempool transactions."},
         {RPCResult::Type::NUM, "confirmations", /*optional=*/true, "The confirmations"},
-        {RPCResult::Type::NUM_TIME, "blocktime", /*optional=*/true, "The block time expressed in " + UNIX_EPOCH_TIME},
+        {RPCResult::Type::NUM_TIME, "blocktime", /*optional=*/true, "The block time expressed in " + UNIX_EPOCH_TIME_MS},
         {RPCResult::Type::NUM, "time", /*optional=*/true, "Same as \"blocktime\""},
         {RPCResult::Type::STR_HEX, "hex", "The serialized, hex-encoded data for 'txid'"},
     };

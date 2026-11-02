@@ -10,6 +10,7 @@ Generate several blocks and test them against the getblocktemplate RPC.
 from concurrent.futures import ThreadPoolExecutor
 
 import copy
+import time
 
 from test_framework.blocktools import (
     create_block,
@@ -138,7 +139,8 @@ class MiningTemplateVerificationTest(BitcoinTestFramework):
     def bad_timestamp_test(self, node, block):
         self.log.info("Bad timestamps")
         bad_block = copy.deepcopy(block)
-        bad_block.nTime = 2**32 - 1
+        # Header nTime is milliseconds; 2**32-1 seconds would be early 1970 as ms.
+        bad_block.nTime = int(time.time() * 1000) + 3 * 60 * 60 * 1000
         assert_template(node, bad_block, 'time-too-new')
         bad_block.nTime = 0
         assert_template(node, bad_block, 'time-too-old')
@@ -156,7 +158,7 @@ class MiningTemplateVerificationTest(BitcoinTestFramework):
         self.log.info("Generate a block")
         target = uint256_from_compact(block.nBits)
         # Ensure that it doesn't meet the target by coincidence
-        while block.hash_int <= target:
+        while block.pow_hash_int <= target:
             block.nNonce += 1
         self.log.debug("Found a nonce")
 

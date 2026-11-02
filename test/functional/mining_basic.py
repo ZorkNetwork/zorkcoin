@@ -52,8 +52,8 @@ from test_framework.wallet import (
 
 
 DIFFICULTY_ADJUSTMENT_INTERVAL = 144
-MAX_FUTURE_BLOCK_TIME = 2 * 3600
-MAX_TIMEWARP = 600
+MAX_FUTURE_BLOCK_TIME = 2 * 3600 * 1000  # milliseconds
+MAX_TIMEWARP = 600 * 1000
 VERSIONBITS_TOP_BITS = 0x20000000
 VERSIONBITS_DEPLOYMENT_TESTDUMMY_BIT = 28
 DEFAULT_BLOCK_MIN_TX_FEE = 1 # default `-blockmintxfee` setting [sat/kvB]
@@ -204,10 +204,12 @@ class MiningTest(BitcoinTestFramework):
         self.log.info("Mine until the last block of the retarget period")
         blockchain_info = self.nodes[0].getblockchaininfo()
         n = DIFFICULTY_ADJUSTMENT_INTERVAL - blockchain_info['blocks'] % DIFFICULTY_ADJUSTMENT_INTERVAL - 2
-        t = blockchain_info['time']
+        # Tip time is ms (may include wall-clock subseconds after restart).
+        # setmocktime takes seconds, so align to whole seconds for round-trips.
+        t = (blockchain_info['time'] // 1000) * 1000
 
         for _ in range(n):
-            t += 600
+            t += 600_000
             self.nodes[0].setmocktime(t)
             self.generate(self.wallet, 1, sync_fun=self.no_op)
 

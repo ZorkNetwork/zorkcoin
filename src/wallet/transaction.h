@@ -209,7 +209,7 @@ public:
     std::vector<std::string> m_messages;
     // BIP 70 Payment Request (deprecated, field kept to preserve metadata from old wallets)
     std::vector<std::string> m_payment_requests;
-    unsigned int nTimeReceived; //!< time received by this node
+    uint64_t nTimeReceived; //!< time received by this node, milliseconds since epoch
     /**
      * Stable timestamp that never changes, and reflects the order a transaction
      * was added to the wallet. Timestamp is based on the block time for a
@@ -219,7 +219,7 @@ public:
      * were added to the wallet. More details can be found in
      * CWallet::ComputeTimeSmart().
      */
-    unsigned int nTimeSmart;
+    uint64_t nTimeSmart;
     // Cached value for whether the transaction spends any inputs known to the wallet
     mutable std::optional<bool> m_cached_from_me{std::nullopt};
     int64_t nOrderPos; //!< position in ordered transaction list
@@ -288,7 +288,7 @@ public:
         if (m_replaced_by_txid) string_values["replaced_by_txid"] = m_replaced_by_txid->ToString();
         string_values["fromaccount"] = "";
         if (nOrderPos != -1) string_values["n"] = util::ToString(nOrderPos);
-        if (nTimeSmart) string_values["timesmart"] = strprintf("%u", nTimeSmart);
+        if (nTimeSmart) string_values["timesmart"] = util::ToString(nTimeSmart);
         if (mweb_wtx_info) string_values["mweb_info"] = mweb_wtx_info->ToHex(); // MWEB hooks
 
         std::vector<std::pair<std::string, std::string>> msgs_reqs;
@@ -332,7 +332,7 @@ public:
         string_values.erase("spent");
         for (const auto& [key, value] : string_values) {
             if (key == "n") nOrderPos = LocaleIndependentAtoi<int64_t>(value);
-            else if (key == "timesmart") nTimeSmart = LocaleIndependentAtoi<int64_t>(value);
+            else if (key == "timesmart") nTimeSmart = LocaleIndependentAtoi<uint64_t>(value);
             else if (key == "from") m_from = value;
             else if (key == "message") m_message = value;
             else if (key == "comment") m_comment = value;

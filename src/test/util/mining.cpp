@@ -8,7 +8,9 @@
 #include <chain.h>
 #include <chainparams.h>
 #include <consensus/merkle.h>
+#include <consensus/params.h>
 #include <consensus/validation.h>
+#include <crypto/kheavyhash.h>
 #include <interfaces/mining.h>
 #include <key_io.h>
 #include <node/context.h>
@@ -30,6 +32,23 @@
 #include <utility>
 
 using node::NodeContext;
+
+void GrindBlockPoW(CBlockHeader& header, const Consensus::Params& params)
+{
+    const uint256 pre_pow = header.GetPrePowBlockHeader().GetHash();
+    const KHeavyHash base{pre_pow};
+    const std::span<const unsigned char> time{reinterpret_cast<const unsigned char*>(&header.nTime), sizeof(header.nTime)};
+    header.nNonce = 0;
+    for (;;) {
+        KHeavyHash work{base};
+        uint256 pow;
+        const std::span<const unsigned char> nonce{reinterpret_cast<const unsigned char*>(&header.nNonce), sizeof(header.nNonce)};
+        work.Write(pre_pow).Write(time).Write(uint256::ZERO).Write(nonce).Finalize(pow);
+        if (CheckProofOfWork(pow, header.nBits, params)) return;
+        ++header.nNonce;
+        assert(header.nNonce);
+    }
+}
 
 COutPoint generatetoaddress(const NodeContext& node, const std::string& address)
 {
@@ -65,12 +84,7 @@ std::vector<std::shared_ptr<CBlock>> CreateBlockChain(size_t total_height, const
         block.hashMerkleRoot = BlockMerkleRoot(block);
         block.nTime = ++time;
         block.nBits = params.GenesisBlock().nBits;
-        block.nNonce = 0;
-
-        while (!CheckProofOfWork(block.GetHash(), block.nBits, params.GetConsensus())) {
-            ++block.nNonce;
-            assert(block.nNonce);
-        }
+        GrindBlockPoW(block, params.GetConsensus());
     }
     return ret;
 }
@@ -103,7 +117,7 @@ bool BuildChain(const NodeContext& node, const CBlockIndex* pindex,
             block.hashMerkleRoot = BlockMerkleRoot(block);
         }
 
-        while (!CheckProofOfWork(block.GetHash(), block.nBits, consensus)) ++block.nNonce;
+        GrindBlockPoW(block, consensus);
 
         chain_block = std::make_shared<CBlock>(std::move(block));
 
@@ -142,10 +156,7 @@ protected:
 
 COutPoint MineBlock(const NodeContext& node, std::shared_ptr<CBlock>& block)
 {
-    while (!CheckProofOfWork(block->GetHash(), block->nBits, Params().GetConsensus())) {
-        ++block->nNonce;
-        assert(block->nNonce);
-    }
+    GrindBlockPoW(*block, Params().GetConsensus());
 
     return ProcessBlock(node, block);
 }

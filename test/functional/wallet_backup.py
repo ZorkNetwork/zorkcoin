@@ -37,6 +37,7 @@ from random import randint
 from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
+    BLOCK_SUBSIDY,
     assert_equal,
     assert_raises_rpc_error,
     sha256sum_file,
@@ -200,9 +201,9 @@ class WalletBackupTest(BitcoinTestFramework):
         self.generate(self.nodes[2], 1)
         self.generate(self.nodes[3], COINBASE_MATURITY)
 
-        assert_equal(self.nodes[0].getbalance(), 50)
-        assert_equal(self.nodes[1].getbalance(), 50)
-        assert_equal(self.nodes[2].getbalance(), 50)
+        assert_equal(self.nodes[0].getbalance(), BLOCK_SUBSIDY)
+        assert_equal(self.nodes[1].getbalance(), BLOCK_SUBSIDY)
+        assert_equal(self.nodes[2].getbalance(), BLOCK_SUBSIDY)
         assert_equal(self.nodes[3].getbalance(), 0)
 
         self.log.info("Creating transactions")
@@ -229,8 +230,8 @@ class WalletBackupTest(BitcoinTestFramework):
         total = balance0 + balance1 + balance2 + balance3
 
         # At this point, there are 214 blocks (103 for setup, then 10 rounds, then 101.)
-        # 114 are mature, so the sum of all wallets should be 114 * 50 = 5700.
-        assert_equal(total, 5700)
+        # 114 are mature, so the sum of all wallets should be 114 * 50 = 114 * BLOCK_SUBSIDY.
+        assert_equal(total, 114 * BLOCK_SUBSIDY)
 
         ##
         # Test restoring spender wallets from backups

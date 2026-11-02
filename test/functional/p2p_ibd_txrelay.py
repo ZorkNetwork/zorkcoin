@@ -48,9 +48,12 @@ class P2PIBDTxRelayTest(BitcoinTestFramework):
             assert node.getblockchaininfo()['initialblockdownload']
             self.wait_until(lambda: all(peer['minfeefilter'] == MAX_FEE_FILTER for peer in node.getpeerinfo()))
 
-        self.nodes[0].setmocktime(int(time.time()))
+        now_s = int(time.time())
+        self.nodes[0].setmocktime(now_s)
         self.log.info("Mine one old block so we stay in IBD, then remember its coinbase wtxid")
-        block = create_block(int(self.nodes[0].getbestblockhash(), 16), height=1, ntime=int(time.time()) - 2 * 24 * 60 * 60)
+        # Block headers use millisecond timestamps.
+        block = create_block(int(self.nodes[0].getbestblockhash(), 16), height=1,
+                             ntime=now_s * 1000 - 2 * 24 * 60 * 60 * 1000)
         block.solve()
         self.nodes[0].submitblock(block.serialize().hex())
         assert self.nodes[0].getblockchaininfo()['initialblockdownload']

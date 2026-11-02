@@ -820,7 +820,7 @@ public:
         return BlockHashView{btck_block_header_get_prev_hash(impl())};
     }
 
-    uint32_t Timestamp() const
+    uint64_t Timestamp() const
     {
         return btck_block_header_get_timestamp(impl());
     }
@@ -835,14 +835,14 @@ public:
         return btck_block_header_get_version(impl());
     }
 
-    uint32_t Nonce() const
+    uint64_t Nonce() const
     {
         return btck_block_header_get_nonce(impl());
     }
 
-    std::array<std::byte, 80> ToBytes() const
+    std::array<std::byte, 88> ToBytes() const
     {
-        std::array<std::byte, 80> header;
+        std::array<std::byte, 88> header;
         int res{btck_block_header_to_bytes(impl(), reinterpret_cast<unsigned char*>(header.data()))};
         if (res != 0) {
             throw std::runtime_error("Failed to serialize block header");

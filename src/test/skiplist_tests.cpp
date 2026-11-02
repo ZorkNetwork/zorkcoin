@@ -118,12 +118,12 @@ BOOST_AUTO_TEST_CASE(findearliestatleast_test)
             // randomly choose something in the range [MTP, MTP*2]
             int64_t medianTimePast = vBlocksMain[i].GetMedianTimePast();
             int r{int(m_rng.randrange(medianTimePast))};
-            vBlocksMain[i].nTime = uint32_t(r + medianTimePast);
+            vBlocksMain[i].nTime = uint64_t(r + medianTimePast);
             vBlocksMain[i].nTimeMax = std::max(vBlocksMain[i].nTime, vBlocksMain[i-1].nTimeMax);
         }
     }
     // Check that we set nTimeMax up correctly.
-    unsigned int curTimeMax = 0;
+    uint64_t curTimeMax = 0;
     for (unsigned int i=0; i<vBlocksMain.size(); ++i) {
         curTimeMax = std::max(curTimeMax, vBlocksMain[i].nTime);
         BOOST_CHECK(curTimeMax == vBlocksMain[i].nTimeMax);

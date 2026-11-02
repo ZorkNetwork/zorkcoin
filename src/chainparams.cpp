@@ -119,6 +119,7 @@ void ReadRegTestArgs(const ArgsManager& args, CChainParams::RegTestOptions& opti
 {
     if (auto value = args.GetBoolArg("-fastprune")) options.fastprune = *value;
     if (HasTestOption(args, "bip94")) options.enforce_bip94 = true;
+    if (HasTestOption(args, "asert")) options.asert_retargeting = true;
 
     HandleDeploymentArgs(args, options.dep_opts);
 }

@@ -33,6 +33,7 @@ try:
     import blake3 as BLAKE3  # type: ignore[import-not-found]
 except ImportError:
     from test_framework.crypto import blake3 as BLAKE3
+from test_framework.crypto.kheavyhash import kheavyhash
 from test_framework.crypto.siphash import siphash256
 from test_framework.util import (
     assert_equal,
@@ -47,8 +48,8 @@ MINIMUM_BLOCK_RESERVED_WEIGHT = 2000
 MAX_BLOOM_FILTER_SIZE = 36000
 MAX_BLOOM_HASH_FUNCS = 50
 
-COIN = 100000000  # 1 btc in satoshis
-MAX_MONEY = 21000000 * COIN
+COIN = 100000000  # 1 zork in satoshis
+MAX_MONEY = (1 << 32) * 2 * (1 << 20)  # 2^53 sat; matches src/consensus/amount.h
 
 MAX_BIP125_RBF_SEQUENCE = 0xfffffffd  # Sequence number that is rbf-opt-in (BIP 125) and csv-opt-out (BIP 68)
 MAX_SEQUENCE_NONFINAL = 0xfffffffe  # Sequence number that is csv-opt-out (BIP 68)
@@ -841,7 +842,7 @@ class CTransaction:
 
     def is_valid(self):
         for tout in self.vout:
-            if tout.nValue < 0 or tout.nValue > 21000000 * COIN:
+            if tout.nValue < 0 or tout.nValue > MAX_MONEY:
                 return False
         return True
 
@@ -890,9 +891,9 @@ class CBlockHeader:
         self.nVersion = int.from_bytes(f.read(4), "little", signed=True)
         self.hashPrevBlock = deser_uint256(f)
         self.hashMerkleRoot = deser_uint256(f)
-        self.nTime = int.from_bytes(f.read(4), "little")
+        self.nTime = int.from_bytes(f.read(8), "little")
         self.nBits = int.from_bytes(f.read(4), "little")
-        self.nNonce = int.from_bytes(f.read(4), "little")
+        self.nNonce = int.from_bytes(f.read(8), "little")
 
     def serialize(self):
         return self._serialize_header()
@@ -902,9 +903,19 @@ class CBlockHeader:
         r += self.nVersion.to_bytes(4, "little", signed=True)
         r += ser_uint256(self.hashPrevBlock)
         r += ser_uint256(self.hashMerkleRoot)
-        r += self.nTime.to_bytes(4, "little")
+        r += self.nTime.to_bytes(8, "little")
         r += self.nBits.to_bytes(4, "little")
-        r += self.nNonce.to_bytes(4, "little")
+        r += self.nNonce.to_bytes(8, "little")
+        return r
+
+    def _serialize_pre_pow_header(self):
+        r = b""
+        r += self.nVersion.to_bytes(4, "little", signed=True)
+        r += ser_uint256(self.hashPrevBlock)
+        r += ser_uint256(self.hashMerkleRoot)
+        r += (0).to_bytes(8, "little")
+        r += self.nBits.to_bytes(4, "little")
+        r += (0).to_bytes(8, "little")
         return r
 
     @property
@@ -931,10 +942,27 @@ class CBlockHeader:
     def rehash(self):
         return self.hash_int
 
+    @property
+    def pow_hash_bytes(self):
+        pre_pow = hash256(self._serialize_pre_pow_header())
+        work_order = pre_pow + self.nTime.to_bytes(8, "little") + (b"\x00" * 32) + self.nNonce.to_bytes(8, "little")
+        return kheavyhash(work_order)
+
+    @property
+    def pow_hash_int(self):
+        return uint256_from_str(self.pow_hash_bytes)
+
+    def is_valid_pow(self):
+        return self.pow_hash_int <= uint256_from_compact(self.nBits)
+
+    def solve(self):
+        while not self.is_valid_pow():
+            self.nNonce += 1
+
     def __repr__(self):
         return "CBlockHeader(nVersion=%i hashPrevBlock=%064x hashMerkleRoot=%064x nTime=%s nBits=%08x nNonce=%08x)" \
             % (self.nVersion, self.hashPrevBlock, self.hashMerkleRoot,
-               time.ctime(self.nTime), self.nBits, self.nNonce)
+               time.ctime(self.nTime // 1000 if self.nTime > 10**11 else self.nTime), self.nBits, self.nNonce)
 
     def __eq__(self, other):
         if not isinstance(other, CBlockHeader):
@@ -943,7 +971,7 @@ class CBlockHeader:
             other.nVersion, other.hashPrevBlock, other.hashMerkleRoot, other.nTime, other.nBits, other.nNonce)
 
 BLOCK_HEADER_SIZE = len(CBlockHeader().serialize())
-assert_equal(BLOCK_HEADER_SIZE, 80)
+assert_equal(BLOCK_HEADER_SIZE, 88)
 
 class CBlock(CBlockHeader):
     __slots__ = ("vtx", "mweb_block")
@@ -1004,7 +1032,7 @@ class CBlock(CBlockHeader):
 
     def is_valid(self):
         target = uint256_from_compact(self.nBits)
-        if self.hash_int > target:
+        if self.pow_hash_int > target:
             return False
         for tx in self.vtx:
             if not tx.is_valid():
@@ -1015,7 +1043,7 @@ class CBlock(CBlockHeader):
 
     def solve(self):
         target = uint256_from_compact(self.nBits)
-        while self.hash_int > target:
+        while self.pow_hash_int > target:
             self.nNonce += 1
 
     # Calculate the block weight using witness and non-witness

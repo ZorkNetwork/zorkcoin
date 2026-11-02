@@ -47,7 +47,7 @@ def signet_txs(block, challenge):
     sd += block.nVersion.to_bytes(4, "little", signed=True)
     sd += ser_uint256(block.hashPrevBlock)
     sd += ser_uint256(mroot)
-    sd += block.nTime.to_bytes(4, "little")
+    sd += block.nTime.to_bytes(8, "little")
 
     to_spend = CTransaction()
     to_spend.version = 0
@@ -297,43 +297,44 @@ class Generate:
         det_rand = int(last_hash[-16:-8], 16)
         return self.multi_low <= (det_rand % self.multi_period) < self.multi_high
 
-    def next_block_time(self, now, bestheader, is_first_block):
+    def next_block_time(self, now_ms, bestheader, is_first_block):
+        # now_ms / mine_time / action_time / header["time"] are milliseconds.
         if self.set_block_time is not None:
             logging.debug("Setting start time to %d", self.set_block_time)
             self.mine_time = self.set_block_time
-            self.action_time = now
+            self.action_time = now_ms
             self.is_mine = True
         elif bestheader["height"] == 0:
-            time_delta = self.INTERVAL * 100 # plenty of time to mine 100 blocks
-            logging.info("Backdating time for first block to %d minutes ago" % (time_delta/60))
-            self.mine_time = now - time_delta
-            self.action_time = now
+            time_delta_ms = int(self.INTERVAL * 100 * 1000)
+            logging.info("Backdating time for first block to %d minutes ago" % (time_delta_ms / 60000))
+            self.mine_time = now_ms - time_delta_ms
+            self.action_time = now_ms
             self.is_mine = True
         else:
-            time_delta = self.next_block_delta(int(bestheader["bits"], 16), bestheader["hash"])
-            self.mine_time = bestheader["time"] + time_delta
+            time_delta_ms = int(self.next_block_delta(int(bestheader["bits"], 16), bestheader["hash"]) * 1000)
+            self.mine_time = bestheader["time"] + time_delta_ms
 
             self.is_mine = self.next_block_is_mine(bestheader["hash"])
 
             self.action_time = self.mine_time
             if not self.is_mine:
-                self.action_time += self.backup_delay
+                self.action_time += int(self.backup_delay * 1000)
 
             if self.standby_delay > 0:
-                self.action_time += self.standby_delay
+                self.action_time += int(self.standby_delay * 1000)
             elif is_first_block:
                 # for non-standby, always mine immediately on startup,
                 # even if the next block shouldn't be ours
-                self.action_time = now
+                self.action_time = now_ms
 
         # don't want fractional times so round down
         self.mine_time = int(self.mine_time)
         self.action_time = int(self.action_time)
 
         # can't mine a block 2h in the future; 1h55m for some safety
-        self.action_time = max(self.action_time, self.mine_time - 6900)
+        self.action_time = max(self.action_time, self.mine_time - 6900 * 1000)
 
-    def gbt(self, bcli, bestblockhash, now):
+    def gbt(self, bcli, bestblockhash, now_ms):
         tmpl = json.loads(bcli("getblocktemplate", '{"rules":["signet","segwit"]}'))
         if tmpl["previousblockhash"] != bestblockhash:
             logging.warning("GBT based off unexpected block (%s not %s), retrying", tmpl["previousblockhash"], bestblockhash)
@@ -343,8 +344,8 @@ class Generate:
         if tmpl["mintime"] > self.mine_time:
             logging.info("Updating block time from %d to %d", self.mine_time, tmpl["mintime"])
             self.mine_time = tmpl["mintime"]
-            if self.mine_time > now:
-                logging.error("GBT mintime is in the future: %d is %d seconds later than %d", self.mine_time, (self.mine_time-now), now)
+            if self.mine_time > now_ms:
+                logging.error("GBT mintime is in the future: %d is %d ms later than %d", self.mine_time, (self.mine_time-now_ms), now_ms)
                 return None
 
         return tmpl
@@ -382,8 +383,13 @@ def do_generate(args):
         max_blocks = 1
 
     if args.set_block_time is not None and args.set_block_time < 0:
-        args.set_block_time = time.time()
+        # Header timestamps are milliseconds.
+        args.set_block_time = int(time.time() * 1000)
         logging.info("Treating negative block time as current time (%d)" % (args.set_block_time))
+    elif args.set_block_time is not None and args.set_block_time < 10**11:
+        # Accept unix seconds from callers and convert to ms header time.
+        args.set_block_time = int(args.set_block_time) * 1000
+        logging.info("Converted set-block-time from seconds to ms (%d)" % (args.set_block_time))
 
     if args.min_nbits:
         args.nbits = "1e0377ae"
@@ -439,30 +445,30 @@ def do_generate(args):
             lastheader = bestheader["hash"]
         elif bestheader["hash"] != lastheader:
             next_delta = gen.next_block_delta(int(bestheader["bits"], 16), bestheader["hash"])
-            next_delta += bestheader["time"] - time.time()
+            next_delta += (bestheader["time"] / 1000.0) - time.time()
             next_is_mine = gen.next_block_is_mine(bestheader["hash"])
             logging.info("Received new block at height %d; next in %s (%s)", bestheader["height"], seconds_to_hms(next_delta), ("mine" if next_is_mine else "backup"))
             lastheader = bestheader["hash"]
 
         # when is the next block due to be mined?
-        now = time.time()
-        gen.next_block_time(now, bestheader, (mined_blocks == 0))
+        now_ms = int(time.time() * 1000)
+        gen.next_block_time(now_ms, bestheader, (mined_blocks == 0))
 
         # ready to go? otherwise sleep and check for new block
-        if now < gen.action_time:
-            sleep_for = min(gen.action_time - now, 60)
-            if gen.mine_time < now:
+        if now_ms < gen.action_time:
+            sleep_for = min((gen.action_time - now_ms) / 1000.0, 60)
+            if gen.mine_time < now_ms:
                 # someone else might have mined the block,
                 # so check frequently, so we don't end up late
                 # mining the next block if it's ours
                 sleep_for = min(20, sleep_for)
             minestr = "mine" if gen.is_mine else "backup"
-            logging.debug("Sleeping for %s, next block due in %s (%s)" % (seconds_to_hms(sleep_for), seconds_to_hms(gen.mine_time - now), minestr))
+            logging.debug("Sleeping for %s, next block due in %s (%s)" % (seconds_to_hms(sleep_for), seconds_to_hms((gen.mine_time - now_ms) / 1000.0), minestr))
             time.sleep(sleep_for)
             continue
 
         # gbt
-        tmpl = gen.gbt(args.bcli, bci["bestblockhash"], now)
+        tmpl = gen.gbt(args.bcli, bci["bestblockhash"], now_ms)
         if tmpl is None:
             continue
 
@@ -472,7 +478,7 @@ def do_generate(args):
         reward_addr, reward_spk = get_reward_addr_spk(args, tmpl["height"])
 
         # mine block
-        logging.debug("Mining block delta=%s start=%s mine=%s", seconds_to_hms(gen.mine_time-bestheader["time"]), gen.mine_time, gen.is_mine)
+        logging.debug("Mining block delta=%s start=%s mine=%s", seconds_to_hms((gen.mine_time-bestheader["time"]) / 1000.0), gen.mine_time, gen.is_mine)
         mined_blocks += 1
         block = gen.mine(args.bcli, args.grind_cmd, tmpl, reward_spk)
         if block is None:
@@ -485,7 +491,7 @@ def do_generate(args):
         bstr = "block" if gen.is_mine else "backup block"
 
         next_delta = gen.next_block_delta(block.nBits, block.hash_hex)
-        next_delta += block.nTime - time.time()
+        next_delta += (block.nTime / 1000.0) - time.time()
         next_is_mine = gen.next_block_is_mine(block.hash_hex)
 
         logging.debug("Block hash %s payout to %s", block.hash_hex, reward_addr)

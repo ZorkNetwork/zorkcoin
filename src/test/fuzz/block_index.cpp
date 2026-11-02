@@ -5,6 +5,7 @@
 #include <chain.h>
 #include <chainparams.h>
 #include <node/blockstorage.h>
+#include <pow.h>
 #include <test/fuzz/FuzzedDataProvider.h>
 #include <test/fuzz/fuzz.h>
 #include <test/fuzz/util.h>
@@ -41,7 +42,12 @@ CBlockHeader ConsumeBlockHeader(FuzzedDataProvider& provider)
     header.hashMerkleRoot = g_block_hash;
     header.nTime = provider.ConsumeIntegral<decltype(header.nTime)>();
     header.nBits = Params().GenesisBlock().nBits;
-    header.nNonce = provider.ConsumeIntegral<decltype(header.nNonce)>();
+    header.nNonce = 0;
+    // kHeavyHash: grind a PoW-valid nonce so LoadBlockIndexGuts accepts the index.
+    const auto& consensus{Params().GetConsensus()};
+    while (!CheckProofOfWork(header.GetPoWHash(), header.nBits, consensus)) {
+        ++header.nNonce;
+    }
     return header;
 }
 
@@ -49,7 +55,8 @@ CBlockHeader ConsumeBlockHeader(FuzzedDataProvider& provider)
 
 void init_block_index()
 {
-    static const auto testing_setup = MakeNoLogFileContext<>(ChainType::MAIN);
+    // Regtest powLimit is trivial so LoadBlockIndexGuts PoW checks pass for fuzzed headers.
+    static const auto testing_setup = MakeNoLogFileContext<>(ChainType::REGTEST);
     g_setup = testing_setup.get();
     g_block_hash = Params().GenesisBlock().GetHash();
 }

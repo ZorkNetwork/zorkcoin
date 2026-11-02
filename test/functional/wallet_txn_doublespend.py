@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
+    BLOCK_SUBSIDY,
     assert_equal,
 )
 
@@ -35,8 +36,8 @@ class TxnMallTest(BitcoinTestFramework):
         return self.nodes[0].sendrawtransaction(tx['hex'])
 
     def run_test(self):
-        # All nodes should start with 1,250 BTC:
-        starting_balance = 1250
+        # All nodes should start with 25 * BLOCK_SUBSIDY:
+        starting_balance = 25 * BLOCK_SUBSIDY
 
         # All nodes should be out of IBD.
         # If the nodes are not all out of IBD, that can interfere with
@@ -48,14 +49,14 @@ class TxnMallTest(BitcoinTestFramework):
         for i in range(3):
             assert_equal(self.nodes[i].getbalance(), starting_balance)
 
-        # Assign coins to foo and bar addresses:
+        # Assign coins to foo and bar addresses (scaled from historic 50-COIN economics):
         node0_address_foo = self.nodes[0].getnewaddress()
-        fund_foo_utxo = self.create_outpoints(self.nodes[0], outputs=[{node0_address_foo: 1219}])[0]
+        fund_foo_utxo = self.create_outpoints(self.nodes[0], outputs=[{node0_address_foo: 1047.11302676}])[0]
         fund_foo_tx = self.nodes[0].gettransaction(fund_foo_utxo['txid'])
         self.nodes[0].lockunspent(False, [fund_foo_utxo])
 
         node0_address_bar = self.nodes[0].getnewaddress()
-        fund_bar_utxo = self.create_outpoints(node=self.nodes[0], outputs=[{node0_address_bar: 29}])[0]
+        fund_bar_utxo = self.create_outpoints(node=self.nodes[0], outputs=[{node0_address_bar: 24.91081031}])[0]
         fund_bar_tx = self.nodes[0].gettransaction(fund_bar_utxo['txid'])
 
         assert_equal(self.nodes[0].getbalance(),
@@ -64,14 +65,14 @@ class TxnMallTest(BitcoinTestFramework):
         # Coins are sent to node1_address
         node1_address = self.nodes[1].getnewaddress()
 
-        # First: use raw transaction API to send 1240 BTC to node1_address,
+        # First: use raw transaction API to send the bulk to node1_address,
         # but don't broadcast:
         doublespend_fee = Decimal('-.02')
         inputs = [fund_foo_utxo, fund_bar_utxo]
         change_address = self.nodes[0].getnewaddress()
         outputs = {}
-        outputs[node1_address] = 1240
-        outputs[change_address] = 1248 - 1240 + doublespend_fee
+        outputs[node1_address] = 1065.15188940
+        outputs[change_address] = 6.85194767
         rawtx = self.nodes[0].createrawtransaction(inputs, outputs)
         doublespend = self.nodes[0].signrawtransactionwithwallet(rawtx)
         assert_equal(doublespend["complete"], True)
@@ -91,7 +92,7 @@ class TxnMallTest(BitcoinTestFramework):
         # matured block, minus 40, minus 20, and minus transaction fees:
         expected = starting_balance + fund_foo_tx["fee"] + fund_bar_tx["fee"]
         if self.options.mine_block:
-            expected += 50
+            expected += BLOCK_SUBSIDY
         expected += tx1["amount"] + tx1["fee"]
         expected += tx2["amount"] + tx2["fee"]
         assert_equal(self.nodes[0].getbalance(), expected)
@@ -128,11 +129,11 @@ class TxnMallTest(BitcoinTestFramework):
         # Node0's total balance should be starting balance, plus 100BTC for
         # two more matured blocks, minus 1240 for the double-spend, plus fees (which are
         # negative):
-        expected = starting_balance + 100 - 1240 + fund_foo_tx["fee"] + fund_bar_tx["fee"] + doublespend_fee
+        expected = starting_balance + 2 * BLOCK_SUBSIDY - Decimal("1065.15188940") + fund_foo_tx["fee"] + fund_bar_tx["fee"] + doublespend_fee
         assert_equal(self.nodes[0].getbalance(), expected)
 
         # Node1's balance should be its initial balance (1250 for 25 block rewards) plus the doublespend:
-        assert_equal(self.nodes[1].getbalance(), 1250 + 1240)
+        assert_equal(self.nodes[1].getbalance(), starting_balance + Decimal("1065.15188940"))
 
 
 if __name__ == '__main__':

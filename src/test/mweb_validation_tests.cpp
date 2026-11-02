@@ -96,8 +96,9 @@ struct RollforwardAccess : public Chainstate {
     using Chainstate::RollforwardBlock;
 };
 
-//! Regtest MWEB versionbits start time (matches -vbparams=mweb:1601450001:...).
-constexpr uint32_t MWEB_VB_START_TIME = 1601450001;
+//! Regtest MWEB versionbits start time in milliseconds (matches -vbparams).
+constexpr int64_t MWEB_VB_START_TIME = 1601450001LL * 1000;
+constexpr int64_t MWEB_VB_START_TIME_SEC = 1601450001;
 //! First MWEB block height on a clean regtest chain with MWEB_VBPARAMS.
 constexpr int FIRST_MWEB_HEIGHT = 432;
 
@@ -106,12 +107,12 @@ void MineMwebEraBlock(node::NodeContext& node, const CScript& coinbase_script)
     std::shared_ptr<CBlock> block = PrepareBlock(node, {.coinbase_output_script = coinbase_script});
     {
         LOCK(::cs_main);
-        const uint32_t mtp = Assert(node.chainman)->ActiveChain().Tip()->GetMedianTimePast();
+        const int64_t mtp = Assert(node.chainman)->ActiveChain().Tip()->GetMedianTimePast();
         block->nTime = std::max({mtp + 1, MWEB_VB_START_TIME});
     }
     block->hashMerkleRoot = BlockMerkleRoot(*block);
     node::RegenerateCommitments(*block, *Assert(node.chainman));
-    while (!CheckProofOfWork(block->GetHash(), block->nBits, Params().GetConsensus())) {
+    while (!CheckProofOfWork(block->GetPoWHash(), block->nBits, Params().GetConsensus())) {
         ++block->nNonce;
         assert(block->nNonce);
     }
@@ -163,7 +164,7 @@ void SubmitPeginToMempool(TestChain100Setup& setup, node::NodeContext& node, CAm
 void MineToMwebChain(TestChain100Setup& setup, node::NodeContext& node, int post_activation_blocks = 4)
 {
     const CScript coinbase_script{CScript() << OP_TRUE};
-    SetMockTime(std::chrono::seconds{MWEB_VB_START_TIME});
+    SetMockTime(std::chrono::seconds{MWEB_VB_START_TIME_SEC});
 
     int height{WITH_LOCK(::cs_main, return Assert(node.chainman)->ActiveHeight())};
     while (height < FIRST_MWEB_HEIGHT - 1) {
@@ -423,7 +424,7 @@ BOOST_AUTO_TEST_CASE(checkblock_rejects_above_max_mweb_envelope)
     coinbase.vin[0].prevout.SetNull();
     coinbase.vin[0].scriptSig = CScript() << OP_0 << OP_0;
     coinbase.vout.resize(1);
-    coinbase.vout[0].nValue = 50 * COIN;
+    coinbase.vout[0].nValue = static_cast<CAmount>(1ULL << 32);
     coinbase.vout[0].scriptPubKey = CScript() << OP_TRUE;
     block.vtx.push_back(MakeTransactionRef(std::move(coinbase)));
 
@@ -476,7 +477,7 @@ BOOST_AUTO_TEST_CASE(checkblock_tests_above_bip324_below_max_mweb_no_bad_blk_ser
     coinbase.vin[0].prevout.SetNull();
     coinbase.vin[0].scriptSig = CScript() << OP_0 << OP_0;
     coinbase.vout.resize(1);
-    coinbase.vout[0].nValue = 50 * COIN;
+    coinbase.vout[0].nValue = static_cast<CAmount>(1ULL << 32);
     coinbase.vout[0].scriptPubKey = CScript() << OP_TRUE;
     block.vtx.push_back(MakeTransactionRef(std::move(coinbase)));
 
@@ -629,11 +630,11 @@ BOOST_AUTO_TEST_CASE(regtest_mweb_inactive_by_default)
 BOOST_AUTO_TEST_CASE(regtest_mweb_vbparams_enable)
 {
     ArgsManager args;
-    args.ForceSetArg("-vbparams", "mweb:1601450001:9999999999");
+    args.ForceSetArg("-vbparams", "mweb:1601450001000:9999999999000");
     const auto params = CreateChainParams(args, ChainType::REGTEST);
     const auto& mweb = params->GetConsensus().vDeployments[Consensus::DEPLOYMENT_MWEB];
-    BOOST_CHECK_EQUAL(mweb.nStartTime, 1601450001);
-    BOOST_CHECK_EQUAL(mweb.nTimeout, 9999999999);
+    BOOST_CHECK_EQUAL(mweb.nStartTime, 1601450001000);
+    BOOST_CHECK_EQUAL(mweb.nTimeout, 9999999999000);
 }
 
 BOOST_AUTO_TEST_CASE(unserialize_block_undo_replaces_previous_contents)

@@ -19,6 +19,7 @@ from test_framework.messages import (
 )
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
+    BLOCK_SUBSIDY,
     assert_not_equal,
     assert_approx,
     assert_equal,
@@ -187,14 +188,14 @@ class RawTransactionsTest(BitcoinTestFramework):
     def test_change_position(self):
         """Ensure setting changePosition in fundraw with an exact match is handled properly."""
         self.log.info("Test fundrawtxn changePosition option")
-        rawmatch = self.nodes[2].createrawtransaction([], {self.nodes[2].getnewaddress():50})
+        rawmatch = self.nodes[2].createrawtransaction([], {self.nodes[2].getnewaddress(): BLOCK_SUBSIDY})
         rawmatch = self.nodes[2].fundrawtransaction(rawmatch, changePosition=1, subtractFeeFromOutputs=[0], fee_rate=self.fee_rate_sats_per_vb)
         assert_equal(rawmatch["changepos"], -1)
 
         self.nodes[3].createwallet(wallet_name="wwatch", disable_private_keys=True)
         wwatch = self.nodes[3].get_wallet_rpc('wwatch')
         watchonly_address = self.nodes[0].getnewaddress()
-        self.watchonly_amount = Decimal(200)
+        self.watchonly_amount = Decimal('100')
         import_res = wwatch.importdescriptors([{"desc": self.nodes[0].getaddressinfo(watchonly_address)["desc"], "timestamp": "now"}])
         assert_equal(import_res[0]["success"], True)
         self.watchonly_utxo = self.create_outpoints(self.nodes[0], outputs=[{watchonly_address: self.watchonly_amount}])[0]
@@ -673,8 +674,8 @@ class RawTransactionsTest(BitcoinTestFramework):
             wallet.sendrawtransaction(signedTx['hex'])
             self.generate(self.nodes[1], 1)
 
-            # Make sure funds are received at node1.
-            assert_equal(oldBalance+Decimal('51.10000000'), self.nodes[0].getbalance())
+            # Make sure funds are received at node0 (1.1 payment + matured coinbase).
+            assert_equal(oldBalance + BLOCK_SUBSIDY + Decimal('1.10000000'), self.nodes[0].getbalance())
 
             # Restore pre-test wallet state
             wallet.sendall(recipients=[df_wallet.getnewaddress(), df_wallet.getnewaddress(), df_wallet.getnewaddress()], fee_rate=self.fee_rate_sats_per_vb)
@@ -729,7 +730,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         fundedAndSignedTx = self.nodes[1].signrawtransactionwithwallet(fundedTx['hex'])
         self.nodes[1].sendrawtransaction(fundedAndSignedTx['hex'])
         self.generate(self.nodes[1], 1)
-        assert_equal(oldBalance+Decimal('50.19000000'), self.nodes[0].getbalance()) #0.19+block reward
+        assert_equal(oldBalance + BLOCK_SUBSIDY + Decimal('0.19000000'), self.nodes[0].getbalance()) #0.19+block reward
 
     def test_op_return(self):
         self.log.info("Test fundrawtxn with OP_RETURN and no vin")

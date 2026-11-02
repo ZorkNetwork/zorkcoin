@@ -30,19 +30,19 @@ import math
 import random
 import time
 
-# Constants from net_processing
+# Constants from net_processing (Zorkcoin: nPowTargetSpacing and header times are ms)
 HEADERS_DOWNLOAD_TIMEOUT_BASE_SEC = 15 * 60
 HEADERS_DOWNLOAD_TIMEOUT_PER_HEADER_MS = 1
-POW_TARGET_SPACING_SEC = 10 * 60
+POW_TARGET_SPACING_MS = 1 << 17
 
 
-def calculate_headers_timeout(best_header_time, current_time):
-    seconds_since_best_header = current_time - best_header_time
-    # Using ceil ensures the calculated timeout is >= actual timeout and not lower
-    # because of precision loss from conversion to seconds
+def calculate_headers_timeout(best_header_time_ms, current_time_sec):
+    # getblockchaininfo()["time"] is milliseconds; mocktime is seconds.
+    age_ms = current_time_sec * 1000 - best_header_time_ms
+    # Match C++: microseconds{1ms} * age_ms / nPowTargetSpacing
     variable_timeout_sec = math.ceil(HEADERS_DOWNLOAD_TIMEOUT_PER_HEADER_MS / 1_000 *
-                                     seconds_since_best_header / POW_TARGET_SPACING_SEC)
-    return int(current_time + HEADERS_DOWNLOAD_TIMEOUT_BASE_SEC + variable_timeout_sec)
+                                     age_ms / POW_TARGET_SPACING_MS)
+    return int(current_time_sec + HEADERS_DOWNLOAD_TIMEOUT_BASE_SEC + variable_timeout_sec)
 
 
 class HeadersSyncTest(BitcoinTestFramework):

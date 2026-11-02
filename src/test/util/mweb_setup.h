@@ -12,7 +12,8 @@
 //! A regtest chain of 100 blocks on which MWEB activates once mined past its start time.
 struct MWEBRegtest100Setup : public TestChain100Setup {
     //! Regtest MWEB versionbits start time (matches the -vbparams this setup passes).
-    static constexpr uint32_t MWEB_VB_START_TIME{1601450001};
+    static constexpr int64_t MWEB_VB_START_TIME{1601450001LL * 1000};
+    static constexpr int64_t MWEB_VB_START_TIME_SEC{1601450001};
     //! First MWEB block height on this chain.
     static constexpr int FIRST_MWEB_HEIGHT{432};
 

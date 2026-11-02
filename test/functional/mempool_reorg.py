@@ -182,11 +182,11 @@ class MempoolCoinbaseTest(BitcoinTestFramework):
         # Prep for fork, only go FORK_LENGTH  seconds into the MTP future max
         fork_blocks = create_empty_fork(self.nodes[0], fork_length=FORK_LENGTH)
 
-        # Jump node and MTP 300 seconds and generate a slightly weaker chain than reorg one
-        self.nodes[0].setmocktime(future)
+        # Jump node and MTP past the locktime (nLockTime is seconds; header MTP is ms).
+        self.nodes[0].setmocktime(future + 1)
         self.generate(self.nodes[0], FORK_LENGTH - 1)
         block_time = self.nodes[0].getblock(self.nodes[0].getbestblockhash())['time']
-        assert(block_time >= now + 300)
+        assert(block_time >= (now + 300) * 1000)
 
         # generate() implicitly syncs blocks, so that peer 1 gets the block before timelock_tx
         # Otherwise, peer 1 would put the timelock_tx in m_lazy_recent_rejects

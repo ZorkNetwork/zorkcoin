@@ -89,7 +89,7 @@ static int AppInitUtil(ArgsManager& args, int argc, char* argv[])
     return CONTINUE_EXECUTION;
 }
 
-static void grind_task(uint32_t nBits, CBlockHeader header, uint32_t offset, uint32_t step, std::atomic<bool>& found, uint32_t& proposed_nonce)
+static void grind_task(uint32_t nBits, CBlockHeader header, uint32_t offset, uint32_t step, std::atomic<bool>& found, uint64_t& proposed_nonce)
 {
     arith_uint256 target;
     bool neg, over;
@@ -103,7 +103,7 @@ static void grind_task(uint32_t nBits, CBlockHeader header, uint32_t offset, uin
     while (!found && header.nNonce < finish) {
         const uint32_t next = (finish - header.nNonce < 5000*step) ? finish : header.nNonce + 5000*step;
         do {
-            if (UintToArith256(header.GetHash()) <= target) {
+            if (UintToArith256(header.GetPoWHash()) <= target) {
                 if (!found.exchange(true)) {
                     proposed_nonce = header.nNonce;
                 }
@@ -129,7 +129,7 @@ static int Grind(const std::vector<std::string>& args, std::string& strPrint)
 
     uint32_t nBits = header.nBits;
     std::atomic<bool> found{false};
-    uint32_t proposed_nonce{};
+    uint64_t proposed_nonce{};
 
     std::vector<std::thread> threads;
     int n_tasks = std::max(1u, std::thread::hardware_concurrency());

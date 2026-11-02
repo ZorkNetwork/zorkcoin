@@ -26,7 +26,7 @@ class WalletLocktimeTest(BitcoinTestFramework):
         self.log.info("Send to new address with locktime")
         node.send(
             outputs={address: 5},
-            locktime=mtp_tip - 1,
+            locktime=mtp_tip // 1000 - 1,
         )
         self.generate(node, 1)
 
@@ -37,7 +37,7 @@ class WalletLocktimeTest(BitcoinTestFramework):
         list_before_lb = node.listreceivedbylabel(include_empty=False)
         balance_before = node.getbalances()["mine"]["trusted"]
         coin_before = node.listunspent(maxconf=1)
-        node.setmocktime(mtp_tip - 1)
+        node.setmocktime(mtp_tip // 1000 - 1)
         assert_equal(node.getreceivedbyaddress(address), amount_before_ad)
         assert_equal(node.getreceivedbylabel(label), amount_before_lb)
         assert_equal(node.listreceivedbyaddress(address_filter=address), list_before_ad)

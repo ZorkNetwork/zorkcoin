@@ -77,17 +77,17 @@ static RPCMethod setmocktime()
     LOCK(cs_main);
 
     const int64_t time{request.params[0].getInt<int64_t>()};
-    // block timestamps are uint32_t, so mocking time beyond that is meaningless for anything
-    // consensus-related and can cause integer overflow/truncation issues in time arithmetic.
+    // setmocktime accepts seconds; internal mock/wallet/header clocks are milliseconds.
     constexpr int64_t max_time{std::numeric_limits<uint32_t>::max()};
     if (time < 0 || time > max_time) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Mocktime must be in the range [0, %s], not %s.", max_time, time));
     }
 
-    SetMockTime(std::chrono::seconds{time});
+    const int64_t time_ms{time * 1000};
+    SetMockTime(time_ms);
     const NodeContext& node_context{EnsureAnyNodeContext(request.context)};
     for (const auto& chain_client : node_context.chain_clients) {
-        chain_client->setMockTime(time);
+        chain_client->setMockTime(time_ms);
     }
 
     return UniValue::VNULL;

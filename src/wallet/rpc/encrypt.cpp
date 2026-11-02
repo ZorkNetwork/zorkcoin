@@ -89,7 +89,7 @@ RPCMethod walletpassphrase()
 
         pwallet->TopUpKeyPool();
 
-        pwallet->nRelockTime = GetTime() + nSleepTime;
+        pwallet->nRelockTime = GetTime() + nSleepTime * 1000;
         relock_time = pwallet->nRelockTime;
     }
 

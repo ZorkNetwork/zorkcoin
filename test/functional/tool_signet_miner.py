@@ -78,7 +78,7 @@ class SignetMinerTest(BitcoinTestFramework):
                 'generate',
                 f'--address={node.getnewaddress()}',
                 f'--grind-cmd={shlex.join(util_argv)}',
-                f'--nbits={DIFF_1_N_BITS:08x}',
+                '--nbits=1e0ffff0',  # genesis-tier difficulty for kHeavyHash
                 f'--set-block-time={int(time.time())}',
                 '--poolnum=99',
             ], check=True, stderr=subprocess.STDOUT)

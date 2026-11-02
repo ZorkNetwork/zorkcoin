@@ -2016,9 +2016,9 @@ BITCOINKERNEL_API const btck_BlockHash* btck_block_header_get_prev_hash(
  * @brief Get the timestamp from btck_BlockHeader.
  *
  * @param[in] header    Non-null btck_BlockHeader
- * @return              Block timestamp (Unix epoch seconds)
+ * @return              Block timestamp (Unix epoch milliseconds)
  */
-BITCOINKERNEL_API uint32_t btck_block_header_get_timestamp(
+BITCOINKERNEL_API uint64_t btck_block_header_get_timestamp(
     const btck_BlockHeader* header) BITCOINKERNEL_ARG_NONNULL(1);
 
 /**
@@ -2045,7 +2045,7 @@ BITCOINKERNEL_API int32_t btck_block_header_get_version(
  * @param[in] header    Non-null btck_BlockHeader
  * @return              Nonce
  */
-BITCOINKERNEL_API uint32_t btck_block_header_get_nonce(
+BITCOINKERNEL_API uint64_t btck_block_header_get_nonce(
     const btck_BlockHeader* header) BITCOINKERNEL_ARG_NONNULL(1);
 
 /**
@@ -2053,11 +2053,11 @@ BITCOINKERNEL_API uint32_t btck_block_header_get_nonce(
  * This is consensus serialization that is also used for the P2P network.
  *
  * @param[in] header    Non-null.
- * @param[out] output   The serialized block header (80 bytes).
+ * @param[out] output   The serialized block header (88 bytes).
  * @return              0 on success.
  */
 BITCOINKERNEL_API int BITCOINKERNEL_WARN_UNUSED_RESULT btck_block_header_to_bytes(
-    const btck_BlockHeader* header, unsigned char output[80]) BITCOINKERNEL_ARG_NONNULL(1, 2);
+    const btck_BlockHeader* header, unsigned char output[88]) BITCOINKERNEL_ARG_NONNULL(1, 2);
 
 /**
  * Destroy the btck_BlockHeader.

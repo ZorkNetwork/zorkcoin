@@ -161,7 +161,7 @@ class WalletGroupTest(BitcoinTestFramework):
 
         self.log.info("Fill a wallet with 10,000 outputs corresponding to the same scriptPubKey")
         for _ in range(5):
-            raw_tx = self.nodes[0].createrawtransaction([{"txid":"0"*64, "vout":0}], [{addr2[0]: 0.05}])
+            raw_tx = self.nodes[0].createrawtransaction([{"txid":"0"*64, "vout":0}], [{addr2[0]: 0.04}])
             tx = tx_from_hex(raw_tx)
             tx.vin = []
             tx.vout = [tx.vout[0]] * 2000
@@ -174,7 +174,7 @@ class WalletGroupTest(BitcoinTestFramework):
         # utxos, without pulling in all outputs and creating a transaction that
         # is way too big.
         self.log.info("Test creating txn that only requires ~100 of our UTXOs without pulling in all outputs")
-        assert self.nodes[2].sendtoaddress(address=addr2[0], amount=5, fee_rate=self.fee_rate)
+        assert self.nodes[2].sendtoaddress(address=addr2[0], amount=4, fee_rate=self.fee_rate)
 
 
 if __name__ == '__main__':

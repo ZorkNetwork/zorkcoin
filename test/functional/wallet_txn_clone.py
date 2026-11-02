@@ -6,6 +6,7 @@
 
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
+    BLOCK_SUBSIDY,
     assert_equal,
     assert_not_equal,
     assert_raises_rpc_error,
@@ -48,18 +49,18 @@ class TxnMallTest(BitcoinTestFramework):
         else:
             output_type = "legacy"
 
-        # All nodes should start with 1,250 BTC:
-        starting_balance = 1250
+        # All nodes should start with 25 * BLOCK_SUBSIDY:
+        starting_balance = 25 * BLOCK_SUBSIDY
         for i in range(3):
             assert_equal(self.nodes[i].getbalance(), starting_balance)
 
         node0_address1 = self.nodes[0].getnewaddress(address_type=output_type)
-        node0_utxo1 = self.create_outpoints(self.nodes[0], outputs=[{node0_address1: 1219}])[0]
+        node0_utxo1 = self.create_outpoints(self.nodes[0], outputs=[{node0_address1: 1047.11302676}])[0]
         node0_tx1 = self.nodes[0].gettransaction(node0_utxo1['txid'])
         self.nodes[0].lockunspent(False, [node0_utxo1])
 
         node0_address2 = self.nodes[0].getnewaddress(address_type=output_type)
-        node0_utxo2 = self.create_outpoints(self.nodes[0], outputs=[{node0_address2: 29}])[0]
+        node0_utxo2 = self.create_outpoints(self.nodes[0], outputs=[{node0_address2: 24.91081031}])[0]
         node0_tx2 = self.nodes[0].gettransaction(node0_utxo2['txid'])
 
         assert_equal(self.nodes[0].getbalance(),
@@ -101,7 +102,7 @@ class TxnMallTest(BitcoinTestFramework):
         # matured block, minus tx1 and tx2 amounts, and minus transaction fees:
         expected = starting_balance + node0_tx1["fee"] + node0_tx2["fee"]
         if self.options.mine_block:
-            expected += 50
+            expected += BLOCK_SUBSIDY
         expected += tx1["amount"] + tx1["fee"]
         expected += tx2["amount"] + tx2["fee"]
         assert_equal(self.nodes[0].getbalance(), expected)
@@ -141,9 +142,9 @@ class TxnMallTest(BitcoinTestFramework):
 
         # Check node0's total balance; should be same as before the clone, + 100 BTC for 2 matured,
         # less possible orphaned matured subsidy
-        expected += 100
+        expected += 2 * BLOCK_SUBSIDY
         if (self.options.mine_block):
-            expected -= 50
+            expected -= BLOCK_SUBSIDY
         assert_equal(self.nodes[0].getbalance(), expected)
 
         self.test_malleated_metadata_synced()

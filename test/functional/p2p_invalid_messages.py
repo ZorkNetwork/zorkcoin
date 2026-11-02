@@ -298,10 +298,10 @@ class InvalidMessagesTest(BitcoinTestFramework):
         assert_equal(self.nodes[0].getblockchaininfo()['headers'], 0)
         blockheader = CBlockHeader()
         blockheader.hashPrevBlock = int(blockheader_tip_hash, 16)
-        blockheader.nTime = int(time.time())
+        # Header nTime is milliseconds.
+        blockheader.nTime = int(time.time() * 1000)
         blockheader.nBits = blockheader_tip.nBits
-        while not blockheader.hash_hex.startswith('0'):
-            blockheader.nNonce += 1
+        blockheader.solve()
         peer = self.nodes[0].add_p2p_connection(P2PInterface())
         peer.send_and_ping(msg_headers([blockheader]))
         assert_equal(self.nodes[0].getblockchaininfo()['headers'], 1)
@@ -309,8 +309,8 @@ class InvalidMessagesTest(BitcoinTestFramework):
         assert_equal(chaintips[0]['status'], 'headers-only')
         assert_equal(chaintips[0]['hash'], blockheader.hash_hex)
 
-        # invalidate PoW
-        while not blockheader.hash_hex.startswith('f'):
+        # invalidate PoW (kHeavyHash must exceed target)
+        while blockheader.is_valid_pow():
             blockheader.nNonce += 1
         with self.nodes[0].assert_debug_log(['Misbehaving', 'header with invalid proof of work']):
             peer.send_without_ping(msg_headers([blockheader]))

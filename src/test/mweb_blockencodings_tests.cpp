@@ -55,7 +55,7 @@ CBlock BuildBlock(FastRandomContext& ctx)
     bool mutated;
     block.hashMerkleRoot = BlockMerkleRoot(block, &mutated);
     assert(!mutated);
-    while (!CheckProofOfWork(block.GetHash(), block.nBits, Params().GetConsensus())) ++block.nNonce;
+    while (!CheckProofOfWork(block.GetPoWHash(), block.nBits, Params().GetConsensus())) ++block.nNonce;
     return block;
 }
 
@@ -129,7 +129,7 @@ void AddHogEx(CBlock& block, FastRandomContext& ctx)
     bool mutated;
     block.hashMerkleRoot = BlockMerkleRoot(block, &mutated);
     BOOST_REQUIRE(!mutated);
-    while (!CheckProofOfWork(block.GetHash(), block.nBits, Params().GetConsensus())) ++block.nNonce;
+    while (!CheckProofOfWork(block.GetPoWHash(), block.nBits, Params().GetConsensus())) ++block.nNonce;
 }
 } // namespace
 

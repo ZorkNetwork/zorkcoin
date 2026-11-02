@@ -31,9 +31,9 @@ public:
     int32_t nVersion;
     uint256 hashPrevBlock;
     uint256 hashMerkleRoot;
-    uint32_t nTime;
+    uint64_t nTime;
     uint32_t nBits;
-    uint32_t nNonce;
+    uint64_t nNonce;
 
     CBlockHeader()
     {
@@ -58,10 +58,24 @@ public:
     }
 
     uint256 GetHash() const;
+    uint256 GetPoWHash() const;
 
-    NodeSeconds Time() const
+    /** Header with nTime and nNonce zeroed; hash of this seeds kHeavyHash. */
+    CBlockHeader GetPrePowBlockHeader() const
     {
-        return NodeSeconds{std::chrono::seconds{nTime}};
+        CBlockHeader block;
+        block.nVersion = nVersion;
+        block.hashPrevBlock = hashPrevBlock;
+        block.hashMerkleRoot = hashMerkleRoot;
+        block.nTime = 0;
+        block.nBits = nBits;
+        block.nNonce = 0;
+        return block;
+    }
+
+    NodeMilliseconds Time() const
+    {
+        return NodeMilliseconds{std::chrono::milliseconds{nTime}};
     }
 
     int64_t GetBlockTime() const

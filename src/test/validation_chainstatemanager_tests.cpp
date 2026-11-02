@@ -20,6 +20,7 @@
 #include <uint256.h>
 #include <util/byte_units.h>
 #include <util/result.h>
+#include <util/time.h>
 #include <util/vector.h>
 #include <validation.h>
 #include <validationinterface.h>
@@ -188,13 +189,13 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_ibd_exit_after_loading_blocks, ChainTe
         chainman.ResetChainstates();
         chainman.InitializeChainstate(m_node.mempool.get());
 
-        const auto recent_time{Now<NodeSeconds>() - chainman.m_options.max_tip_age};
+        const auto recent_time{Now<NodeMilliseconds>() - chainman.m_options.max_tip_age};
 
         chainman.m_cached_is_ibd.store(cached_is_ibd, std::memory_order_relaxed);
         chainman.m_blockman.m_importing = loading_blocks;
         if (tip_exists) {
             tip.nChainWork = chainman.MinimumChainWork() - (enough_work ? 0 : 1);
-            tip.nTime = (recent_time - (tip_recent ? 0h : 100h)).time_since_epoch().count();
+            tip.nTime = TicksSinceEpoch<std::chrono::milliseconds>(recent_time - (tip_recent ? 0h : 100h));
             chainman.ActiveChain().SetTip(tip);
         } else {
             assert(!chainman.ActiveChain().Tip());

@@ -22,11 +22,14 @@ import time
 from test_framework.address import key_to_p2sh_p2wpkh, key_to_p2wpkh, script_to_p2wsh
 from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.test_framework import BitcoinTestFramework
+from decimal import Decimal
+
 from test_framework.descriptors import descsum_create
 from test_framework.extendedkey import ExtendedPrivateKey
 from test_framework.script import SEQUENCE_LOCKTIME_TYPE_FLAG
 from test_framework.script_util import keys_to_multisig_script
 from test_framework.util import (
+    BLOCK_SUBSIDY,
     assert_equal,
     assert_raises_rpc_error,
     JSONRPCException,
@@ -700,9 +703,9 @@ class ImportDescriptorsTest(BitcoinTestFramework):
                      address,
                      solvable=True,
                      ismine=True)
-        txid = w0.sendtoaddress(address, 49.99995540)
+        txid = w0.sendtoaddress(address, float(BLOCK_SUBSIDY - Decimal('0.00004460')))
         self.generatetoaddress(self.nodes[0], 6, w0.getnewaddress())
-        tx = wpriv.createrawtransaction([{"txid": txid, "vout": 0}], {w0.getnewaddress(): 49.999})
+        tx = wpriv.createrawtransaction([{"txid": txid, "vout": 0}], {w0.getnewaddress(): float(BLOCK_SUBSIDY - Decimal('0.001'))})
         signed_tx = wpriv.signrawtransactionwithwallet(tx)
         w1.sendrawtransaction(signed_tx['hex'])
 
@@ -1020,7 +1023,7 @@ class ImportDescriptorsTest(BitcoinTestFramework):
 
         encrypted_wallet.walletpassphrase("passphrase", 99999)
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as thread:
-            with self.nodes[0].assert_debug_log(expected_msgs=["Rescan started from block 0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206... (slow variant inspecting all blocks)"], timeout=10):
+            with self.nodes[0].assert_debug_log(expected_msgs=["Rescan started from block f1c2b04f4fc9cacae4a4fb143bced0793faf917a96826c981afa4c89042b0a24... (slow variant inspecting all blocks)"], timeout=10):
                 importing = thread.submit(encrypted_wallet.importdescriptors, requests=[descriptor])
 
             # Set the passphrase timeout to 1 to test that the wallet remains unlocked during the rescan

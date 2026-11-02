@@ -30,7 +30,8 @@ from test_framework.util import (
 # Rescans start at the earliest block up to 2 hours before a key timestamp, so
 # the manual prune RPC avoids pruning blocks in the same window to be
 # compatible with pruning based on key creation time.
-TIMESTAMP_WINDOW = 2 * 60 * 60
+# 2-hour buffer matching src/chain.h TIMESTAMP_WINDOW (header times are ms).
+TIMESTAMP_WINDOW = 2 * 60 * 60 * 1000
 
 def mine_large_blocks(node, n):
     # Make a large scriptPubKey for the coinbase transaction. This is OP_RETURN
@@ -496,7 +497,7 @@ class PruneTest(BitcoinTestFramework):
     def test_scanblocks_pruned(self):
         node = self.nodes[5]
         genesis_blockhash = node.getblockhash(0)
-        false_positive_spk = bytes.fromhex("001400000000000000000000000000000000000cadcb")
+        false_positive_spk = bytes.fromhex("00140000000000000000000000000000000000045f3e")
 
         assert genesis_blockhash in node.scanblocks(
             "start", [{"desc": f"raw({false_positive_spk.hex()})"}], 0, 0)['relevant_blocks']

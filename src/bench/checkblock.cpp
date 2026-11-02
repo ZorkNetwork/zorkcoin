@@ -20,6 +20,10 @@
 // These are the two major time-sinks which happen after we have fully received
 // a block off the wire, but before we can relay the block on to peers using
 // compact block relay.
+//
+// block413567.raw is Bitcoin block 413567 rewritten for Zorkcoin: 88-byte
+// header, nBits at powLimit, and a kHeavyHash nonce. The 1557-tx payload is
+// unchanged so merkle checks still exercise a full-size block.
 
 static void DeserializeBlockTest(benchmark::Bench& bench)
 {

@@ -137,7 +137,12 @@ void BanMan::Ban(const CSubNet& sub_net, int64_t ban_time_offset, bool since_uni
         normalized_ban_time_offset = m_default_ban_time;
         normalized_since_unix_epoch = false;
     }
-    ban_entry.nBanUntil = (normalized_since_unix_epoch ? 0 : GetTime()) + normalized_ban_time_offset;
+    // Relative bantime is in seconds; absolute bantime is milliseconds since epoch.
+    if (normalized_since_unix_epoch) {
+        ban_entry.nBanUntil = normalized_ban_time_offset;
+    } else {
+        ban_entry.nBanUntil = GetTime() + normalized_ban_time_offset * 1000;
+    }
 
     {
         LOCK(m_banned_mutex);

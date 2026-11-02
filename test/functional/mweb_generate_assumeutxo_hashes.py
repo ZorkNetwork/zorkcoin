@@ -75,6 +75,9 @@ class GenerateMWEBAssumeutxoHashes(BitcoinTestFramework):
         self.log.info("Phase 3: finish MWEB extension through height %s", SNAPSHOT_BASE_MWEB)
 
         if self.capture_pegin:
+            # Print the deterministic wallet's MWEB receive address for this HRP.
+            w = node.get_wallet_rpc('mweb_assumeutxo')
+            print('ASSUMEUTXO_MWEB_PEGIN_ADDRESS', w.getnewaddress(address_type='mweb'))
             pegin_txid, raw_hex = finish_assumeutxo_mweb_chain(self, node, capture_pegin=True)
             print('ASSUMEUTXO_MWEB_PEGIN_TXID', pegin_txid)
             print('ASSUMEUTXO_MWEB_PEGIN_RAW_HEX', raw_hex)

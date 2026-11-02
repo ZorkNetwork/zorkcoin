@@ -474,11 +474,21 @@ class TestNode():
         return self.__getattr__('generatetodescriptor')(*args, **kwargs)
 
     def setmocktime(self, timestamp):
-        """Wrapper for setmocktime RPC, sets self.mocktime"""
+        """Wrapper for setmocktime RPC, sets self.mocktime
+
+        Block header / chaininfo RPC `time` fields are milliseconds
+        (UNIX_EPOCH_TIME_MS). The setmocktime RPC still takes seconds and
+        multiplies into NodeClock. Convert accidental ms values so callers
+        can pass either.
+        """
         if timestamp == 0:
             # setmocktime(0) resets to system time.
             self.mocktime = None
         else:
+            # Values far above the RPC's uint32-second ceiling are header ms.
+            # Keep 2**32 (and similar) intact so the RPC can reject them.
+            if timestamp >= 10**11:
+                timestamp //= 1000
             self.mocktime = timestamp
         return self.__getattr__('setmocktime')(timestamp)
 

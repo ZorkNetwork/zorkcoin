@@ -663,7 +663,7 @@ class FullBlockTest(BitcoinTestFramework):
         self.move_tip(44)
         b47 = self.next_block(47)
         target = uint256_from_compact(b47.nBits)
-        while b47.hash_int <= target:
+        while b47.pow_hash_int <= target:
             # Rehash nonces until an invalid too-high-hash block is found.
             b47.nNonce += 1
         self.send_blocks([b47], False, force_send=True, reject_reason='high-hash', reconnect=True)
@@ -671,7 +671,7 @@ class FullBlockTest(BitcoinTestFramework):
         self.log.info("Reject a block with a timestamp >2 hours in the future")
         self.move_tip(44)
         b48 = self.next_block(48)
-        b48.nTime = int(time.time()) + 60 * 60 * 3
+        b48.nTime = int(time.time() * 1000) + 3 * 60 * 60 * 1000
         # Header timestamp has changed. Re-solve the block.
         b48.solve()
         self.send_blocks([b48], False, force_send=True, reject_reason='time-too-new')
@@ -1366,7 +1366,8 @@ class FullBlockTest(BitcoinTestFramework):
             additional_output_scripts = []
         if self.tip is None:
             base_block_hash = self.genesis_hash
-            block_time = int(time.time()) + 1
+            # Header nTime is milliseconds (UNIX_EPOCH_TIME_MS).
+            block_time = int(time.time() * 1000) + 1000
         else:
             base_block_hash = self.tip.hash_int
             block_time = self.tip.nTime + 1

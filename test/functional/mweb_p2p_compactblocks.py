@@ -63,7 +63,7 @@ class MWEBCompactBlocksTest(CompactBlocksTest):
         super().set_test_params()
         # Define the MWEB deployment without starting it, so the node advertises NODE_MWEB.
         # DeploymentEnabled is true, so getblocktemplate requires the mweb rule.
-        self.extra_args[0].append("-vbparams=mweb:9999999998:9999999999")
+        self.extra_args[0].append("-vbparams=mweb:9999999998000:9999999999000")
 
     def build_block_on_tip(self, node):
         # Upstream uses segwit-only GBT params. This node can still activate MWEB.

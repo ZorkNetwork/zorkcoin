@@ -47,6 +47,7 @@
 #include <node/transaction.h>
 #include <node/types.h>
 #include <node/warnings.h>
+#include <pow.h>
 #include <policy/feerate.h>
 #include <policy/fees/estimator_man.h>
 #include <policy/policy.h>
@@ -945,10 +946,15 @@ public:
         return TransactionMerklePath(m_block_template->block, 0);
     }
 
-    bool submitSolution(uint32_t version, uint32_t timestamp, uint32_t nonce, CTransactionRef coinbase, std::string& reason, std::string& debug) override
+    bool submitSolution(uint32_t version, uint64_t timestamp, uint64_t nonce, CTransactionRef coinbase, std::string& reason, std::string& debug) override
     {
         if (!coinbase) return false;
         AddMerkleRootAndCoinbase(m_block_template->block, std::move(coinbase), version, timestamp, nonce);
+        {
+            LOCK(::cs_main);
+            const CBlockIndex* tip{chainman().ActiveChain().Tip()};
+            m_block_template->block.nBits = GetNextWorkRequired(tip, &m_block_template->block, chainman().GetConsensus());
+        }
         return SubmitBlock(chainman(), std::make_shared<const CBlock>(m_block_template->block), reason, debug);
     }
 

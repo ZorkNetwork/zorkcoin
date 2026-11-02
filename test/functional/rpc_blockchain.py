@@ -31,6 +31,7 @@ import textwrap
 from test_framework.blocktools import (
     MAX_FUTURE_BLOCK_TIME,
     TIME_GENESIS_BLOCK,
+    TIME_GENESIS_BLOCK_MS,
     REGTEST_N_BITS,
     REGTEST_TARGET,
     create_block,
@@ -44,11 +45,13 @@ from test_framework.messages import (
     COIN,
     from_hex,
     msg_block,
+    BLOCK_HEADER_SIZE,
 )
 from test_framework.p2p import P2PInterface
 from test_framework.script import hash256, OP_TRUE
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
+    BLOCK_SUBSIDY,
     assert_not_equal,
     assert_equal,
     assert_greater_than,
@@ -62,10 +65,11 @@ from test_framework.wallet import MiniWallet
 
 
 HEIGHT = 200  # blocks mined
-TIME_RANGE_STEP = 600  # ten-minute steps
-TIME_RANGE_MTP = TIME_GENESIS_BLOCK + (HEIGHT - 6) * TIME_RANGE_STEP
-TIME_RANGE_TIP = TIME_GENESIS_BLOCK + (HEIGHT - 1) * TIME_RANGE_STEP
-TIME_RANGE_END = TIME_GENESIS_BLOCK + HEIGHT * TIME_RANGE_STEP
+TIME_RANGE_STEP = 600  # ten-minute steps (seconds; for setmocktime)
+TIME_RANGE_STEP_MS = TIME_RANGE_STEP * 1000
+TIME_RANGE_MTP = TIME_GENESIS_BLOCK_MS + (HEIGHT - 6) * TIME_RANGE_STEP_MS
+TIME_RANGE_TIP = TIME_GENESIS_BLOCK_MS + (HEIGHT - 1) * TIME_RANGE_STEP_MS
+TIME_RANGE_END = TIME_GENESIS_BLOCK_MS + HEIGHT * TIME_RANGE_STEP_MS
 DIFFICULTY_ADJUSTMENT_INTERVAL = 144
 
 
@@ -107,7 +111,7 @@ class BlockchainTest(BitcoinTestFramework):
 
     def mine_chain(self):
         self.log.info(f"Generate {HEIGHT} blocks after the genesis block in ten-minute steps")
-        for t in range(TIME_GENESIS_BLOCK, TIME_RANGE_END, TIME_RANGE_STEP):
+        for t in range(TIME_GENESIS_BLOCK, TIME_GENESIS_BLOCK + HEIGHT * TIME_RANGE_STEP, TIME_RANGE_STEP):
             self.nodes[0].setmocktime(t)
             self.generate(self.wallet, 1)
         assert_equal(self.nodes[0].getblockchaininfo()['blocks'], HEIGHT)
@@ -121,16 +125,19 @@ class BlockchainTest(BitcoinTestFramework):
 
     def _test_max_future_block_time(self):
         self.stop_node(0)
+        # -mocktime is seconds; tip/MAX_FUTURE_BLOCK_TIME are milliseconds.
+        tip_sec = TIME_RANGE_TIP // 1000
+        future_sec = MAX_FUTURE_BLOCK_TIME // 1000
         self.log.info("A block tip of more than MAX_FUTURE_BLOCK_TIME in the future raises an error")
         self.nodes[0].assert_start_raises_init_error(
-            extra_args=[f"-mocktime={TIME_RANGE_TIP - MAX_FUTURE_BLOCK_TIME - 1}"],
+            extra_args=[f"-mocktime={tip_sec - future_sec - 1}"],
             expected_msg="The block database contains a block which appears to be from the future."
             " This may be due to your computer's date and time being set incorrectly."
             f" Only rebuild the block database if you are sure that your computer's date and time are correct.{os.linesep}"
             "Please restart with -reindex or -reindex-chainstate to recover.",
         )
         self.log.info("A block tip of MAX_FUTURE_BLOCK_TIME in the future is fine")
-        self.start_node(0, extra_args=[f"-mocktime={TIME_RANGE_TIP - MAX_FUTURE_BLOCK_TIME}"])
+        self.start_node(0, extra_args=[f"-mocktime={tip_sec - future_sec}"])
 
     def _test_getblockchaininfo(self):
         self.log.info("Test getblockchaininfo")
@@ -154,7 +161,7 @@ class BlockchainTest(BitcoinTestFramework):
         ]
         res = self.nodes[0].getblockchaininfo()
 
-        assert_equal(res['time'], TIME_RANGE_END - TIME_RANGE_STEP)
+        assert_equal(res['time'], TIME_RANGE_END - TIME_RANGE_STEP_MS)
         assert_equal(res['mediantime'], TIME_RANGE_MTP)
 
         # result should have these additional pruning keys if manual pruning is enabled
@@ -274,12 +281,13 @@ class BlockchainTest(BitcoinTestFramework):
 
     def _test_verificationprogress(self):
         self.log.info("Check that verificationprogress is less than 1 when the block tip is old")
-        future = 2 * 60 * 60
-        self.nodes[0].setmocktime(self.nodes[0].getblockchaininfo()["time"] + future + 1)
+        future = 2 * 60 * 60  # seconds beyond tip for the 2h "recent tip" window
+        tip_sec = self.nodes[0].getblockchaininfo()["time"] // 1000
+        self.nodes[0].setmocktime(tip_sec + future + 1)
         assert_greater_than(1, self.nodes[0].getblockchaininfo()["verificationprogress"])
 
         self.log.info("Check that verificationprogress is exactly 1 for a recent block tip")
-        self.nodes[0].setmocktime(self.nodes[0].getblockchaininfo()["time"] + future)
+        self.nodes[0].setmocktime(tip_sec + future)
         assert_equal(1, self.nodes[0].getblockchaininfo()["verificationprogress"])
 
         self.log.info("Check that verificationprogress is less than 1 as soon as a new header comes in")
@@ -294,7 +302,8 @@ class BlockchainTest(BitcoinTestFramework):
         assert_raises_rpc_error(-8, f"Mocktime must be in the range [0, {time_2106}], not {time_2106 + 1}.", self.nodes[0].setmocktime, time_2106 + 1)
         self.nodes[0].setmocktime(time_2106)
         last = self.generate(self.nodes[0], 6)[-1]
-        assert_equal(self.nodes[0].getblockheader(last)["mediantime"], time_2106)
+        # Header mediantime is milliseconds.
+        assert_equal(self.nodes[0].getblockheader(last)["mediantime"], time_2106 * 1000)
 
     def _test_getchaintxstats(self):
         self.log.info("Test getchaintxstats")
@@ -328,7 +337,8 @@ class BlockchainTest(BitcoinTestFramework):
         b1 = self.nodes[0].getblock(b1_hash)
         b200_hash = self.nodes[0].getblockhash(HEIGHT)
         b200 = self.nodes[0].getblock(b200_hash)
-        time_diff = b200['mediantime'] - b1['mediantime']
+        time_diff_ms = b200['mediantime'] - b1['mediantime']
+        time_diff = time_diff_ms // 1000  # window_interval is seconds
 
         chaintxstats = self.nodes[0].getchaintxstats()
         assert_equal(chaintxstats['time'], b200['time'])
@@ -338,7 +348,8 @@ class BlockchainTest(BitcoinTestFramework):
         assert_equal(chaintxstats['window_block_count'], HEIGHT - 1)
         assert_equal(chaintxstats['window_tx_count'], HEIGHT - 1)
         assert_equal(chaintxstats['window_interval'], time_diff)
-        assert_equal(round(chaintxstats['txrate'] * time_diff, 10), Decimal(HEIGHT - 1))
+        # txrate uses the full millisecond MTP delta; window_interval truncates to whole seconds.
+        assert_equal(round(chaintxstats['txrate'] * time_diff_ms / 1000, 10), Decimal(HEIGHT - 1))
 
         chaintxstats = self.nodes[0].getchaintxstats(blockhash=b1_hash)
         assert_equal(chaintxstats['time'], b1['time'])
@@ -354,7 +365,7 @@ class BlockchainTest(BitcoinTestFramework):
         node = self.nodes[0]
         res = node.gettxoutsetinfo()
 
-        assert_equal(res['total_amount'], Decimal('8725.00000000'))
+        assert_equal(res['total_amount'], Decimal('174.5') * BLOCK_SUBSIDY)
         assert_equal(res['transactions'], HEIGHT)
         assert_equal(res['height'], HEIGHT)
         assert_equal(res['txouts'], HEIGHT)
@@ -429,7 +440,7 @@ class BlockchainTest(BitcoinTestFramework):
         # Validate the gettxout response
         assert_equal(txout['bestblock'], best_block_hash)
         assert_equal(txout['confirmations'], 1)
-        assert_equal(txout['value'], 25)
+        assert_equal(txout['value'], BLOCK_SUBSIDY / 2)
         assert_equal(txout['scriptPubKey']['address'], self.wallet.get_address())
         assert_equal(txout['scriptPubKey']['hex'], self.wallet.get_output_script().hex())
         decoded_script = node.decodescript(self.wallet.get_output_script().hex())
@@ -660,7 +671,8 @@ class BlockchainTest(BitcoinTestFramework):
 
         def assert_hexblock_hashes(verbosity):
             block = node.getblock(blockhash, verbosity)
-            assert_equal(blockhash, hash256(bytes.fromhex(block[:160]))[::-1].hex())
+            # Identity hash is SHA256d of the full 88-byte header.
+            assert_equal(blockhash, hash256(bytes.fromhex(block[:BLOCK_HEADER_SIZE * 2]))[::-1].hex())
 
         def assert_fee_not_in_block(hash, verbosity):
             block = node.getblock(hash, verbosity)
@@ -750,7 +762,7 @@ class BlockchainTest(BitcoinTestFramework):
 
         self.log.info("Test getblock when block data is available but undo data isn't")
         # Submits a block building on the header-only block, so it can't be connected and has no undo data
-        tx = create_tx_with_script(block.vtx[0], 0, script_sig=bytes([OP_TRUE]), amount=50 * COIN)
+        tx = create_tx_with_script(block.vtx[0], 0, script_sig=bytes([OP_TRUE]), amount=4294967296)
         block_noundo = create_block(block.hash_int, create_coinbase(current_height + 2, nValue=100), ntime=block_time + 1, txlist=[tx])
         block_noundo.solve()
         node.submitblock(block_noundo.serialize().hex())

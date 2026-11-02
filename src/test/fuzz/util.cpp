@@ -34,8 +34,9 @@ CAmount ConsumeMoney(FuzzedDataProvider& fuzzed_data_provider, const std::option
 NodeSeconds ConsumeTime(FuzzedDataProvider& fuzzed_data_provider, const std::optional<int64_t>& min, const std::optional<int64_t>& max) noexcept
 {
     // Avoid t=0 (1970-01-01T00:00:00Z) since SetMockTime(0) disables mocktime.
-    static const int64_t time_min{ParseISO8601DateTime("2000-01-01T00:00:01Z").value()};
-    static const int64_t time_max{ParseISO8601DateTime("2100-12-31T23:59:59Z").value()};
+    // ParseISO8601DateTime returns milliseconds; ConsumeTime bounds are seconds.
+    static const int64_t time_min{ParseISO8601DateTime("2000-01-01T00:00:01Z").value() / 1000};
+    static const int64_t time_max{ParseISO8601DateTime("2100-12-31T23:59:59Z").value() / 1000};
     return NodeSeconds{ConsumeDuration<std::chrono::seconds>(fuzzed_data_provider, min.value_or(time_min) * 1s, max.value_or(time_max) * 1s)};
 }
 

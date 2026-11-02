@@ -33,6 +33,7 @@ struct NodeClock : public std::chrono::system_clock {
     static constexpr time_point epoch{};
 };
 using NodeSeconds = std::chrono::time_point<NodeClock, std::chrono::seconds>;
+using NodeMilliseconds = std::chrono::time_point<NodeClock, std::chrono::milliseconds>;
 
 using SteadyClock = std::chrono::steady_clock;
 using SteadySeconds = std::chrono::time_point<std::chrono::steady_clock, std::chrono::seconds>;
@@ -42,7 +43,7 @@ using SteadyMicroseconds = std::chrono::time_point<std::chrono::steady_clock, st
 using SystemClock = std::chrono::system_clock;
 
 /// Version of SteadyClock that is mockable in the context of tests (via
-/// FakeSteadyClock, or Self::SetMockTime), otherwise the system steady
+/// SteadyClockContext, or Self::SetMockTime), otherwise the system steady
 /// clock.
 struct MockableSteadyClock : public std::chrono::steady_clock {
     using time_point = std::chrono::time_point<MockableSteadyClock>;
@@ -102,22 +103,29 @@ using HoursDouble = std::chrono::duration<double, std::chrono::hours::period>;
 using SecondsDouble = std::chrono::duration<double, std::chrono::seconds::period>;
 using MillisecondsDouble = std::chrono::duration<double, std::chrono::milliseconds::period>;
 
-/**
- * DEPRECATED
- * Use either ClockType::now() or Now<TimePointType>() if a cast is needed.
- * ClockType is
- * - SteadyClock/std::chrono::steady_clock for steady time
- * - SystemClock/std::chrono::system_clock for system time
- * - NodeClock                             for mockable system time
- */
+/** Mockable node time in milliseconds since Unix epoch. */
 int64_t GetTime();
 
-/** For testing. Set e.g. with the setmocktime rpc, or -mocktime argument */
+/** System wall-clock time in milliseconds (not mockable). */
+int64_t GetTimeMillis();
+/** System wall-clock time in microseconds (not mockable). */
+int64_t GetTimeMicros();
+/** System wall-clock time in whole seconds (not mockable). */
+int64_t GetSystemTimeInSeconds();
+
+/**
+ * Set mock time for tests. @p nMockTimeIn is milliseconds since epoch; 0 clears mock.
+ * -mocktime / setmocktime pass seconds and are scaled by 1000 at the call site.
+ */
+void SetMockTime(int64_t nMockTimeIn);
+
+/** Chrono helpers: values are converted to/from the internal millisecond mock clock. */
 void SetMockTime(std::chrono::seconds mock_time_in);
 void SetMockTime(std::chrono::time_point<NodeClock, std::chrono::seconds> mock);
+void SetMockTime(NodeMilliseconds mock);
 
-/** For testing */
-std::chrono::seconds GetMockTime();
+/** Mock time in milliseconds since epoch; 0 if mock is disabled. */
+int64_t GetMockTime();
 
 /**
  * Return the current time point cast to the given precision. Only use this
@@ -128,12 +136,10 @@ T Now()
 {
     return std::chrono::time_point_cast<typename T::duration>(T::clock::now());
 }
-/** DEPRECATED, see GetTime */
+
+/** Duration since epoch of mockable node time, at precision T. */
 template <typename T>
-T GetTime()
-{
-    return Now<std::chrono::time_point<NodeClock, T>>().time_since_epoch();
-}
+T GetTime();
 
 /**
  * ISO 8601 formatting is preferred. Use the FormatISO8601{DateTime,Date}

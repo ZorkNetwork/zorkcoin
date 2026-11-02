@@ -2,124 +2,82 @@
 # Copyright (c) 2025-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
-"""Test mining on an alternate mainnet
+"""Test ASERT difficulty movement.
 
-Test mining related RPCs that involve difficulty adjustment, which
-regtest doesn't have.
+Bitcoin Core's original mining_mainnet used an SMA retarget fixture
+(mainnet_alt.json). Zorkcoin uses GravityAsert from genesis. This test runs
+on regtest with `-test=asert` (enables retargeting).
 
-It uses an alternate mainnet chain. See data/README.md for how it was generated.
-
-Mine one retarget period worth of blocks with a short interval in
-order to maximally raise the difficulty. Verify this using the getmininginfo RPC.
-
+Regtest also allows min-difficulty blocks after a long gap. We first mine a
+few easy min-diff blocks, then a run of fast blocks (gap < 2× spacing) and
+check that ASERT raises difficulty.
 """
 
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
-)
-from test_framework.blocktools import (
-    DIFF_1_N_BITS,
-    DIFF_1_TARGET,
-    DIFF_4_N_BITS,
-    DIFF_4_TARGET,
-    create_coinbase,
-    nbits_str,
-    target_str
+    assert_greater_than,
 )
 
-from test_framework.messages import (
-    CBlock,
-    SEQUENCE_FINAL,
-)
+# nPowTargetSpacing from chainparams.
+POW_TARGET_SPACING_MS = 1 << 17
+UNSPENDABLE_DESC = "raw(51)"
 
-import json
-import os
-
-# See data/README.md
-COINBASE_SCRIPT_PUBKEY="76a914eadbac7f36c37e39361168b7aaee3cb24a25312d88ac"
 
 class MiningMainnetTest(BitcoinTestFramework):
 
     def set_test_params(self):
         self.num_nodes = 1
         self.setup_clean_chain = True
-        self.chain = "" # main
-
-    def add_options(self, parser):
-        parser.add_argument(
-            '--datafile',
-            default='data/mainnet_alt.json',
-            help='Block data file (default: %(default)s)',
-        )
-
-    def mine(self, height, prev_hash, blocks, node):
-        self.log.debug(f"height={height}")
-        block = CBlock()
-        block.nVersion = 0x20000000
-        block.hashPrevBlock = int(prev_hash, 16)
-        block.nTime = blocks['timestamps'][height - 1]
-        block.nBits = DIFF_1_N_BITS if height < 2016 else DIFF_4_N_BITS
-        block.nNonce = blocks['nonces'][height - 1]
-        block.vtx = [create_coinbase(height=height, script_pubkey=bytes.fromhex(COINBASE_SCRIPT_PUBKEY), halving_period=210000)]
-        # The alternate mainnet chain was mined with non-timelocked coinbase txs.
-        block.vtx[0].nLockTime = 0
-        block.vtx[0].vin[0].nSequence = SEQUENCE_FINAL
-        block.hashMerkleRoot = block.calc_merkle_root()
-        block_hex = block.serialize(with_witness=False).hex()
-        self.log.debug(block_hex)
-        assert_equal(node.submitblock(block_hex), None)
-        prev_hash = node.getbestblockhash()
-        assert_equal(prev_hash, block.hash_hex)
-        return prev_hash
-
+        # Enable ASERT retargeting on regtest (default regtest has fPowNoRetargeting).
+        self.extra_args = [["-test=asert"]]
+        self.rpc_timeout = 120
 
     def run_test(self):
         node = self.nodes[0]
-        # Clear disk space warning
         node.stderr.seek(0)
         node.stderr.truncate()
-        self.log.info("Load alternative mainnet blocks")
-        path = os.path.join(os.path.dirname(os.path.realpath(__file__)), self.options.datafile)
-        prev_hash = node.getbestblockhash()
-        blocks = None
-        with open(path) as f:
-            blocks = json.load(f)
-            n_blocks = len(blocks['timestamps'])
-            assert_equal(n_blocks, 2016)
 
-        # Mine up to the last block of the first retarget period
-        for i in range(2015):
-            prev_hash = self.mine(i + 1, prev_hash, blocks, node)
+        tip_hdr = node.getblockheader(node.getbestblockhash())
+        tip_time_ms = tip_hdr["time"]
+        assert_equal(node.getblockcount(), 0)
 
-        assert_equal(node.getblockcount(), 2015)
+        node.setmocktime(tip_time_ms // 1000)
 
-        self.log.info("Check difficulty adjustment with getmininginfo")
-        mining_info = node.getmininginfo()
-        assert_equal(mining_info['difficulty'], 1)
-        assert_equal(mining_info['bits'], nbits_str(DIFF_1_N_BITS))
-        assert_equal(mining_info['target'], target_str(DIFF_1_TARGET))
+        # Long gaps → min-difficulty (powLimit) so the first blocks are cheap to mine.
+        for height in range(1, 4):
+            tip_time_ms += POW_TARGET_SPACING_MS * 3
+            node.setmocktime(tip_time_ms // 1000)
+            self.generatetodescriptor(node, 1, UNSPENDABLE_DESC)
+            assert_equal(node.getblockcount(), height)
 
-        assert_equal(mining_info['next']['height'], 2016)
-        assert_equal(mining_info['next']['difficulty'], 4)
-        assert_equal(mining_info['next']['bits'], nbits_str(DIFF_4_N_BITS))
-        assert_equal(mining_info['next']['target'], target_str(DIFF_4_TARGET))
+        baseline = node.getmininginfo()
+        baseline_diff = baseline["difficulty"]
+        self.log.info(f"after min-diff warmup: difficulty={baseline_diff} next={baseline['next']['difficulty']}")
 
-        # Mine first block of the second retarget period
-        height = 2016
-        prev_hash = self.mine(height, prev_hash, blocks, node)
-        assert_equal(node.getblockcount(), height)
+        # Fast blocks (gap < 2× spacing) so min-diff does not apply and ASERT tightens.
+        n_fast = 4
+        for height in range(4, 4 + n_fast):
+            tip_time_ms += POW_TARGET_SPACING_MS // 4
+            node.setmocktime(tip_time_ms // 1000)
+            self.generatetodescriptor(node, 1, UNSPENDABLE_DESC)
+            assert_equal(node.getblockcount(), height)
 
-        mining_info = node.getmininginfo()
-        assert_equal(mining_info['difficulty'], 4)
+        final = node.getmininginfo()
+        self.log.info(
+            f"after {n_fast} fast blocks: tip difficulty={final['difficulty']} "
+            f"next={final['next']['difficulty']}"
+        )
+        assert_greater_than(final["difficulty"], baseline_diff)
+        # Next work is genesis-anchored ASERT, not min-diff, so it must also sit
+        # well above the powLimit tip. Do not compare next-to-next: warmup next
+        # is already ASERT-from-genesis and a short fast run need not exceed it.
+        assert_greater_than(final["next"]["difficulty"], baseline_diff)
 
-        self.log.info("getblock RPC should show historical target")
-        block_info = node.getblock(node.getblockhash(1))
-
-        assert_equal(block_info['difficulty'], 1)
-        assert_equal(block_info['bits'], nbits_str(DIFF_1_N_BITS))
-        assert_equal(block_info['target'], target_str(DIFF_1_TARGET))
+        block_info = node.getblock(node.getblockhash(3 + n_fast))
+        assert_equal(block_info["bits"], final["bits"])
+        assert_equal(block_info["difficulty"], final["difficulty"])
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     MiningMainnetTest(__file__).main()

@@ -207,7 +207,7 @@ void Finish(FuzzedDataProvider& fuzzed_data_provider, MockedTxPool& tx_pool, Cha
     if (fuzzed_data_provider.ConsumeBool()) {
         // Try expiry
         LOCK2(::cs_main, tx_pool.cs);
-        tx_pool.Expire(GetMockTime() - std::chrono::seconds(fuzzed_data_provider.ConsumeIntegral<uint32_t>()));
+        tx_pool.Expire(std::chrono::seconds{GetMockTime() / 1000} - std::chrono::seconds(fuzzed_data_provider.ConsumeIntegral<uint32_t>()));
     }
     WITH_LOCK(::cs_main, tx_pool.check(chainstate.CoinsTip(), chainstate.m_chain.Height() + 1, chainstate.m_chainman.GetConsensus()));
     g_setup->m_node.validation_signals->SyncWithValidationInterfaceQueue();
@@ -215,10 +215,11 @@ void Finish(FuzzedDataProvider& fuzzed_data_provider, MockedTxPool& tx_pool, Cha
 
 void MockTime(FuzzedDataProvider& fuzzed_data_provider, const Chainstate& chainstate)
 {
-    const auto time = ConsumeTime(fuzzed_data_provider,
-                                  chainstate.m_chain.Tip()->GetMedianTimePast() + 1,
-                                  std::numeric_limits<decltype(chainstate.m_chain.Tip()->nTime)>::max());
-    SetMockTime(time);
+    // Tip times / MTP are milliseconds; ConsumeTime()'s bounds are seconds.
+    // Setting via int64_t uses the millisecond mock clock directly.
+    static const int64_t time_max_ms{ParseISO8601DateTime("2100-12-31T23:59:59Z").value()};
+    const int64_t min_ms{chainstate.m_chain.Tip()->GetMedianTimePast() + 1};
+    SetMockTime(fuzzed_data_provider.ConsumeIntegralInRange<int64_t>(min_ms, std::max(min_ms, time_max_ms)));
 }
 
 std::unique_ptr<CTxMemPool> MakeMempool(FuzzedDataProvider& fuzzed_data_provider, const NodeContext& node)
@@ -305,8 +306,9 @@ FUZZ_TARGET(tx_pool_standard, .init = initialize_tx_pool)
     }
     outpoints_rbf = outpoints_supply;
 
-    // The sum of the values of all spendable outpoints
-    constexpr CAmount SUPPLY_TOTAL{COINBASE_MATURITY * 50 * COIN};
+    // The sum of the values of all spendable outpoints (Zorkcoin subsidy is 1<<32; regtest
+    // halving interval is 150, so the first COINBASE_MATURITY mature coinbases are unhalved).
+    constexpr CAmount SUPPLY_TOTAL{COINBASE_MATURITY * (CAmount{1} << 32)};
 
     SetMempoolConstraints(*node.args, fuzzed_data_provider);
     auto tx_pool_{MakeMempool(fuzzed_data_provider, node)};

@@ -191,8 +191,8 @@ public:
     /** Send ping message to all peers */
     virtual void SendPings() = 0;
 
-    /** Set the height of the best block and its time (seconds since epoch). */
-    virtual void SetBestBlock(int height, std::chrono::seconds time) = 0;
+    /** Set the height of the best block and its time (milliseconds since epoch). */
+    virtual void SetBestBlock(int height, std::chrono::milliseconds time) = 0;
 
     /* Public for unit testing. */
     virtual void UnitTestMisbehaving(NodeId peer_id) = 0;

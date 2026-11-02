@@ -15,13 +15,17 @@ FUZZ_TARGET(parse_iso8601)
 {
     FuzzedDataProvider fuzzed_data_provider(buffer.data(), buffer.size());
 
+    // Format/Parse operate in milliseconds since epoch.
     const int64_t random_time = fuzzed_data_provider.ConsumeIntegral<int32_t>();
     const std::string random_string = fuzzed_data_provider.ConsumeRemainingBytesAsString();
 
     const std::string iso8601_datetime = FormatISO8601DateTime(random_time);
     (void)FormatISO8601Date(random_time);
-    const int64_t parsed_time_1{ParseISO8601DateTime(iso8601_datetime).value()};
-    assert(parsed_time_1 == random_time);
+    if (!iso8601_datetime.empty()) {
+        const auto parsed{ParseISO8601DateTime(iso8601_datetime)};
+        assert(parsed);
+        assert(*parsed == random_time);
+    }
 
     (void)ParseISO8601DateTime(random_string);
 }

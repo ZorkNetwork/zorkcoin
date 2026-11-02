@@ -15,15 +15,15 @@ We build a chain that includes an invalid signature for one of the transactions:
               output can be spent
     102:      a block containing a transaction spending the coinbase
               transaction output. The transaction has an invalid signature.
-    103-2202: bury the bad block with just over two weeks' worth of blocks
-              (2100 blocks)
+    103-N:    bury the bad block with just over two weeks' worth of blocks
+              (nPowTargetSpacing=1<<17 ms => ~9229+100 bury blocks)
 
 Start a few nodes:
 
-    - node0 has no -assumevalid parameter. Try to sync to block 2202. It will
+    - node0 has no -assumevalid parameter. Try to sync to tip. It will
       reject block 102 and only sync as far as block 101
     - node1 has -assumevalid set to the hash of block 102. Try to sync to
-      block 2202. node1 will sync all the way to block 2202.
+      tip. node1 will sync all the way to tip.
     - node2 has -assumevalid set to the hash of block 102. Try to sync to
       block 200. node2 will reject block 102 since it's assumed valid, but it
       isn't buried by at least two weeks' work.
@@ -58,6 +58,16 @@ from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal
 from test_framework.wallet_util import generate_keypair
 
+# Zorkcoin nPowTargetSpacing is milliseconds (1<<17). GetBlockProofEquivalentTime
+# returns ms, matching validation's TWO_WEEKS_IN_MS check.
+POW_TARGET_SPACING_MS = 1 << 17
+TWO_WEEKS_MS = 60 * 60 * 24 * 7 * 2 * 1000
+# Just over two weeks of equivalent work (Bitcoin test used 2100 vs 2016 needed).
+BURY_BLOCKS = (TWO_WEEKS_MS // POW_TARGET_SPACING_MS) + 100
+HEADER_CHUNK = 2000
+# Spend almost the whole coinbase subsidy (1<<32 sat); leave 1 COIN as fee-like slack.
+INVALID_SPEND_VALUE = (1 << 32) - 100_000_000
+
 
 class BaseNode(P2PInterface):
     def send_header_for_blocks(self, new_blocks):
@@ -78,6 +88,10 @@ class AssumeValidTest(BitcoinTestFramework):
         # we need to pre-mine a block with an invalid transaction
         # signature so we can pass in the block hash as assumevalid.
         self.start_node(0)
+
+    def send_headers(self, p2p, blocks):
+        for i in range(0, len(blocks), HEADER_CHUNK):
+            p2p.send_header_for_blocks(blocks[i:i + HEADER_CHUNK])
 
     def run_test(self):
         # Build the blockchain
@@ -112,7 +126,7 @@ class AssumeValidTest(BitcoinTestFramework):
         # Create a transaction spending the coinbase output with an invalid (null) signature
         tx = CTransaction()
         tx.vin.append(CTxIn(COutPoint(self.block1.vtx[0].txid_int, 0), scriptSig=b""))
-        tx.vout.append(CTxOut(49 * 100000000, CScript([OP_TRUE])))
+        tx.vout.append(CTxOut(INVALID_SPEND_VALUE, CScript([OP_TRUE])))
 
         block102 = create_block(self.tip, height=height, ntime=self.block_time, txlist=[tx])
         self.block_time += 1
@@ -122,14 +136,15 @@ class AssumeValidTest(BitcoinTestFramework):
         self.block_time += 1
         height += 1
 
-        # Bury the assumed valid block 2100 deep
-        for _ in range(2100):
+        # Bury the assumed valid block with just over two weeks of Litecoin-equivalent work
+        for _ in range(BURY_BLOCKS):
             block = create_block(self.tip, height=height, ntime=self.block_time)
             block.solve()
             self.blocks.append(block)
             self.tip = block.hash_int
             self.block_time += 1
             height += 1
+        tip_height = len(self.blocks)
         block_1_hash = self.blocks[0].hash_hex
 
         self.start_node(1, extra_args=[f"-assumevalid={block102.hash_hex}"])
@@ -141,8 +156,7 @@ class AssumeValidTest(BitcoinTestFramework):
         # nodes[0]
         self.log.info("Send blocks to node0. Block 102 will be rejected.")
         p2p0 = self.nodes[0].add_p2p_connection(BaseNode())
-        p2p0.send_header_for_blocks(self.blocks[0:2000])
-        p2p0.send_header_for_blocks(self.blocks[2000:])
+        self.send_headers(p2p0, self.blocks)
         with self.nodes[0].assert_debug_log(expected_msgs=[
             f"Enabling script verification at block #1 ({block_1_hash}): assumevalid=0 (always verify).",
         ]):
@@ -159,8 +173,7 @@ class AssumeValidTest(BitcoinTestFramework):
         # nodes[1]
         self.log.info("Send all blocks to node1. All blocks will be accepted.")
         p2p1 = self.nodes[1].add_p2p_connection(BaseNode())
-        p2p1.send_header_for_blocks(self.blocks[0:2000])
-        p2p1.send_header_for_blocks(self.blocks[2000:])
+        self.send_headers(p2p1, self.blocks)
         with self.nodes[1].assert_debug_log(expected_msgs=[
             f"Disabling script verification at block #1 ({self.blocks[0].hash_hex}).",
         ]):
@@ -168,11 +181,13 @@ class AssumeValidTest(BitcoinTestFramework):
         with self.nodes[1].assert_debug_log(expected_msgs=[
             f"Enabling script verification at block #103 ({self.blocks[102].hash_hex}): block height above assumevalid height.",
         ]):
-            for i in range(1, 2202):
+            # Send in batches; flooding ~8k blocks can drop the p2p link.
+            for i in range(1, tip_height):
                 p2p1.send_without_ping(msg_block(self.blocks[i]))
-            # Syncing 2200 blocks can take a while on slow systems. Give it plenty of time to sync.
+                if i % 500 == 0:
+                    p2p1.sync_with_ping(timeout=120)
             p2p1.sync_with_ping(timeout=960)
-            assert_equal(self.nodes[1].getblockcount(), 2202)
+            assert_equal(self.nodes[1].getblockcount(), tip_height)
 
         # nodes[2]
         self.log.info("Send blocks to node2. Block 102 will be rejected.")

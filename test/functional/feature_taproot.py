@@ -1546,7 +1546,9 @@ class TaprootTest(BitcoinTestFramework):
             tx.version = random.choice(TX_STANDARD_VERSIONS + [0, TX_MAX_STANDARD_VERSION + 1, random.getrandbits(32)])
             min_sequence = (tx.version != 1 and tx.version != 0) * 0x80000000  # The minimum sequence number to disable relative locktime
             if random.choice([True, False]):
-                tx.nLockTime = random.randrange(LOCKTIME_THRESHOLD, self.lastblocktime - 7200)  # all absolute locktimes in the past
+                # nLockTime time locks are seconds; block header times are milliseconds.
+                tip_locktime_sec = self.lastblocktime // 1000
+                tx.nLockTime = random.randrange(LOCKTIME_THRESHOLD, tip_locktime_sec - 7200)  # all absolute locktimes in the past
             else:
                 tx.nLockTime = random.randrange(self.lastblockheight + 1)  # all block heights in the past
 
@@ -1665,9 +1667,9 @@ class TaprootTest(BitcoinTestFramework):
         coinbase = CTransaction()
         coinbase.version = 1
         coinbase.vin = [CTxIn(COutPoint(0, 0xffffffff), CScript([OP_1, OP_1]), SEQUENCE_FINAL)]
-        coinbase.vout = [CTxOut(5000000000, CScript([OP_1]))]
+        coinbase.vout = [CTxOut(1 << 32, CScript([OP_1]))]
         coinbase.nLockTime = 0
-        assert_equal(coinbase.txid_hex, "f60c73405d499a956d3162e3483c395526ef78286458a4cb17b125aa92e49b20")
+        assert_equal(coinbase.txid_hex, "cf8fffbdab39cf31dfc15071a35defd901d2bbfb7a728c259a9efff92483f89c")
         # Mine it
         block = create_block(hashprev=int(self.nodes[0].getbestblockhash(), 16), coinbase=coinbase)
         block.solve()
@@ -1749,9 +1751,11 @@ class TaprootTest(BitcoinTestFramework):
         # come from distinct txids).
         txn = []
         lasttxid = coinbase.txid_int
-        amount = 5000000000
+        amount = 1 << 32
         for i, spk in enumerate(old_spks + tap_spks):
-            val = 42000000 * (i + 7)
+            # Scaled from Bitcoin's 42e6 so sum(val) fits under subsidy 1<<32
+            # (10 outputs: sum(i+7)=115 → 36e6*115 < 2^32 < 42e6*115).
+            val = 36000000 * (i + 7)
             tx = CTransaction()
             tx.version = 1
             tx.vin = [CTxIn(COutPoint(lasttxid, i & 1), CScript([]), SEQUENCE_FINAL)]
@@ -1818,8 +1822,8 @@ class TaprootTest(BitcoinTestFramework):
         for i, spk in enumerate(input_spks):
             tx.vin.append(CTxIn(spend_info[spk]['prevout'], CScript(), sequences[i]))
             inputs.append(spend_info[spk]['utxo'])
-        tx.vout.append(CTxOut(1000000000, old_spks[1]))
-        tx.vout.append(CTxOut(3410000000, pubs[98]))
+        tx.vout.append(CTxOut(857142857, old_spks[1]))
+        tx.vout.append(CTxOut(2922857142, pubs[98]))
         tx.nLockTime = 500000000
         precomputed = {
             "hashAmounts": BIP341_sha_amounts(inputs),
@@ -1876,7 +1880,7 @@ class TaprootTest(BitcoinTestFramework):
         aux = tx_test.setdefault("auxiliary", {})
         aux['fullySignedTx'] = tx.serialize().hex()
         keypath_tests.append(tx_test)
-        assert_equal(hashlib.sha256(tx.serialize()).hexdigest(), "24bab662cb55a7f3bae29b559f651674c62bcc1cd442d44715c0133939107b38")
+        assert_equal(hashlib.sha256(tx.serialize()).hexdigest(), "9390973da9a493499371f46732cd043d9ee73e2035622e11580893cfd499d8e3")
         # Mine the spending transaction
         self.block_submit(self.nodes[0], [tx], "Spending txn", None, sigops_weight=10000, accept=True, witness=True)
 

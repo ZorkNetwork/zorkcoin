@@ -5,7 +5,7 @@
 
 import time
 
-from test_framework.blocktools import MAX_FUTURE_BLOCK_TIME
+from test_framework.blocktools import MAX_FUTURE_BLOCK_TIME_SEC as MAX_FUTURE_BLOCK_TIME
 from test_framework.descriptors import descsum_create
 from test_framework.messages import (
     COutPoint,

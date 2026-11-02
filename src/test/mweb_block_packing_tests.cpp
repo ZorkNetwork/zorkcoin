@@ -66,19 +66,20 @@ namespace {
 
 struct MWEBRegtest100Setup : public TestChain100Setup {
     MWEBRegtest100Setup()
-        : TestChain100Setup(ChainType::REGTEST, {.extra_args = {"-vbparams=mweb:1601450001:9999999999"}}) {}
+        : TestChain100Setup(ChainType::REGTEST, {.extra_args = {"-vbparams=mweb:1601450001000:9999999999000"}}) {}
 };
 
 /** Real admission is part of this test; leave ordinary packing fixtures alone. */
 struct MWEBCompetingPackingSetup : public TestChain100Setup {
     MWEBCompetingPackingSetup()
         : TestChain100Setup(ChainType::REGTEST, {.extra_args = {
-              "-vbparams=mweb:1601450001:9999999999", "-acceptnonstdtxn=0",
+              "-vbparams=mweb:1601450001000:9999999999000", "-acceptnonstdtxn=0",
               // 32-bit hosts reject -maxmempool above 500 MB (see node/mempool_args.cpp).
               sizeof(void*) == 4 ? "-maxmempool=500" : "-maxmempool=1000"}}) {}
 };
 
-constexpr uint32_t MWEB_VB_START_TIME = 1601450001;
+constexpr int64_t MWEB_VB_START_TIME = 1601450001LL * 1000;
+constexpr int64_t MWEB_VB_START_TIME_SEC = 1601450001;
 constexpr int FIRST_MWEB_HEIGHT = 432;
 
 uint256 Uint64Hash(uint64_t n)
@@ -146,12 +147,12 @@ void MineMwebEraBlock(NodeContext& node, const CScript& coinbase_script)
     std::shared_ptr<CBlock> block = PrepareBlock(node, {.coinbase_output_script = coinbase_script});
     {
         LOCK(::cs_main);
-        const uint32_t mtp = Assert(node.chainman)->ActiveChain().Tip()->GetMedianTimePast();
+        const int64_t mtp = Assert(node.chainman)->ActiveChain().Tip()->GetMedianTimePast();
         block->nTime = std::max({mtp + 1, MWEB_VB_START_TIME});
     }
     block->hashMerkleRoot = BlockMerkleRoot(*block);
     RegenerateCommitments(*block, *Assert(node.chainman));
-    while (!CheckProofOfWork(block->GetHash(), block->nBits, Params().GetConsensus())) {
+    while (!CheckProofOfWork(block->GetPoWHash(), block->nBits, Params().GetConsensus())) {
         ++block->nNonce;
         assert(block->nNonce);
     }
@@ -161,7 +162,7 @@ void MineMwebEraBlock(NodeContext& node, const CScript& coinbase_script)
 void MineToMwebChain(TestChain100Setup& setup, NodeContext& node, int post_activation_blocks = 2)
 {
     const CScript coinbase_script{CScript() << OP_TRUE};
-    SetMockTime(std::chrono::seconds{MWEB_VB_START_TIME});
+    SetMockTime(std::chrono::seconds{MWEB_VB_START_TIME_SEC});
 
     int height{WITH_LOCK(::cs_main, return Assert(node.chainman)->ActiveHeight())};
     while (height < FIRST_MWEB_HEIGHT - 1) {
@@ -900,7 +901,7 @@ BOOST_AUTO_TEST_CASE(t5_checkblock_accepts_near_200k_weight_under_cap)
     coinbase.vin[0].prevout.SetNull();
     coinbase.vin[0].scriptSig = CScript() << OP_0 << OP_0;
     coinbase.vout.resize(1);
-    coinbase.vout[0].nValue = 50 * COIN;
+    coinbase.vout[0].nValue = static_cast<CAmount>(1ULL << 32);
     coinbase.vout[0].scriptPubKey = CScript() << OP_TRUE;
     block.vtx.push_back(MakeTransactionRef(std::move(coinbase)));
 
@@ -936,7 +937,7 @@ BOOST_AUTO_TEST_CASE(t6_checkblock_rejects_50k_inputs_plus_heavy_weight)
     coinbase.vin[0].prevout.SetNull();
     coinbase.vin[0].scriptSig = CScript() << OP_0 << OP_0;
     coinbase.vout.resize(1);
-    coinbase.vout[0].nValue = 50 * COIN;
+    coinbase.vout[0].nValue = static_cast<CAmount>(1ULL << 32);
     coinbase.vout[0].scriptPubKey = CScript() << OP_TRUE;
     block.vtx.push_back(MakeTransactionRef(std::move(coinbase)));
 
@@ -1172,7 +1173,7 @@ BOOST_AUTO_TEST_CASE(t7_estimate_vs_exact_after_create_new_block)
     BOOST_REQUIRE_LE(exact, MAX_BLOCK_SERIALIZED_SIZE_BIP324);
 
     // Recompute a pessimistic estimate from included extension components.
-    size_t estimate = 80 + 9 + MWEB::BLOCK_SERIALIZED_COINBASE_RESERVE;
+    size_t estimate = ::GetSerializeSize(CBlockHeader{}) + 9 + MWEB::BLOCK_SERIALIZED_COINBASE_RESERVE;
     if (!tmpl->block.mweb_block.IsNull()) {
         // Header/wrapper pad + body serialize + hogex present.
         estimate += 256;
@@ -2588,7 +2589,7 @@ BOOST_AUTO_TEST_CASE(bp_max_standard_fanout_atmp_and_block)
     BOOST_REQUIRE_LE(expected_weight, mw::MAX_BLOCK_WEIGHT);
     BOOST_REQUIRE_GT(expected_weight + mw::STANDARD_OUTPUT_WEIGHT, mw::MAX_BLOCK_WEIGHT);
 
-    std::vector<test::TxOutput> seeds = MinePegins(*this, m_node, /*count=*/1, /*amount=*/50 * COIN);
+    std::vector<test::TxOutput> seeds = MinePegins(*this, m_node, /*count=*/1, /*amount=*/static_cast<CAmount>(1ULL << 32));
     BOOST_REQUIRE_EQUAL(seeds.size(), 1u);
     DrainMempool(m_node);
 
