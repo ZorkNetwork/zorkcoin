@@ -1190,6 +1190,28 @@ The ultimate upstream of the few externally managed subtrees are:
   - Used by leveldb for hardware acceleration of CRC32C checksums for data integrity.
   - Upstream at https://github.com/google/crc32c ; maintained by Google.
 
+- src/secp256k1
+  - Upstream at https://github.com/adgl-enterprises/secp256k1 ; a fork of
+    https://github.com/bitcoin-core/secp256k1 that adds the MWEB/ZKP modules.
+  - Releases are tagged `v<version>-zkp`. To update, fetch the release tag and pull it:
+
+    ```sh
+    git remote add secp256k1 https://github.com/adgl-enterprises/secp256k1.git
+    git fetch secp256k1 tag v0.8.2-zkp
+    git subtree pull --prefix=src/secp256k1 secp256k1 v0.8.2-zkp --squash
+    ```
+
+- src/crypto/blake3
+  - Upstream at https://github.com/adgl-enterprises/blake3 ; holds only the
+    standalone C implementation of each release, for MWEB usage.
+  - Releases are tagged `<version>-c`. To update, fetch the release tag and pull it:
+
+    ```sh
+    git remote add blake3 https://github.com/adgl-enterprises/blake3.git
+    git fetch blake3 tag 1.8.3-c
+    git subtree pull --prefix=src/crypto/blake3 blake3 1.8.3-c --squash
+    ```
+
 ## Upgrading LevelDB
 
 Extra care must be taken when upgrading LevelDB. This section explains issues

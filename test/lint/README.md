@@ -95,18 +95,26 @@ Usage: test/lint/git-subtree-check.sh [-r] DIR [COMMIT]
 To do a full check with `-r`, make sure that you have fetched the upstream repository branch in which the subtree is
 maintained:
 * for `src/crc32c`: https://github.com/bitcoin-core/crc32c-subtree.git (branch bitcoin-fork)
+* for `src/crypto/blake3`: https://github.com/adgl-enterprises/blake3.git (tag `<version>-c`, e.g. `1.8.3-c`)
 * for `src/crypto/ctaes`: https://github.com/bitcoin-core/ctaes.git (branch master)
 * for `src/ipc/libmultiprocess`: https://github.com/bitcoin-core/libmultiprocess (branch master)
 * for `src/leveldb`: https://github.com/bitcoin-core/leveldb-subtree.git (branch bitcoin-fork)
 * for `src/minisketch`: https://github.com/bitcoin-core/minisketch.git (branch master)
-* for `src/secp256k1`: https://github.com/bitcoin-core/secp256k1.git (branch master)
+* for `src/secp256k1`: https://github.com/adgl-enterprises/secp256k1.git (tag `v<version>-zkp`, e.g. `v0.8.2-zkp`)
 
 Keep this list in sync with `fn get_subtrees()` in the lint runner.
 
 To do so, add the upstream repository as remote:
 
 ```
-git remote add --fetch secp256k1 https://github.com/bitcoin-core/secp256k1.git
+git remote add --fetch secp256k1 https://github.com/adgl-enterprises/secp256k1.git
+```
+
+For subtrees that track a release tag, fetch that tag explicitly:
+
+```
+git remote add blake3 https://github.com/adgl-enterprises/blake3.git
+git fetch blake3 tag 1.8.3-c
 ```
 
 lint_ignore_dirs.py

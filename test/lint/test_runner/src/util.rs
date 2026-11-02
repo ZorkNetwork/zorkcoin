@@ -64,6 +64,7 @@ pub fn get_subtrees() -> Vec<&'static str> {
     // Keep in sync with [test/lint/README.md#git-subtree-checksh]
     vec![
         "src/crc32c",
+        "src/crypto/blake3",
         "src/crypto/ctaes",
         "src/ipc/libmultiprocess",
         "src/leveldb",

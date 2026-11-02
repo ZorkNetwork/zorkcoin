@@ -87,7 +87,7 @@ file(GLOB ui_files
   "${PROJECT_SOURCE_DIR}/src/qt/forms/*.ui"
 )
 
-set(subtrees crc32c crypto/ctaes leveldb minisketch secp256k1)
+set(subtrees crc32c crypto/blake3 crypto/ctaes leveldb minisketch secp256k1)
 set(exclude_dirs bench compat crypto support test univalue)
 foreach(directory IN LISTS subtrees exclude_dirs)
   list(FILTER translatable_sources
