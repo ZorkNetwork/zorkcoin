@@ -218,8 +218,9 @@ class WalletMigrationTest(BitcoinTestFramework):
         # * BIP84 descriptors, P2WPKH, in the form of "84h/1h/0h/1/*" and "84h/1h/0h/1/*" (2 descriptors)
         # * BIP86 descriptors, P2TR, in the form of "86h/1h/0h/0/*" and "86h/1h/0h/1/*" (2 descriptors)
         # * A combo(PK) descriptor for the wallet master key.
-        # So, should have a total of 11 descriptors on it.
-        assert_equal(len(basic0.listdescriptors()["descriptors"]), 11)
+        # * MWEB descriptors for external and internal chains (2 descriptors)
+        # So, should have a total of 13 descriptors on it.
+        assert_equal(len(basic0.listdescriptors()["descriptors"]), 13)
 
         # Compare addresses info
         addr_info = basic0.getaddressinfo(addr)

@@ -4,6 +4,7 @@
 
 #include <common/system.h>
 #include <policy/policy.h>
+#include <primitives/block.h>
 #include <test/util/time.h>
 #include <test/util/txmempool.h>
 #include <txmempool.h>

@@ -7,6 +7,7 @@
 #define BITCOIN_NODE_MINER_H
 
 #include <consensus/amount.h>
+#include <kernel/cs_main.h>
 #include <node/mining_types.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
@@ -18,6 +19,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -29,7 +31,11 @@ class ChainstateManager;
 namespace Consensus {
 struct Params;
 } // namespace Consensus
+namespace MWEB {
+class Miner;
+}
 class uint256;
+
 namespace interfaces {
 struct BlockRef;
 } // namespace interfaces
@@ -67,7 +73,14 @@ private:
     uint64_t nBlockWeight;
     uint64_t nBlockTx;
     uint64_t nBlockSigOpsCost;
+    uint64_t nBlockMWEBWeight; // MWEB
+    /** Pessimistic estimate of final TX_WITH_WITNESS block wire size. */
+    uint64_t nBlockSerializedSize;
     CAmount nFees;
+
+    // MWEB Attributes
+    std::unique_ptr<MWEB::Miner> mweb_miner;
+    bool fIncludeMWEB{false};
 
     // Chain context for the block
     int nHeight;
@@ -81,6 +94,7 @@ public:
     explicit BlockAssembler(Chainstate& chainstate,
                             const CTxMemPool* mempool,
                             BlockCreateOptions create_options);
+    ~BlockAssembler();
 
     /** Construct a new block template */
     std::unique_ptr<CBlockTemplate> CreateNewBlock();
@@ -89,6 +103,8 @@ public:
     inline static std::optional<int64_t> m_last_block_num_txs{};
     /** The weight of the last assembled block (including reserved weight for block header, txs count and coinbase tx) */
     inline static std::optional<int64_t> m_last_block_weight{};
+    /** The MWEB weight of the last assembled block */
+    inline static std::optional<int64_t> m_last_block_mweb_weight{};
 
 private:
     const BlockCreateOptions m_options;
@@ -97,22 +113,40 @@ private:
     /** Clear the block's state and prepare for assembling a new block */
     void resetBlock();
     /** Add a tx to the block */
-    void AddToBlock(const CTxMemPoolEntry& entry);
+    bool AddToBlock(const CTxMemPoolEntry& entry);
 
     // Methods for how to add transactions to a block.
     /** Add transactions based on chunk feerate
       *
       * @pre BlockAssembler::m_mempool must not be nullptr
     */
-    void addChunks() EXCLUSIVE_LOCKS_REQUIRED(m_mempool->cs);
+    void addChunks() EXCLUSIVE_LOCKS_REQUIRED(::cs_main, m_mempool->cs);
 
     // helper functions for addChunks()
-    /** Test if a new chunk would "fit" in the block */
-    bool TestChunkBlockLimits(int64_t chunk_weight, int64_t chunk_sigops_cost) const;
+    /** Why a chunk failed TestChunkBlockLimits (for skip accounting / residual pass). */
+    enum class ChunkLimitReject {
+        None,       //!< fits
+        Size,       //!< serialized size or size-pressure input-bytes
+        Other,      //!< L1 weight/sigops, MWEB weight, or MAX_NUM_INPUTS
+    };
+
+    /** Test if a new chunk would "fit" in the block (L1 weight, sigops, MWEB
+      * weight, MAX_NUM_INPUTS, and BIP324-safe serialized size). */
+    bool TestChunkBlockLimits(const std::vector<CTxMemPoolEntryRef>& txs,
+                              int64_t chunk_weight,
+                              int64_t chunk_sigops_cost,
+                              uint64_t chunk_mweb_weight) const;
+    /** Same as TestChunkBlockLimits but distinguishes size vs other rejects. */
+    ChunkLimitReject EvaluateChunkBlockLimits(const std::vector<CTxMemPoolEntryRef>& txs,
+                                              int64_t chunk_weight,
+                                              int64_t chunk_sigops_cost,
+                                              uint64_t chunk_mweb_weight) const;
+    /** After the feerate walk: fill leftover budget from remaining mempool, smallest-first. */
+    void AddResidualFill(std::set<Txid>& included) EXCLUSIVE_LOCKS_REQUIRED(::cs_main, m_mempool->cs);
     /** Perform locktime checks on each transaction in a chunk:
       * This check should always succeed, and is here
       * only as an extra check in case of a bug */
-    bool TestChunkTransactions(const std::vector<CTxMemPoolEntryRef>& txs) const;
+    bool TestChunkTransactions(const std::vector<CTxMemPoolEntryRef>& txs) const EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 };
 
 /**

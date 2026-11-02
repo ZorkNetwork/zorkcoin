@@ -36,6 +36,7 @@ add_executable(bench_bitcoin
   mempool_eviction.cpp
   mempool_stress.cpp
   merkle_root.cpp
+  mweb_mempool_markets.cpp
   obfuscation.cpp
   parse_hex.cpp
   peer_eviction.cpp
@@ -79,6 +80,7 @@ if(ENABLE_WALLET)
   target_sources(bench_bitcoin
     PRIVATE
       coin_selection.cpp
+      mweb_output_match.cpp
       wallet_balance.cpp
       wallet_create.cpp
       wallet_create_tx.cpp

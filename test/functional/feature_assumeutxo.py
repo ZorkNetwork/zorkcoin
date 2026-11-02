@@ -31,6 +31,13 @@ from test_framework.p2p import (
     P2PInterface,
 )
 from test_framework.test_framework import BitcoinTestFramework
+from test_framework.mweb_util import (
+    SNAPSHOT_BASE_MWEB,
+    assert_assumeutxo_mweb_dump,
+    finish_assumeutxo_mweb_chain,
+    MWEB_VB_START_TIME,
+    restart_node_for_mweb_extension,
+)
 from test_framework.util import (
     assert_approx,
     assert_equal,
@@ -65,17 +72,34 @@ class AssumeutxoTest(BitcoinTestFramework):
         self.num_nodes = 4
         self.rpc_timeout = 120
         self.extra_args = [
-            [],
-            ["-fastprune", "-prune=1", "-blockfilterindex=1", "-coinstatsindex=1"],
-            ["-persistmempool=0","-txindex=1", "-blockfilterindex=1", "-coinstatsindex=1"],
-            []
+            ["-vbparams=mweb:-2:0"],
+            ["-fastprune", "-prune=1", "-blockfilterindex=1", "-coinstatsindex=1", "-vbparams=mweb:-2:0"],
+            ["-persistmempool=0","-txindex=1", "-blockfilterindex=1", "-coinstatsindex=1", "-vbparams=mweb:-2:0"],
+            ["-vbparams=mweb:-2:0"]
         ]
 
     def setup_network(self):
         """Start with the nodes disconnected so that one can generate a snapshot
         including blocks the other hasn't yet seen."""
-        self.add_nodes(4)
+        self.add_nodes(4, self.extra_args)
         self.start_nodes(extra_args=self.extra_args)
+
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
+
+    def test_mweb_assumeutxo_extension(self, n0, base_dump_output):
+        """Extend the assumeutxo chain through MWEB activation and snapshot at height 750."""
+        self.log.info(f"-- Extend chain through MWEB activation to height {SNAPSHOT_BASE_MWEB}")
+        assert_equal(n0.getblockcount(), FINAL_HEIGHT)
+        restart_node_for_mweb_extension(self, node_index=0)
+        for n in self.nodes:
+            n.setmocktime(MWEB_VB_START_TIME)
+        finish_assumeutxo_mweb_chain(self, n0, sync_fun=self.no_op)
+        assert_equal(n0.getblockcount(), SNAPSHOT_BASE_MWEB)
+        assert_equal(n0.getblockhash(SNAPSHOT_BASE_HEIGHT), base_dump_output['base_hash'])
+        self.log.info(f"Creating MWEB UTXO snapshot at height {SNAPSHOT_BASE_MWEB}")
+        mweb_dump = n0.dumptxoutset('mweb_assumeutxo.dat', 'latest')
+        assert_assumeutxo_mweb_dump(mweb_dump)
 
     def test_invalid_snapshot_scenarios(self, valid_snapshot_path):
         self.log.info("Test different scenarios of loading invalid snapshot files")
@@ -95,7 +119,7 @@ class AssumeutxoTest(BitcoinTestFramework):
         assert_raises_rpc_error(parsing_error_code, "Unable to parse metadata: Invalid UTXO set snapshot magic bytes. Please check if this is indeed a snapshot file or if you are using an outdated snapshot format.", node.loadtxoutset, bad_snapshot_path)
 
         self.log.info("  - snapshot file with unsupported version")
-        for version in [0, 1, 3]:
+        for version in [0, 1, 4]:
             with open(bad_snapshot_path, 'wb') as f:
                 f.write(valid_snapshot_contents[:5] + version.to_bytes(2, "little") + valid_snapshot_contents[7:])
             assert_raises_rpc_error(parsing_error_code, f"Unable to parse metadata: Version of snapshot {version} does not match any of the supported versions.", node.loadtxoutset, bad_snapshot_path)
@@ -124,7 +148,7 @@ class AssumeutxoTest(BitcoinTestFramework):
             with open(bad_snapshot_path, 'wb') as f:
                 f.write(valid_snapshot_contents[:11] + bytes.fromhex(bad_block_hash)[::-1] + valid_snapshot_contents[43:])
 
-            msg = f"Unable to load UTXO snapshot: assumeutxo block hash in snapshot metadata not recognized (hash: {bad_block_hash}). The following snapshot heights are available: 110, 200, 299."
+            msg = f"Unable to load UTXO snapshot: assumeutxo block hash in snapshot metadata not recognized (hash: {bad_block_hash}). The following snapshot heights are available: 110, 200, 299, 750."
             assert_raises_rpc_error(-32603, msg, node.loadtxoutset, bad_snapshot_path)
 
         self.log.info("  - snapshot file with wrong number of coins")
@@ -134,7 +158,7 @@ class AssumeutxoTest(BitcoinTestFramework):
                 f.write(valid_snapshot_contents[:43])
                 f.write((valid_num_coins + off).to_bytes(8, "little"))
                 f.write(valid_snapshot_contents[43 + 8:])
-            expected_error(msg="Bad snapshot - coins left over after deserializing 298 coins." if off == -1 else "Bad snapshot format or truncated snapshot after deserializing 299 coins.")
+            expected_error(msg="Bad snapshot - unexpected trailing data after deserializing 298 coins." if off == -1 else "Bad snapshot format or truncated snapshot after deserializing 299 coins.")
 
         self.log.info("  - snapshot file with alternated but parsable UTXO data results in different hash")
         cases = [
@@ -269,7 +293,7 @@ class AssumeutxoTest(BitcoinTestFramework):
         # This simulates a longer chain than the main chain when submitting these two block headers to node 1 because it is only aware of
         # the main chain headers up to the snapshot height.
         parent_block_hash = node0.getblockhash(SNAPSHOT_BASE_HEIGHT - 1)
-        block_time = node0.getblock(node0.getbestblockhash())['time'] + 1
+        block_time = node0.getblock(parent_block_hash)['time'] + 1
         fork_block1 = create_block(int(parent_block_hash, 16), height=SNAPSHOT_BASE_HEIGHT, ntime=block_time)
         fork_block1.solve()
         fork_block2 = create_block(fork_block1.hash_int, height=SNAPSHOT_BASE_HEIGHT + 1, ntime=block_time + 1)
@@ -282,6 +306,7 @@ class AssumeutxoTest(BitcoinTestFramework):
         # the snapshot in future subtests succeeds
         main_block1 = node0.getblock(node0.getblockhash(SNAPSHOT_BASE_HEIGHT + 1), 0)
         main_block2 = node0.getblock(node0.getblockhash(SNAPSHOT_BASE_HEIGHT + 2), 0)
+        node1.setmocktime(node0.getblockheader(node0.getblockhash(SNAPSHOT_BASE_HEIGHT + 2))['time'])
         node1.submitheader(main_block1)
         node1.submitheader(main_block2)
 
@@ -356,6 +381,11 @@ class AssumeutxoTest(BitcoinTestFramework):
 
         forking_node = self.nodes[0]
         snapshot_node = self.nodes[2]  # Has already completed background validation
+
+        if forking_node.getblockcount() > FINAL_HEIGHT:
+            self.log.info(
+                "Skipping: MWEB extension raised the chain past height %s", FINAL_HEIGHT)
+            return
 
         self.log.info("Forking node switches to an alternative chain that forks one block before the snapshot block")
         fork_point = SNAPSHOT_BASE_HEIGHT - 1
@@ -474,9 +504,13 @@ class AssumeutxoTest(BitcoinTestFramework):
 
         check_dump_output(dump_output)
 
-        # Mine more blocks on top of the snapshot that n1 hasn't yet seen. This
-        # will allow us to test n1's sync-to-tip on top of a snapshot.
-        self.generate(n0, nblocks=100, sync_fun=self.no_op)
+        # Mine post-snapshot blocks with MWEB versionbits enabled so the chain can
+        # later reach activation at height 720 (see mweb_util.py).
+        self.log.info("Enable MWEB on node 0 and mine blocks through post-snapshot tip")
+        restart_node_for_mweb_extension(self, node_index=0)
+        for n in self.nodes:
+            n.setmocktime(MWEB_VB_START_TIME)
+        self.generate(n0, nblocks=FINAL_HEIGHT - SNAPSHOT_BASE_HEIGHT, sync_fun=self.no_op)
 
         assert_equal(n0.getblockcount(), FINAL_HEIGHT)
         assert_equal(n1.getblockcount(), START_HEIGHT)
@@ -808,6 +842,9 @@ class AssumeutxoTest(BitcoinTestFramework):
 
         # The following test cleans node2 and node3 chain directories.
         self.test_sync_from_assumeutxo_node(snapshot=dump_output)
+
+        # Extend the main chain through MWEB before the fork test invalidates it.
+        self.test_mweb_assumeutxo_extension(n0, dump_output)
 
         self.test_sync_to_most_work_chain_after_background_validation()
 

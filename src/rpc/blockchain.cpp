@@ -29,10 +29,29 @@
 #include <interfaces/types.h>
 #include <kernel/coinstats.h>
 #include <logging/timer.h>
+#include <mw/file/file_path.h>
+#include <mw/models/block/block.h>
+#include <mw/models/block/header.h>
+#include <mw/models/crypto/blinding_factor.h>
+#include <mw/models/crypto/commitment.h>
+#include <mw/models/crypto/public_key.h>
+#include <mw/models/crypto/range_proof.h>
+#include <mw/models/crypto/signature.h>
+#include <mw/models/tx/input.h>
+#include <mw/models/tx/kernel.h>
+#include <mw/models/tx/output.h>
+#include <mw/node/coins_view.h>
+#include <mweb/mweb_coins_lifecycle.h>
+#include <mweb/mweb_models.h>
+#include <mweb/mweb_rpc_serialization.h>
 #include <net.h>
 #include <net_processing.h>
 #include <node/blockstorage.h>
+#include <node/coinsview_scan_reserver.h>
 #include <node/context.h>
+#include <node/mweb_rollback_clone.h>
+#include <node/mweb_snapshot.h>
+#include <node/mweb_snapshot_base_block.h>
 #include <node/utxo_snapshot.h>
 #include <node/warnings.h>
 #include <policy/feerate.h>
@@ -70,6 +89,7 @@
 #include <util/syserror.h>
 #include <util/time.h>
 #include <util/translation.h>
+#include <util/vector.h>
 #include <validation.h>
 #include <validationinterface.h>
 #include <versionbits.h>
@@ -82,6 +102,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <exception>
 #include <functional>
 #include <ios>
 #include <map>
@@ -120,7 +141,10 @@ UniValue WriteUTXOSnapshot(
     AutoFile&& afile,
     const fs::path& path,
     const fs::path& temppath,
-    const std::function<void()>& interruption_point = {});
+    const std::function<void()>& interruption_point = {},
+    CCoinsViewDB* mweb_coins_db = nullptr,
+    const fs::path* mweb_storage_path = nullptr,
+    const mw::ICoinsView* mweb_utxo_view = nullptr);
 
 UniValue CreateRolledBackUTXOSnapshot(
     NodeContext& node,
@@ -191,6 +215,46 @@ static const CBlockIndex* ParseHashOrHeight(const UniValue& param, ChainstateMan
     }
 }
 
+// MWEB: header object shared by getblockheader and getblock (Litecoin key names).
+static UniValue MWEBHeaderToJSON(const mw::Header& header)
+{
+    UniValue obj(UniValue::VOBJ);
+    obj.pushKV("hash", header.GetHash().ToHex());
+    obj.pushKV("height", header.GetHeight());
+    obj.pushKV("kernel_offset", header.GetKernelOffset().ToHex());
+    obj.pushKV("stealth_offset", header.GetStealthOffset().ToHex());
+    obj.pushKV("num_kernels", header.GetNumKernels());
+    obj.pushKV("num_txos", header.GetNumTXOs());
+    obj.pushKV("kernel_root", header.GetKernelRoot().ToHex());
+    obj.pushKV("output_root", header.GetOutputRoot().ToHex());
+    obj.pushKV("leaf_root", header.GetLeafsetRoot().ToHex());
+    return obj;
+}
+
+static std::vector<RPCResult> MWEBHeaderDoc()
+{
+    return {
+        {RPCResult::Type::STR_HEX, "hash", "MWEB header hash"},
+        {RPCResult::Type::NUM, "height", "MWEB header height"},
+        {RPCResult::Type::STR_HEX, "kernel_offset", "Kernel offset"},
+        {RPCResult::Type::STR_HEX, "stealth_offset", "Stealth offset"},
+        {RPCResult::Type::NUM, "num_kernels", "Number of kernels"},
+        {RPCResult::Type::NUM, "num_txos", "Number of TXOs"},
+        {RPCResult::Type::STR_HEX, "kernel_root", "Kernel MMR root"},
+        {RPCResult::Type::STR_HEX, "output_root", "Output MMR root"},
+        {RPCResult::Type::STR_HEX, "leaf_root", "Leafset root"},
+    };
+}
+
+static std::vector<RPCResult> MWEBHeaderAmountDoc()
+{
+    return {
+        {RPCResult::Type::OBJ, "mweb_header", /*optional=*/true, "MWEB header (only for blocks with MWEB data)", MWEBHeaderDoc()},
+        {RPCResult::Type::NUM, "mweb_amount", /*optional=*/true, "Total value held in MWEB after this block, in " + CURRENCY_ATOM + "s (only with mweb_header)"},
+        {RPCResult::Type::NUM, "prev_mweb_amount", /*optional=*/true, "Total value held in MWEB after the previous block, in " + CURRENCY_ATOM + "s (only with mweb_header)"},
+    };
+}
+
 UniValue blockheaderToJSON(const CBlockIndex& tip, const CBlockIndex& blockindex, const uint256 pow_limit)
 {
     // Serialize passed information without accessing chain state of the active chain!
@@ -213,6 +277,23 @@ UniValue blockheaderToJSON(const CBlockIndex& tip, const CBlockIndex& blockindex
     result.pushKV("difficulty", GetDifficulty(blockindex));
     result.pushKV("chainwork", blockindex.nChainWork.GetHex());
     result.pushKV("nTx", blockindex.nTx);
+
+    mw::Header::CPtr mweb_header; // MWEB: set when block data arrives, so read under cs_main
+    CAmount mweb_amount{0};
+    std::optional<CAmount> prev_mweb_amount;
+    {
+        LOCK(::cs_main);
+        mweb_header = blockindex.mweb_header;
+        mweb_amount = blockindex.mweb_amount;
+        if (blockindex.pprev) prev_mweb_amount = blockindex.pprev->mweb_amount;
+    }
+    if (mweb_header) {
+        result.pushKV("mweb_header", MWEBHeaderToJSON(*mweb_header));
+        result.pushKV("mweb_amount", mweb_amount);
+        if (prev_mweb_amount) {
+            result.pushKV("prev_mweb_amount", *prev_mweb_amount);
+        }
+    }
 
     if (blockindex.pprev)
         result.pushKV("previousblockhash", blockindex.pprev->GetBlockHash().GetHex());
@@ -243,9 +324,86 @@ UniValue blockToJSON(BlockManager& blockman, const CBlock& block, const CBlockIn
 {
     UniValue result = blockheaderToJSON(tip, blockindex, pow_limit);
 
-    result.pushKV("strippedsize", ::GetSerializeSize(TX_NO_WITNESS(block)));
+    result.pushKV("strippedsize", ::GetSerializeSize(TX_NO_WITNESS_NO_MWEB(block))); // MWEB: excluded, as in Litecoin
     result.pushKV("size", ::GetSerializeSize(TX_WITH_WITNESS(block)));
     result.pushKV("weight", ::GetBlockWeight(block));
+
+    // MWEB: Litecoin-structured extension body + hex escape hatch + header duplicate.
+    if (!block.mweb_block.IsNull()) {
+        const bool tx_details = verbosity >= TxVerbosity::SHOW_DETAILS;
+        UniValue mweb_block(UniValue::VOBJ);
+
+        if (const auto& mweb_header = block.mweb_block.GetMWEBHeader()) {
+            UniValue mweb_header_obj = MWEBHeaderToJSON(*mweb_header);
+            for (const std::string& key : mweb_header_obj.getKeys()) {
+                mweb_block.pushKV(key, mweb_header_obj[key]);
+            }
+            if (result.find_value("mweb_header").isNull()) result.pushKV("mweb_header", std::move(mweb_header_obj));
+        }
+
+        UniValue inputs(UniValue::VARR);
+        for (const auto& input : block.mweb_block.m_block->GetInputs()) {
+            if (tx_details) {
+                UniValue objInput(UniValue::VOBJ);
+                objInput.pushKV("output_id", input.GetOutputID().ToHex());
+                objInput.pushKV("commit", input.GetCommitment().ToHex());
+                objInput.pushKV("output_pubkey", input.GetOutputPubKey().ToHex());
+                if (input.GetInputPubKey()) {
+                    objInput.pushKV("input_pubkey", input.GetInputPubKey()->ToHex());
+                }
+                if (!input.GetExtraData().empty()) {
+                    objInput.pushKV("extra_data", HexStr(input.GetExtraData()));
+                }
+                objInput.pushKV("sig", input.GetSignature().ToHex());
+                inputs.push_back(std::move(objInput));
+            } else {
+                inputs.push_back(input.GetOutputID().ToHex());
+            }
+        }
+        mweb_block.pushKV("inputs", std::move(inputs));
+
+        UniValue outputs(UniValue::VARR);
+        for (const auto& output : block.mweb_block.m_block->GetOutputs()) {
+            if (tx_details) {
+                UniValue objOutput(UniValue::VOBJ);
+                objOutput.pushKV("output_id", output.GetOutputID().ToHex());
+                objOutput.pushKV("commit", output.GetCommitment().ToHex());
+                objOutput.pushKV("sender_pubkey", output.GetSenderPubKey().ToHex());
+                objOutput.pushKV("receiver_pubkey", output.GetReceiverPubKey().ToHex());
+                objOutput.pushKV("range_proof", HexStr(output.GetRangeProof()->Serialized()));
+                objOutput.pushKV("message", HexStr(output.GetOutputMessage().Serialized()));
+                outputs.push_back(std::move(objOutput));
+            } else {
+                outputs.push_back(output.GetOutputID().ToHex());
+            }
+        }
+        mweb_block.pushKV("outputs", std::move(outputs));
+
+        UniValue kernels(UniValue::VARR);
+        for (const auto& kernel : block.mweb_block.m_block->GetKernels()) {
+            if (tx_details) {
+                UniValue objKernel(UniValue::VOBJ);
+                objKernel.pushKV("kernel_id", kernel.GetKernelID().ToHex());
+                objKernel.pushKV("features", kernel.GetFeatures());
+                objKernel.pushKV("commit", kernel.GetCommitment().ToHex());
+                objKernel.pushKV("fee", kernel.GetFee());
+                objKernel.pushKV("lock_height", kernel.GetLockHeight());
+                objKernel.pushKV("excess", kernel.GetExcess().ToHex());
+                objKernel.pushKV("signature", kernel.GetSignature().ToHex());
+                if (!kernel.GetExtraData().empty()) {
+                    objKernel.pushKV("extra_data", HexStr(kernel.GetExtraData()));
+                }
+                kernels.push_back(std::move(objKernel));
+            } else {
+                kernels.push_back(kernel.GetCommitment().ToHex());
+            }
+        }
+        mweb_block.pushKV("kernels", std::move(kernels));
+
+        result.pushKV("mweb", std::move(mweb_block));
+        // Escape hatch: former opaque hex under "mweb".
+        result.pushKV("mweb_hex", HexStr(block.mweb_block.m_block->Serialized()));
+    }
 
     CHECK_NONFATAL(!block.vtx.empty());
     result.pushKV("coinbase_tx", coinbaseTxToJSON(*block.vtx[0]));
@@ -273,7 +431,7 @@ UniValue blockToJSON(BlockManager& blockman, const CBlock& block, const CBlockIn
                 // coinbase transaction (i.e. i == 0) doesn't have undo data
                 const CTxUndo* txundo = (have_undo && i > 0) ? &blockUndo.vtxundo.at(i - 1) : nullptr;
                 UniValue objTx(UniValue::VOBJ);
-                TxToUniv(*tx, /*block_hash=*/uint256(), /*entry=*/objTx, /*include_hex=*/true, txundo, verbosity);
+                TxToUniv(*tx, /*block_hash=*/uint256(), /*entry=*/objTx, /*include_hex=*/true, txundo, verbosity, /*is_change_func=*/{}, /*hex_include_mweb=*/MWEB::RPCSerializeWithMWEB());
                 txs.push_back(std::move(objTx));
             }
             break;
@@ -649,6 +807,7 @@ static RPCMethod getblockheader()
                 {
                     RPCResult{"for verbose = true",
                         RPCResult::Type::OBJ, "", "",
+                        Cat<std::vector<RPCResult>>(
                         {
                             {RPCResult::Type::STR_HEX, "hash", "the block hash (same as provided)"},
                             {RPCResult::Type::NUM, "confirmations", "The number of confirmations, or -1 if the block is not on the main chain"},
@@ -664,9 +823,12 @@ static RPCMethod getblockheader()
                             {RPCResult::Type::NUM, "difficulty", "The difficulty"},
                             {RPCResult::Type::STR_HEX, "chainwork", "Expected number of hashes required to produce the current chain"},
                             {RPCResult::Type::NUM, "nTx", "The number of transactions in the block"},
+                        },
+                        Cat<std::vector<RPCResult>>(MWEBHeaderAmountDoc(), // MWEB
+                        {
                             {RPCResult::Type::STR_HEX, "previousblockhash", /*optional=*/true, "The hash of the previous block (if available)"},
                             {RPCResult::Type::STR_HEX, "nextblockhash", /*optional=*/true, "The hash of the next block (if available)"},
-                        }},
+                        }))},
                     RPCResult{"for verbose=false",
                         RPCResult::Type::STR_HEX, "", "A string that is serialized, hex-encoded data for block 'hash'"},
                 },
@@ -780,7 +942,7 @@ static std::vector<RPCResult> GetBlockFields(RPCResult tx_result, std::optional<
         {RPCResult::Type::STR_HEX, "hash", "the block hash (same as provided)"},
         {RPCResult::Type::NUM, "confirmations", "The number of confirmations, or -1 if the block is not on the main chain"},
         {RPCResult::Type::NUM, "size", "The block size"},
-        {RPCResult::Type::NUM, "strippedsize", "The block size excluding witness data"},
+        {RPCResult::Type::NUM, "strippedsize", "The block size excluding witness and MWEB data"},
         {RPCResult::Type::NUM, "weight", "The block weight as defined in BIP 141"},
         {RPCResult::Type::OBJ, "coinbase_tx", "Coinbase transaction metadata",
         {
@@ -806,6 +968,18 @@ static std::vector<RPCResult> GetBlockFields(RPCResult tx_result, std::optional<
     fields.emplace_back(RPCResult::Type::NUM, "nTx", "The number of transactions in the block");
     fields.emplace_back(RPCResult::Type::STR_HEX, "previousblockhash", /*optional=*/true, "The hash of the previous block (if available)");
     fields.emplace_back(RPCResult::Type::STR_HEX, "nextblockhash", /*optional=*/true, "The hash of the next block (if available)");
+    fields.emplace_back(RPCResult::Type::OBJ, "mweb", /*optional=*/true, "Structured MWEB extension body (only present when the block has MWEB data). At verbosity 1, inputs/outputs/kernels are id or commitment hex arrays; at verbosity ≥ 2 they are detail objects.",
+    Cat<std::vector<RPCResult>>(MWEBHeaderDoc(),
+    {
+        {RPCResult::Type::ARR, "inputs", "Spent MWEB output ids (verbosity 1) or input detail objects (verbosity ≥ 2)",
+            {{RPCResult::Type::ANY, "", "", {}, {.print_elision = std::string{"hex output_id, or detail object"}}}}},
+        {RPCResult::Type::ARR, "outputs", "Created MWEB output ids (verbosity 1) or output detail objects (verbosity ≥ 2)",
+            {{RPCResult::Type::ANY, "", "", {}, {.print_elision = std::string{"hex output_id, or detail object"}}}}},
+        {RPCResult::Type::ARR, "kernels", "Kernel commitments (verbosity 1) or kernel detail objects (verbosity ≥ 2)",
+            {{RPCResult::Type::ANY, "", "", {}, {.print_elision = std::string{"hex commitment, or detail object"}}}}},
+    }));
+    fields.emplace_back(RPCResult::Type::STR_HEX, "mweb_hex", /*optional=*/true, "Serialized MWEB extension body hex (escape hatch; same bytes formerly returned under \"mweb\")");
+    for (auto& field : MWEBHeaderAmountDoc()) fields.push_back(std::move(field));
     if (elision_msg) {
         // Elide all block-level fields except the tx array (which differs per verbosity)
         std::vector<RPCResult> new_fields;
@@ -899,7 +1073,7 @@ static RPCMethod getblock()
     const std::vector<std::byte> block_data{GetRawBlockChecked(chainman.m_blockman, *pblockindex)};
 
     if (verbosity <= 0) {
-        return HexStr(block_data);
+        return HexStr(MWEB::RPCRawBlock(block_data));
     }
 
     CBlock block{};
@@ -1538,6 +1712,7 @@ UniValue DeploymentInfo(const CBlockIndex* blockindex, const ChainstateManager& 
     SoftForkDescPushBack(blockindex, softforks, chainman, Consensus::DEPLOYMENT_CSV);
     SoftForkDescPushBack(blockindex, softforks, chainman, Consensus::DEPLOYMENT_SEGWIT);
     SoftForkDescPushBack(blockindex, softforks, chainman, Consensus::DEPLOYMENT_TESTDUMMY);
+    SoftForkDescPushBack(blockindex, softforks, chainman, Consensus::DEPLOYMENT_MWEB);
     return softforks;
 }
 } // anon namespace
@@ -2282,34 +2457,11 @@ bool FindScriptPubKey(std::atomic<int>& scan_progress, const std::atomic<bool>& 
 }
 } // namespace
 
-/** RAII object to prevent concurrency issue when scanning the txout set */
+using node::CoinsViewScanReserver;
+
+/** Progress and abort flags for L1 scantxoutset (MWEB scan uses the shared reserver only). */
 static std::atomic<int> g_scan_progress;
-static std::atomic<bool> g_scan_in_progress;
 static std::atomic<bool> g_should_abort_scan;
-class CoinsViewScanReserver
-{
-private:
-    bool m_could_reserve{false};
-public:
-    explicit CoinsViewScanReserver() = default;
-
-    bool reserve() {
-        CHECK_NONFATAL(!m_could_reserve);
-        if (g_scan_in_progress.exchange(true)) {
-            return false;
-        }
-        CHECK_NONFATAL(g_scan_progress == 0);
-        m_could_reserve = true;
-        return true;
-    }
-
-    ~CoinsViewScanReserver() {
-        if (m_could_reserve) {
-            g_scan_in_progress = false;
-            g_scan_progress = 0;
-        }
-    }
-};
 
 static const auto scan_action_arg_desc = RPCArg{
     "action", RPCArg::Type::STR, RPCArg::Optional::NO, "The action to execute\n"
@@ -2504,6 +2656,7 @@ static RPCMethod scantxoutset()
         }
         result.pushKV("unspents", std::move(unspents));
         result.pushKV("total_amount", ValueFromAmount(total_in));
+        g_scan_progress = 0;
     } else {
         throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid action '%s'", action));
     }
@@ -3105,7 +3258,7 @@ static RPCMethod dumptxoutset()
         "dumptxoutset",
         "Write the serialized UTXO set to a file. This can be used in loadtxoutset afterwards if this snapshot height is supported in the chainparams as well.\n"
         "This creates a temporary UTXO database when rolling back, keeping the main chain intact. Should the node experience an unclean shutdown the temporary database may need to be removed from the datadir manually.\n"
-        "For deep rollbacks, make sure to use no RPC timeout (bitcoin-cli -rpcclienttimeout=0) as it may take several minutes.",
+        "For deep rollbacks, use a large finite RPC timeout (adgl-litecoin-cli -rpcclienttimeout=3600); -rpcclienttimeout=0 fails immediately.",
         {
             {"path", RPCArg::Type::STR, RPCArg::Optional::NO, "Path to the output file. If relative, will be prefixed by datadir."},
             {"type", RPCArg::Type::STR, RPCArg::Default(""), "The type of snapshot to create. Can be \"latest\" to create a snapshot of the current UTXO set or \"rollback\" to temporarily roll back the state of the node to a historical block before creating the snapshot of a historical UTXO set. This parameter can be omitted if a separate \"rollback\" named parameter is specified indicating the height or hash of a specific historical block. If \"rollback\" is specified and separate \"rollback\" named parameter is not specified, this will roll back to the latest valid snapshot block that can currently be loaded with loadtxoutset."},
@@ -3127,13 +3280,19 @@ static RPCMethod dumptxoutset()
                     {RPCResult::Type::STR, "path", "the absolute path that the snapshot was written to"},
                     {RPCResult::Type::STR_HEX, "txoutset_hash", "the hash of the UTXO set contents"},
                     {RPCResult::Type::NUM, "nchaintx", "the number of transactions in the chain up to and including the base block"},
+                    {RPCResult::Type::NUM, "mweb_coins_written", /*optional=*/true, "the number of MWEB coins written in the snapshot (only when MWEB is active)"},
+                    {RPCResult::Type::NUM, "mweb_leafdb_entries_written", /*optional=*/true, "the number of MWEB leaf DB entries written (only when MWEB is active)"},
+                    {RPCResult::Type::NUM, "mweb_o_dat_bytes", /*optional=*/true, "the number of bytes written from O.dat (only when MWEB is active)"},
+                    {RPCResult::Type::NUM, "mweb_leaf_dat_bytes", /*optional=*/true, "the number of bytes written from leaf.dat (only when MWEB is active)"},
+                    {RPCResult::Type::NUM, "mweb_prun_dat_bytes", /*optional=*/true, "the number of bytes written from prun.dat (only when MWEB is active)"},
+                    {RPCResult::Type::STR_HEX, "mweb_hash", /*optional=*/true, "the hash of the MWEB chainstate at the snapshot base (only when MWEB is active)"},
                 }
         },
         RPCExamples{
-            HelpExampleCli("-rpcclienttimeout=0 dumptxoutset", "utxo.dat latest") +
-            HelpExampleCli("-rpcclienttimeout=0 dumptxoutset", "utxo.dat rollback") +
-            HelpExampleCli("-rpcclienttimeout=0 -named dumptxoutset", R"(utxo.dat rollback=853456)") +
-            HelpExampleCli("-rpcclienttimeout=0 -named dumptxoutset", R"(utxo.dat rollback=853456 in_memory=true)")
+            HelpExampleCli("-rpcclienttimeout=3600 dumptxoutset", "utxo.dat latest") +
+            HelpExampleCli("-rpcclienttimeout=3600 dumptxoutset", "utxo.dat rollback") +
+            HelpExampleCli("-rpcclienttimeout=3600 -named dumptxoutset", R"(utxo.dat rollback=853456)") +
+            HelpExampleCli("-rpcclienttimeout=3600 -named dumptxoutset", R"(utxo.dat rollback=853456 in_memory=true)")
         },
         [](const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -3150,8 +3309,17 @@ static RPCMethod dumptxoutset()
     } else if (snapshot_type == "rollback") {
         auto snapshot_heights = node.chainman->GetParams().GetAvailableSnapshotHeights();
         CHECK_NONFATAL(snapshot_heights.size() > 0);
-        auto max_height = std::max_element(snapshot_heights.begin(), snapshot_heights.end());
-        target_index = ParseHashOrHeight(*max_height, *node.chainman);
+        const int tip_height = tip->nHeight;
+        std::optional<int> best_height;
+        for (int height : snapshot_heights) {
+            if (height <= tip_height && (!best_height || height > *best_height)) {
+                best_height = height;
+            }
+        }
+        if (!best_height) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "No available snapshot height at or below current tip");
+        }
+        target_index = ParseHashOrHeight(*best_height, *node.chainman);
     } else if (snapshot_type == "latest") {
         target_index = tip;
     } else {
@@ -3230,7 +3398,7 @@ public:
         fs::create_directories(m_path);
     }
     ~TemporaryUTXODatabase() {
-        if (!DestroyDB(fs::PathToString(m_path))) {
+        if (!MWEB::CoinsLifecycle::RemoveStorageFiles(m_path) || !DestroyDB(fs::PathToString(m_path))) {
             LogInfo("Failed to clean up temporary UTXO database at %s, please remove it manually.",
                     fs::PathToString(m_path));
         }
@@ -3250,11 +3418,9 @@ UniValue CreateRolledBackUTXOSnapshot(
     std::string temp_db_name{strprintf("temp_utxo_%d", target->nHeight)};
     fs::path temp_db_path{fsbridge::AbsPathJoin(tmppath.parent_path(), fs::u8path(temp_db_name))};
 
-    // Only create the on-disk temp directory when not using in-memory mode
-    std::optional<TemporaryUTXODatabase> temp_db_cleaner;
-    if (!in_memory) {
-        temp_db_cleaner.emplace(temp_db_path);
-    } else {
+    // The temp directory is needed even in in-memory mode: cloned MWEB PMMR files are always on disk.
+    TemporaryUTXODatabase temp_db_cleaner{temp_db_path};
+    if (in_memory) {
         LogInfo("Using in-memory database for UTXO-set rollback (this may require significant RAM).");
     }
 
@@ -3313,6 +3479,22 @@ UniValue CreateRolledBackUTXOSnapshot(
         LogInfo("UTXO set copy complete: %u coins total", coins_count);
     }
 
+    const FilePath mweb_src_dir{chainstate.StoragePath()};
+    const FilePath mweb_dst_dir{temp_db_path};
+    bool cloned_mweb{false};
+    try {
+        LOCK(::cs_main);
+        cloned_mweb = node::CloneMWEBChainstateForRollback(
+            chainstate.CoinsDB(),
+            mweb_src_dir,
+            *temp_db,
+            mweb_dst_dir,
+            node.rpc_interruption_point);
+    } catch (const std::exception& e) {
+        throw JSONRPCError(RPC_INTERNAL_ERROR,
+            strprintf("Failed to clone MWEB chainstate for rollback: %s", e.what()));
+    }
+
     LogInfo("Rolling back from height %d to %d", tip->nHeight, target->nHeight);
 
     const CBlockIndex* block_index{tip};
@@ -3365,14 +3547,19 @@ UniValue CreateRolledBackUTXOSnapshot(
     std::unique_ptr<CCoinsViewCursor> pcursor{temp_db->Cursor()};
 
     LogInfo("Writing snapshot to disk.");
-    return WriteUTXOSnapshot(chainstate,
+    const fs::path mweb_storage{temp_db_path};
+    UniValue result = WriteUTXOSnapshot(chainstate,
                              pcursor.get(),
                              &(*maybe_stats),
                              target,
                              std::move(afile),
                              path,
                              tmppath,
-                             node.rpc_interruption_point);
+                             node.rpc_interruption_point,
+                             cloned_mweb ? temp_db.get() : nullptr,
+                             cloned_mweb ? &mweb_storage : nullptr,
+                             cloned_mweb ? rollback_cache.GetMWEBCacheView().get() : nullptr);
+    return result;
 }
 
 std::tuple<std::unique_ptr<CCoinsViewCursor>, CCoinsStats, const CBlockIndex*>
@@ -3421,7 +3608,10 @@ UniValue WriteUTXOSnapshot(
     AutoFile&& afile,
     const fs::path& path,
     const fs::path& temppath,
-    const std::function<void()>& interruption_point)
+    const std::function<void()>& interruption_point,
+    CCoinsViewDB* mweb_coins_db,
+    const fs::path* mweb_storage_path,
+    const mw::ICoinsView* mweb_utxo_view)
 {
     LOG_TIME_SECONDS(strprintf("writing UTXO snapshot at height %s (%s) to file %s (via %s)",
         tip->nHeight, tip->GetBlockHash().ToString(),
@@ -3477,6 +3667,41 @@ UniValue WriteUTXOSnapshot(
 
     CHECK_NONFATAL(written_coins_count == maybe_stats->coins_count);
 
+    std::optional<node::MWEBSnapshotWriteStats> mweb_stats;
+    if (DeploymentActiveAt(*tip, chainstate.m_chainman, Consensus::DEPLOYMENT_MWEB)) {
+        LOCK(::cs_main);
+        CCoinsViewDB& coins_db = mweb_coins_db ? *mweb_coins_db : chainstate.CoinsDB();
+        const fs::path storage_path = mweb_storage_path ? *mweb_storage_path : chainstate.StoragePath();
+        if (!coins_db.GetDB()) {
+            throw JSONRPCError(RPC_INTERNAL_ERROR, "Cannot write MWEB snapshot section without a persistent chainstate");
+        }
+
+        const mw::ICoinsView* utxo_view{mweb_utxo_view};
+        if (!utxo_view) {
+            if (const auto cache_view = chainstate.CoinsTip().GetMWEBCacheView()) {
+                utxo_view = cache_view.get();
+            } else if (const auto db_view = coins_db.GetMWEBView()) {
+                utxo_view = db_view.get();
+            }
+        }
+        if (!utxo_view) {
+            throw JSONRPCError(RPC_INTERNAL_ERROR, "MWEB is active but extension block chainstate is not initialized");
+        }
+
+        const mw::Header::CPtr mweb_header = utxo_view->GetBestHeader();
+        if (!mweb_header) {
+            throw JSONRPCError(RPC_INTERNAL_ERROR, "MWEB is active but extension block header is unavailable");
+        }
+
+        mweb_stats = node::WriteMWEBSnapshotSection(
+            afile,
+            coins_db,
+            FilePath{storage_path},
+            mweb_header,
+            utxo_view,
+            interruption_point);
+    }
+
     if (afile.fclose() != 0) {
         throw std::ios_base::failure(
             strprintf("Error closing %s: %s", fs::PathToString(temppath), SysErrorString(errno)));
@@ -3489,6 +3714,14 @@ UniValue WriteUTXOSnapshot(
     result.pushKV("path", path.utf8string());
     result.pushKV("txoutset_hash", maybe_stats->hashSerialized.ToString());
     result.pushKV("nchaintx", tip->m_chain_tx_count);
+    if (mweb_stats) {
+        result.pushKV("mweb_coins_written", mweb_stats->coins_written);
+        result.pushKV("mweb_leafdb_entries_written", mweb_stats->leafdb_entries_written);
+        result.pushKV("mweb_o_dat_bytes", mweb_stats->o_dat_bytes);
+        result.pushKV("mweb_leaf_dat_bytes", mweb_stats->leaf_dat_bytes);
+        result.pushKV("mweb_prun_dat_bytes", mweb_stats->prun_dat_bytes);
+        result.pushKV("mweb_hash", mweb_stats->mweb_hash.ToString());
+    }
     return result;
 }
 
@@ -3525,6 +3758,13 @@ static RPCMethod loadtxoutset()
         "matter of minutes rather than hours. UTXO snapshot are typically obtained from "
         "third-party sources (HTTP, torrent, etc.) which is reasonable since their "
         "contents are always checked by hash.\n\n"
+
+        "MWEB snapshots also require the snapshot-base block body so the extension header "
+        "and PMMR roots can be bound. Headers of that block must already be in the index. "
+        "If the body is not yet on disk, this RPC requests that one block out of order from "
+        "a connected NODE_MWEB peer and waits for it (see -rpcclienttimeout). It does not "
+        "wait for IBD to the snapshot height, and getblockhash is not a valid readiness "
+        "probe for this.\n\n"
 
         "You can find more information on this process in the `assumeutxo` design "
         "document (<https://github.com/bitcoin/bitcoin/blob/master/doc/design/assumeutxo.md>).",
@@ -3567,9 +3807,17 @@ static RPCMethod loadtxoutset()
         throw JSONRPCError(RPC_DESERIALIZATION_ERROR, strprintf("Unable to parse metadata: %s", e.what()));
     }
 
+    if (auto ensure{node::EnsureSnapshotBaseBlock(node, metadata.m_base_blockhash)}; !ensure) {
+        throw JSONRPCError(RPC_MISC_ERROR, util::ErrorString(ensure).original);
+    }
+
     auto activation_result{chainman.ActivateSnapshot(afile, metadata, false)};
     if (!activation_result) {
-        throw JSONRPCError(RPC_INTERNAL_ERROR, strprintf("Unable to load UTXO snapshot: %s. (%s)", util::ErrorString(activation_result).original, path.utf8string()));
+        const std::string error_msg{util::ErrorString(activation_result).original};
+        if (error_msg.find("MWEB") != std::string::npos) {
+            throw JSONRPCError(RPC_INTERNAL_ERROR, strprintf("Unable to load UTXO snapshot (MWEB validation failed): %s. (%s)", error_msg, path.utf8string()));
+        }
+        throw JSONRPCError(RPC_INTERNAL_ERROR, strprintf("Unable to load UTXO snapshot: %s. (%s)", error_msg, path.utf8string()));
     }
 
     // Because we can't provide historical blocks during tip or background sync.
@@ -3599,6 +3847,7 @@ const std::vector<RPCResult> RPCHelpForChainstate{
     {RPCResult::Type::NUM, "difficulty", "difficulty of the tip"},
     {RPCResult::Type::NUM, "verificationprogress", "progress towards the network tip"},
     {RPCResult::Type::STR_HEX, "snapshot_blockhash", /*optional=*/true, "the base block of the snapshot this chainstate is based on, if any"},
+    {RPCResult::Type::BOOL, "snapshot_mweb_expected", /*optional=*/true, "whether the snapshot at snapshot_blockhash includes an MWEB chainstate section"},
     {RPCResult::Type::NUM, "coins_db_cache_bytes", "size of the coinsdb cache"},
     {RPCResult::Type::NUM, "coins_tip_cache_bytes", "size of the coinstip cache"},
     {RPCResult::Type::BOOL, "validated", "whether the chainstate is fully validated. True if all blocks in the chainstate were validated, false if the chain is based on a snapshot and the snapshot has not yet been validated."},
@@ -3646,6 +3895,9 @@ return RPCMethod{
         data.pushKV("coins_tip_cache_bytes", cs.m_coinstip_cache_size_bytes);
         if (cs.m_from_snapshot_blockhash) {
             data.pushKV("snapshot_blockhash", cs.m_from_snapshot_blockhash->ToString());
+            if (const auto au_data = chainman.GetParams().AssumeutxoForBlockhash(*cs.m_from_snapshot_blockhash)) {
+                data.pushKV("snapshot_mweb_expected", au_data->mweb_hash_serialized.has_value());
+            }
         }
         data.pushKV("validated", cs.m_assumeutxo == Assumeutxo::VALIDATED);
         return data;

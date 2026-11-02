@@ -10,6 +10,9 @@
 
 #include <consensus/amount.h>
 
+#include <optional>
+#include <vector>
+
 #include <QObject>
 
 class SendCoinsRecipient;
@@ -28,6 +31,11 @@ public:
 
     CTransactionRef& getWtx();
     void setWtx(const CTransactionRef&);
+    //! MWEB: the MWEB part the wallet funded, which getWtx() lacks when the wallet cannot sign. Only its
+    //! unsigned fields are kept.
+    void setMWEBDraft(const mw::MutableTx& mweb_tx);
+    //! MWEB: getWtx() with its MWEB part as funded, before signing, for building a PSBT.
+    CMutableTransaction getUnsignedTx() const;
 
     unsigned int getTransactionSize();
 
@@ -37,10 +45,14 @@ public:
     CAmount getTotalTransactionAmount() const;
 
     void reassignAmounts(int nChangePosRet); // needed for the subtract-fee-from-amount feature
+    //! MWEB: reassignAmounts for a transaction with an MWEB part, matching each recipient to its output.
+    void reassignMWEBAmounts(const mw::MutableTx& mweb_tx, std::optional<size_t> mweb_change_index, int nChangePosRet);
 
 private:
     QList<SendCoinsRecipient> recipients;
     CTransactionRef wtx;
+    mw::MutableTx mweb_draft; // MWEB
+    std::vector<mw::Hash> signed_pegin_kernel_ids; // MWEB
     CAmount fee{0};
 };
 

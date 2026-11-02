@@ -6,6 +6,7 @@
 #define BITCOIN_QT_SENDCOINSRECIPIENT_H
 
 #include <consensus/amount.h>
+#include <outputtype.h>
 #include <serialize.h>
 
 #include <string>
@@ -36,6 +37,16 @@ public:
     QString authenticatedMerchant;
 
     bool fSubtractFeeFromAmount; // memory only
+
+    // MWEB: payment kind for peg-in/peg-out (memory only, not serialized)
+    enum class PaymentKind {
+        REGULAR,
+        PEGIN,
+        PEGOUT,
+    };
+    PaymentKind payment_kind{PaymentKind::REGULAR};
+    // MWEB: type of the wallet address a peg-out pays (memory only, not serialized)
+    OutputType pegout_address_type{OutputType::BECH32};
 
     static constexpr int CURRENT_VERSION{1};
     int nVersion;

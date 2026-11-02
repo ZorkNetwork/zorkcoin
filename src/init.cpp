@@ -45,6 +45,7 @@
 #include <key.h>
 #include <logging.h>
 #include <mapport.h>
+#include <mweb/mweb_rpc_serialization.h>
 #include <net.h>
 #include <net_permissions.h>
 #include <net_processing.h>
@@ -64,6 +65,7 @@
 #include <node/mempool_persist_args.h>
 #include <node/mining_args.h>
 #include <node/mining_types.h>
+#include <node/mweb_serve_types.h>
 #include <node/peerman_args.h>
 #include <policy/feerate.h>
 #include <policy/fees/block_policy_estimator.h>
@@ -108,6 +110,7 @@
 
 #include <algorithm>
 #include <any>
+#include <array>
 #include <cerrno>
 #include <condition_variable>
 #include <cstddef>
@@ -517,6 +520,13 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
 #endif
     argsman.AddArg("-blockreconstructionextratxn=<n>", strprintf("Extra transactions to keep in memory for compact block reconstructions (default: %u)", DEFAULT_BLOCK_RECONSTRUCTION_EXTRA_TXN), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-blocksonly", strprintf("Whether to reject transactions from network peers. Disables automatic broadcast and rebroadcast of transactions, unless the source peer has the 'forcerelay' permission. RPC transactions are not affected. (default: %u)", DEFAULT_BLOCKSONLY), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-mwebserve=<0|1|auto>", "Serve MWEB light-client (LIP-0006) data: 0/off disable, 1/force serve even when -maxuploadtarget is reached, auto (default) respect upload limits", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-mwebserveinblocksonly", strprintf("Serve MWEB light-client data when -blocksonly is set (default: %u)", DEFAULT_MWEB_SERVE_IN_BLOCKSONLY), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-mwebserveburst=<n>", strprintf("Per-peer MWEB serve credit burst (default: %g)", DEFAULT_MWEB_SERVE_BURST), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-mwebservematerialbudget=<n>", strprintf("Per-step MWEB serve materialization byte budget (default: %u)", DEFAULT_MWEB_SERVE_MATERIAL_BUDGET), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-mwebservematerialleafops=<n>", strprintf("Per-step MWEB serve leafset operation budget (default: %u)", DEFAULT_MWEB_SERVE_MATERIAL_LEAF_OPS), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-mwebservecreditdenydisconnect=<n>", strprintf("Disconnect peer after this many MWEB serve credit denials in a window (default: %d)", DEFAULT_MWEB_SERVE_CREDIT_DENY_DISCONNECT), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-mwebserveinjectbadcache", "DEBUG_TEST: inject internal MWEB serve fault (I9); peer must not be banned", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-coinstatsindex", strprintf("Maintain coinstats index used by the gettxoutsetinfo RPC (default: %u)", DEFAULT_COINSTATSINDEX), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-conf=<file>", strprintf("Specify path to read-only configuration file. Relative paths will be prefixed by datadir location (only useable from command line, not configuration file) (default: %s)", BITCOIN_CONF_FILENAME), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-datadir=<dir>", "Specify data directory", ArgsManager::ALLOW_ANY | ArgsManager::DISALLOW_NEGATION, OptionsCategory::OPTIONS);
@@ -526,6 +536,7 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     argsman.AddArg("-allowignoredconf", strprintf("For backwards compatibility, treat an unused %s file in the datadir as a warning, not an error.", BITCOIN_CONF_FILENAME), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-loadblock=<file>", "Imports blocks from an external file on startup. Obfuscated blocks are not supported.", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-maxmempool=<n>", strprintf("Keep the transaction memory pool below <n> megabytes (default: %u)", DEFAULT_MAX_MEMPOOL_SIZE_MB), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-maxmempoolmweb=<n>", strprintf("Share of -maxmempool reserved for MWEB data as a percentage (0-100, default: %u). A market may borrow unused space from the other.", DEFAULT_MAX_MEMPOOL_MWEB_PCT), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-mempoolexpiry=<n>", strprintf("Do not keep transactions in the mempool longer than <n> hours (default: %u)", DEFAULT_MEMPOOL_EXPIRY_HOURS), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-minimumchainwork=<hex>", strprintf("Minimum work assumed to exist on a valid chain in hex (default: %s, testnet3: %s, testnet4: %s, signet: %s)", defaultChainParams->GetConsensus().nMinimumChainWork.GetHex(), testnetChainParams->GetConsensus().nMinimumChainWork.GetHex(), testnet4ChainParams->GetConsensus().nMinimumChainWork.GetHex(), signetChainParams->GetConsensus().nMinimumChainWork.GetHex()), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::OPTIONS);
     argsman.AddArg("-par=<n>", strprintf("Set the number of script verification threads (0 = auto, up to %d, <0 = leave that many cores free, default: %d)",
@@ -741,6 +752,7 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     argsman.AddArg("-rpcmaxconnections=<n>", strprintf("The maximum number of connected HTTP clients (default: %d)", DEFAULT_MAX_HTTP_CONNECTIONS), ArgsManager::ALLOW_ANY, OptionsCategory::RPC);
     argsman.AddArg("-rpcpassword=<pw>", "Password for JSON-RPC connections", ArgsManager::ALLOW_ANY | ArgsManager::SENSITIVE, OptionsCategory::RPC);
     argsman.AddArg("-rpcport=<port>", strprintf("Listen for JSON-RPC connections on <port> (default: %u, testnet3: %u, testnet4: %u, signet: %u, regtest: %u)", defaultBaseParams->RPCPort(), testnetBaseParams->RPCPort(), testnet4BaseParams->RPCPort(), signetBaseParams->RPCPort(), regtestBaseParams->RPCPort()), ArgsManager::ALLOW_ANY | ArgsManager::NETWORK_ONLY, OptionsCategory::RPC);
+    argsman.AddArg("-rpcserialversion", strprintf("Sets the serialization of raw transaction or block hex returned in non-verbose mode: without MWEB data (1) or with it (2) (default: %d)", MWEB::DEFAULT_RPC_SERIALIZE_VERSION), ArgsManager::ALLOW_ANY, OptionsCategory::RPC); // MWEB: Litecoin's option
     argsman.AddArg("-rpcservertimeout=<n>", strprintf("Timeout during HTTP requests (default: %d)", DEFAULT_HTTP_SERVER_TIMEOUT), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::RPC);
     argsman.AddArg("-rpcthreads=<n>", strprintf("Set the number of threads to service RPC calls (default: %d)", DEFAULT_HTTP_THREADS), ArgsManager::ALLOW_ANY, OptionsCategory::RPC);
     argsman.AddArg("-rpcuser=<user>", "Username for JSON-RPC connections", ArgsManager::ALLOW_ANY | ArgsManager::SENSITIVE, OptionsCategory::RPC);
@@ -964,6 +976,13 @@ bool AppInitParameterInteraction(const ArgsManager& args)
         InitWarning(_("Option '-limitdescendantsize' is given but descendant size limits have been replaced with cluster size limits (see -limitclustersize). This option has no effect."));
     }
 
+#if defined(MINE_TEST_MWEB_SIZE)
+    // MWEB: This build can mine templates over the consensus size limits.
+    if (args.GetChainType() != ChainType::REGTEST) {
+        return InitError(Untranslated("bitcoind-mine-test can mine invalid blocks for testing and only runs with -regtest."));
+    }
+#endif
+
     // Error if network-specific options (-addnode, -connect, etc) are
     // specified in default section of config file, but not overridden
     // on the command line or in this chain's section of the config file.
@@ -1159,6 +1178,13 @@ bool AppInitParameterInteraction(const ArgsManager& args)
 
     if (args.GetBoolArg("-peerbloomfilters", DEFAULT_PEERBLOOMFILTERS))
         g_local_services = ServiceFlags(g_local_services | NODE_BLOOM);
+
+    // MWEB: Litecoin's -rpcserialversion, without the non-segwit 0 that Bitcoin Core removed.
+    if (const int rpc_serialize_version{static_cast<int>(args.GetIntArg("-rpcserialversion", MWEB::DEFAULT_RPC_SERIALIZE_VERSION))}; rpc_serialize_version != 1 && rpc_serialize_version != 2) {
+        return InitError(rpc_serialize_version == 0 ?
+            Untranslated("-rpcserialversion=0 (non-segwit serialization) is no longer supported.") :
+            Untranslated("Unknown rpcserialversion requested."));
+    }
 
     const std::vector<std::string> test_options = args.GetArgs("-test");
     if (!test_options.empty()) {
@@ -1648,6 +1674,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
     PeerManager::Options peerman_opts{};
     ApplyArgsManOptions(args, peerman_opts);
+    g_mweb_serve_inject_bad_cache = args.GetBoolArg("-mwebserveinjectbadcache", false);
 
     {
         // Read asmap file if configured or embedded asmap data and initialize
@@ -2018,6 +2045,26 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
             g_local_services = ServiceFlags(g_local_services | NODE_NETWORK);
         } else {
             LogInfo("Running node in NODE_NETWORK_LIMITED mode until snapshot background sync completes");
+        }
+    }
+
+    if (chainparams.GetConsensus().SegwitHeight != std::numeric_limits<int>::max() &&
+        chainparams.GetConsensus().vDeployments[Consensus::DEPLOYMENT_MWEB].nStartTime != Consensus::BIP9Deployment::NEVER_ACTIVE) {
+        // Advertise NODE_MWEB before the first peer handshake unless MWEB can never activate.
+        // Light-client serve is on by default; honor -mwebserve=off and -blocksonly
+        // (unless -mwebserveinblocksonly). Runtime upload limits still clear the bit via
+        // MaybeRefreshMwebLightClientServices.
+        g_local_services = ServiceFlags(g_local_services | NODE_MWEB);
+        bool light_client{true};
+        if (const auto mode{args.GetArg("-mwebserve")}) {
+            if (*mode == "0" || *mode == "off") light_client = false;
+        }
+        const bool blocksonly{args.GetBoolArg("-blocksonly", DEFAULT_BLOCKSONLY)};
+        const bool serve_in_blocksonly{
+            args.GetBoolArg("-mwebserveinblocksonly", DEFAULT_MWEB_SERVE_IN_BLOCKSONLY)};
+        if (blocksonly && !serve_in_blocksonly) light_client = false;
+        if (light_client) {
+            g_local_services = ServiceFlags(g_local_services | NODE_MWEB_LIGHT_CLIENT);
         }
     }
 

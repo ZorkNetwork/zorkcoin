@@ -17,11 +17,25 @@
 
 #include <unordered_map>
 
+namespace {
+/** Canonical mined vtx must never carry mweb_tx (see MWEB::Node::CheckBlock).
+ *  wtxid/txid exclude the extension, so peer-supplied or mempool-attached
+ *  mweb_tx must be stripped from every BIP152 fill source before reconstruction. */
+CTransactionRef StripMWEBExtension(const CTransactionRef& tx)
+{
+    if (!tx->HasMWEBTx() && !tx->HadAttachedMWEB()) return tx;
+    CMutableTransaction stripped(*tx);
+    stripped.ClearAttachedMWEB();
+    return MakeTransactionRef(std::move(stripped));
+}
+} // namespace
+
 CBlockHeaderAndShortTxIDs::CBlockHeaderAndShortTxIDs(const CBlock& block, uint64_t nonce)
     : nonce(nonce),
       shorttxids(block.vtx.size() - 1),
       prefilledtxn(1),
-      header(block)
+      header(block),
+      mweb_block(block.mweb_block) // MWEB
 {
     FillShortTxIDSelector();
     // TODO: Use our mempool prior to block acceptance to predictively fill more than just the coinbase
@@ -29,6 +43,11 @@ CBlockHeaderAndShortTxIDs::CBlockHeaderAndShortTxIDs(const CBlock& block, uint64
     for (size_t i = 1; i < block.vtx.size(); i++) {
         const CTransaction& tx = *block.vtx[i];
         shorttxids[i - 1] = GetShortID(tx.GetWitnessHash());
+    }
+    // MWEB: The HogEx is never in a mempool, so prefill it. Prefilled indexes are differential.
+    if (!mweb_block.IsNull() && block.vtx.size() >= 2 && block.vtx.back()->IsHogEx()) {
+        shorttxids.pop_back();
+        prefilledtxn.push_back({static_cast<uint16_t>(block.vtx.size() - 2), block.vtx.back()});
     }
 }
 
@@ -67,6 +86,7 @@ ReadStatus PartiallyDownloadedBlock::InitData(const CBlockHeaderAndShortTxIDs& c
     if (!header.IsNull() || !txn_available.empty()) return READ_STATUS_INVALID;
 
     header = cmpctblock.header;
+    mweb_block = cmpctblock.mweb_block; // MWEB
     txn_available.resize(cmpctblock.BlockTxCount());
 
     int32_t lastprefilledindex = -1;
@@ -83,7 +103,7 @@ ReadStatus PartiallyDownloadedBlock::InitData(const CBlockHeaderAndShortTxIDs& c
             // have neither a prefilled txn or a shorttxid!
             return READ_STATUS_INVALID;
         }
-        txn_available[lastprefilledindex] = cmpctblock.prefilledtxn[i].tx;
+        txn_available[lastprefilledindex] = StripMWEBExtension(cmpctblock.prefilledtxn[i].tx);
     }
     prefilled_count = cmpctblock.prefilledtxn.size();
 
@@ -122,7 +142,7 @@ ReadStatus PartiallyDownloadedBlock::InitData(const CBlockHeaderAndShortTxIDs& c
         std::unordered_map<uint64_t, uint16_t>::iterator idit = shorttxids.find(shortid);
         if (idit != shorttxids.end()) {
             if (tx_source[idit->second] == TxSource::NONE) {
-                txn_available[idit->second] = txit->GetSharedTx();
+                txn_available[idit->second] = StripMWEBExtension(txit->GetSharedTx());
                 tx_source[idit->second] = TxSource::MEMPOOL;
                 mempool_count++;
             } else if (tx_source[idit->second] != TxSource::COLLIDED) {
@@ -147,7 +167,7 @@ ReadStatus PartiallyDownloadedBlock::InitData(const CBlockHeaderAndShortTxIDs& c
         std::unordered_map<uint64_t, uint16_t>::iterator idit = shorttxids.find(shortid);
         if (idit != shorttxids.end()) {
             if (tx_source[idit->second] == TxSource::NONE) {
-                txn_available[idit->second] = extra_txn[i].second;
+                txn_available[idit->second] = StripMWEBExtension(extra_txn[i].second);
                 tx_source[idit->second] = TxSource::EXTRA;
                 mempool_count++;
                 extra_count++;
@@ -190,6 +210,7 @@ ReadStatus PartiallyDownloadedBlock::FillBlock(CBlock& block, const std::vector<
     if (header.IsNull()) return READ_STATUS_INVALID;
 
     block = header;
+    block.mweb_block = mweb_block; // MWEB
     block.vtx.resize(txn_available.size());
 
     size_t tx_missing_offset = 0;
@@ -198,7 +219,7 @@ ReadStatus PartiallyDownloadedBlock::FillBlock(CBlock& block, const std::vector<
             if (tx_missing_offset >= vtx_missing.size()) {
                 return READ_STATUS_INVALID;
             }
-            block.vtx[i] = vtx_missing[tx_missing_offset++];
+            block.vtx[i] = StripMWEBExtension(vtx_missing[tx_missing_offset++]);
         } else {
             block.vtx[i] = std::move(txn_available[i]);
         }

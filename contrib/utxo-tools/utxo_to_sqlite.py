@@ -21,7 +21,8 @@ import time
 
 
 UTXO_DUMP_MAGIC = b'utxo\xff'
-UTXO_DUMP_VERSION = 2
+UTXO_DUMP_SUPPORTED_VERSIONS = {2, 3}
+MWEB_SNAPSHOT_MAGIC = b'mweb\xff'
 NET_MAGIC_BYTES = {
     b"\xf9\xbe\xb4\xd9": "Mainnet",
     b"\x0a\x03\xcf\x40": "Signet",
@@ -147,9 +148,9 @@ def main():
     if magic_bytes != UTXO_DUMP_MAGIC:
         print(f"Error: provided input file '{args.infile}' is not an UTXO dump.")
         sys.exit(1)
-    if version != UTXO_DUMP_VERSION:
+    if version not in UTXO_DUMP_SUPPORTED_VERSIONS:
         print(f"Error: provided input file '{args.infile}' has unknown UTXO dump version {version} "
-              f"(only version {UTXO_DUMP_VERSION} supported)")
+              f"(supported versions: {sorted(UTXO_DUMP_SUPPORTED_VERSIONS)})")
         sys.exit(1)
     network_string = NET_MAGIC_BYTES.get(network_magic, f"unknown network ({network_magic.hex()})")
     print(f"UTXO Snapshot for {network_string} at block hash "
@@ -201,9 +202,13 @@ def main():
     con.close()
 
     print(f"TOTAL: {num_utxos} coins written to {args.outfile}, snapshot height is {max_height}.")
-    if f.read(1) != b'':  # EOF should be reached by now
-        print(f"WARNING: input file {args.infile} has not reached EOF yet!")
-        sys.exit(1)
+    trailing = f.read()
+    if trailing:
+        if trailing[:5] == MWEB_SNAPSHOT_MAGIC:
+            print("NOTE: MWEB snapshot section present; SQLite output contains L1 UTXOs only.")
+        else:
+            print(f"WARNING: input file {args.infile} has unexpected trailing data ({len(trailing)} bytes)")
+            sys.exit(1)
 
 
 if __name__ == '__main__':

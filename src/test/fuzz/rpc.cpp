@@ -89,6 +89,7 @@ const std::vector<std::string> RPC_COMMANDS_SAFE_FOR_FUZZING{
     "abortprivatebroadcast",
     "analyzepsbt",
     "clearbanned",
+    "clearmwebhistoricalcache", // MWEB
     "combinepsbt",
     "combinerawtransaction",
     "converttopsbt",

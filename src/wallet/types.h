@@ -53,6 +53,10 @@ struct CreatedTransactionResult
     CAmount fee;
     FeeReason fee_reason;
     std::optional<unsigned int> change_pos;
+    //! The MWEB part of tx. While it is unsigned (when funding a PSBT), tx->mweb_tx is null.
+    mw::MutableTx mweb_tx;
+    //! Index of the change output in mweb_tx.outputs, if the change is on MWEB.
+    std::optional<size_t> mweb_change_index;
 
     CreatedTransactionResult(CTransactionRef _tx, CAmount _fee, std::optional<unsigned int> _change_pos, FeeReason _fee_reason)
         : tx(_tx), fee(_fee), fee_reason(_fee_reason), change_pos(_change_pos) {}

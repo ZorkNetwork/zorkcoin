@@ -1732,4 +1732,6 @@ BOOST_AUTO_TEST_CASE(formatscriptflags)
     BOOST_CHECK_EQUAL(FormatScriptFlags(script_verify_flags::from_int(1u<<26)), "0x04000000");
 }
 
+
+
 BOOST_AUTO_TEST_SUITE_END()

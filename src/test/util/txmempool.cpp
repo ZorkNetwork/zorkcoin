@@ -100,6 +100,10 @@ std::optional<std::string> CheckPackageMempoolAcceptResult(const Package& txns,
         if (atmp_result.m_vsize.has_value() != (valid || mempool_entry)) {
             return strprintf("tx %s result should %shave m_vsize", wtxid.ToString(), valid || mempool_entry ? "" : "not ");
         }
+        // MWEB: m_mweb_weight follows m_vsize
+        if (atmp_result.m_mweb_weight.has_value() != (valid || mempool_entry)) {
+            return strprintf("tx %s result should %shave m_mweb_weight", wtxid.ToString(), valid || mempool_entry ? "" : "not ");
+        }
 
         // m_other_wtxid should exist iff the result was DIFFERENT_WITNESS
         const bool diff_witness{atmp_result.m_result_type == MempoolAcceptResult::ResultType::DIFFERENT_WITNESS};

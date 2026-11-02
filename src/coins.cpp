@@ -6,6 +6,7 @@
 
 #include <consensus/consensus.h>
 #include <primitives/block.h>
+#include <mweb/mweb_db.h> // MWEB
 #include <random.h>
 #include <uint256.h>
 #include <util/log.h>
@@ -42,7 +43,8 @@ std::optional<Coin> CCoinsViewCache::PeekCoin(const COutPoint& outpoint) const
 
 CCoinsViewCache::CCoinsViewCache(CCoinsView* in_base, bool deterministic) :
     CCoinsViewBacked(in_base), m_deterministic(deterministic),
-    cacheCoins(0, SaltedCoinsCacheHasher{/*deterministic=*/deterministic}, CCoinsMap::key_equal{}, &m_cache_coins_memory_resource)
+    cacheCoins(0, SaltedCoinsCacheHasher{/*deterministic=*/deterministic}, CCoinsMap::key_equal{}, &m_cache_coins_memory_resource),
+    mweb_view(in_base->GetMWEBView() ? std::make_shared<mw::CoinsViewCache>(in_base->GetMWEBView()) : nullptr)
 {
     m_sentinel.second.SelfRef(m_sentinel);
 }
@@ -134,10 +136,10 @@ void AddCoins(CCoinsViewCache& cache, const CTransaction &tx, int nHeight, bool 
     bool fCoinbase = tx.IsCoinBase();
     const Txid& txid = tx.GetHash();
     for (size_t i = 0; i < tx.vout.size(); ++i) {
+        // MWEB: HogEx outputs after the HogAddr are pegouts subject to pegout maturity.
+        const bool fPegout = tx.IsHogEx() && i > 0;
         bool overwrite = check_for_overwrite ? cache.HaveCoin(COutPoint(txid, i)) : fCoinbase;
-        // Coinbase transactions can always be overwritten, in order to correctly
-        // deal with the pre-BIP30 occurrences of duplicate coinbase transactions.
-        cache.AddCoin(COutPoint(txid, i), Coin(tx.vout[i], nHeight, fCoinbase), overwrite);
+        cache.AddCoin(COutPoint(txid, i), Coin(tx.vout[i], nHeight, fCoinbase, fPegout), overwrite);
     }
 }
 
@@ -198,7 +200,7 @@ void CCoinsViewCache::SetBestBlock(const uint256& in_block_hash)
     m_block_hash = in_block_hash;
 }
 
-void CCoinsViewCache::BatchWrite(CoinsViewCacheCursor& cursor, const uint256& in_block_hash)
+void CCoinsViewCache::BatchWrite(CoinsViewCacheCursor& cursor, const uint256& in_block_hash, const mw::CoinsViewCache::Ptr& mweb_cache)
 {
     for (auto it{cursor.Begin()}; it != cursor.End(); it = cursor.NextAndMaybeErase(*it)) {
         if (!it->second.IsDirty()) { // TODO a cursor can only contain dirty entries
@@ -267,12 +269,17 @@ void CCoinsViewCache::BatchWrite(CoinsViewCacheCursor& cursor, const uint256& in
         }
     }
     SetBestBlock(in_block_hash);
+
+    // MWEB: merge extension block changes into the parent view's cache layer.
+    if (mweb_cache && base->GetMWEBView()) {
+        mweb_cache->Flush(nullptr);
+    }
 }
 
 void CCoinsViewCache::Flush(bool reallocate_cache)
 {
     auto cursor{CoinsViewCacheCursor(m_dirty_count, m_sentinel, cacheCoins, /*will_erase=*/true)};
-    base->BatchWrite(cursor, m_block_hash);
+    base->BatchWrite(cursor, m_block_hash, mweb_view);
     Assume(m_dirty_count == 0);
     cacheCoins.clear();
     if (reallocate_cache) {
@@ -284,7 +291,7 @@ void CCoinsViewCache::Flush(bool reallocate_cache)
 void CCoinsViewCache::Sync()
 {
     auto cursor{CoinsViewCacheCursor(m_dirty_count, m_sentinel, cacheCoins, /*will_erase=*/false)};
-    base->BatchWrite(cursor, m_block_hash);
+    base->BatchWrite(cursor, m_block_hash, mweb_view);
     Assume(m_dirty_count == 0);
     if (m_sentinel.second.Next() != &m_sentinel) {
         /* BatchWrite must clear flags of all entries */
@@ -298,6 +305,11 @@ void CCoinsViewCache::Reset() noexcept
     cachedCoinsUsage = 0;
     m_dirty_count = 0;
     SetBestBlock(uint256::ZERO);
+    if (base && base->GetMWEBView()) {
+        mweb_view = std::make_shared<mw::CoinsViewCache>(base->GetMWEBView());
+    } else {
+        mweb_view.reset();
+    }
 }
 
 void CCoinsViewCache::Uncache(const COutPoint& hash)
@@ -328,7 +340,48 @@ bool CCoinsViewCache::HaveInputs(const CTransaction& tx) const
             }
         }
     }
+
+    // MWEB: verify MWEB inputs exist in the extension block UTXO set
+    if (tx.HasMWEBTx()) {
+        for (const Input& input : tx.mweb_tx.m_transaction->GetInputs()) {
+            Output utxo;
+            if (!GetMWEBCoin(input.GetOutputID(), utxo)) {
+                return false;
+            }
+        }
+    }
+
     return true;
+}
+
+void CCoinsViewCache::SetBackend(CCoinsView& view_in)
+{
+    base = &view_in;
+    RefreshMWEBCache();
+}
+
+void CCoinsViewCache::RefreshMWEBCache()
+{
+    if (base && base->GetMWEBView()) {
+        mweb_view = std::make_shared<mw::CoinsViewCache>(base->GetMWEBView());
+    } else {
+        mweb_view.reset();
+    }
+}
+
+bool CCoinsViewCache::GetMWEBCoin(const mw::Hash& output_id, Output& coin) const
+{
+    if (mweb_view) {
+        if (mweb_view->HasSpendInCache(output_id)) {
+            return false;
+        }
+        if (auto pUTXO = mweb_view->GetUTXO(output_id)) {
+            coin = pUTXO->GetOutput();
+            return true;
+        }
+    }
+
+    return base->GetMWEBCoin(output_id, coin);
 }
 
 void CCoinsViewCache::ReallocateCache()

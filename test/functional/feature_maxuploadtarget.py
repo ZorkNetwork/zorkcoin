@@ -29,7 +29,14 @@ from test_framework.util import (
 from test_framework.wallet import MiniWallet
 
 
-UPLOAD_TARGET_MB = 800
+# Daily historical-serving reserve (see CConnman::OutboundTargetReached):
+# one MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB (~25.8 MB) every 10 minutes for 24h.
+# That reserve alone is ~3544 MB, so the upload target must exceed it.
+# Keep headroom small so the test does not need to ship multi-GB over P2P.
+MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB = 25_800_195  # MAX_BLOCK_SERIALIZED_SIZE + mw::MAX_BLOCK_BYTES
+DAILY_HISTORICAL_BUFFER = 144 * MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB
+UPLOAD_TARGET_MB = 3600  # ~56 MB above the historical reserve
+assert DAILY_HISTORICAL_BUFFER < UPLOAD_TARGET_MB * 1024 * 1024
 
 
 class TestP2PConn(P2PInterface):
@@ -106,12 +113,12 @@ class MaxUploadTest(BitcoinTestFramework):
         getdata_request.inv.append(CInv(MSG_BLOCK, big_old_block))
 
         max_bytes_per_day = UPLOAD_TARGET_MB * 1024 *1024
-        daily_buffer = 144 * 4000000
+        daily_buffer = DAILY_HISTORICAL_BUFFER
         max_bytes_available = max_bytes_per_day - daily_buffer
         success_count = max_bytes_available // old_block_size
 
-        # 576MB will be reserved for relaying new blocks, so expect this to
-        # succeed for ~235 tries.
+        # ~3.5 GB reserved for relaying new blocks (144 * MWEB max envelope), so
+        # expect this to succeed for success_count tries under a 3600 MB target.
         for i in range(success_count):
             p2p_conns[0].send_and_ping(getdata_request)
             assert_equal(p2p_conns[0].block_receive_map[big_old_block], i+1)
@@ -130,10 +137,17 @@ class MaxUploadTest(BitcoinTestFramework):
         self.assert_uploadtarget_state(target_reached=False, serve_historical_blocks=False)
 
         # Requesting the current block on p2p_conns[1] should succeed indefinitely,
-        # even when over the max upload target.
-        # We'll try 800 times
+        # even when over the max upload target — but we also need enough relays to
+        # exhaust the total daily limit (UPLOAD_TARGET_MB).
         getdata_request.inv = [CInv(MSG_BLOCK, big_new_block)]
-        for i in range(800):
+        new_block_hash = self.nodes[0].getbestblockhash()
+        new_block_size = self.nodes[0].getblock(new_block_hash, True)['size']
+        # Bytes already sent ≈ historical success window; need to push past target.
+        bytes_sent_approx = success_count * old_block_size
+        bytes_needed = max(0, max_bytes_per_day - bytes_sent_approx) + new_block_size
+        new_block_tries = bytes_needed // new_block_size + 50
+        self.log.info("Relaying new block %d times to exhaust upload target", new_block_tries)
+        for i in range(new_block_tries):
             p2p_conns[1].send_and_ping(getdata_request)
             assert_equal(p2p_conns[1].block_receive_map[big_new_block], i+1)
 

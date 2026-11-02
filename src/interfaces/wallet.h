@@ -10,7 +10,11 @@
 #include <common/types.h>
 #include <consensus/amount.h>
 #include <interfaces/chain.h>
+#include <mw/models/crypto/hash.h>
+#include <mw/models/tx/peg_out_coin.h>
+#include <mw/models/wallet/stealth_address.h>
 #include <primitives/transaction.h>
+#include <serialize.h>
 #include <support/allocators/secure.h>
 #include <util/fs.h>
 #include <util/result.h>
@@ -37,7 +41,12 @@ class PartiallySignedTransaction;
 class uint256;
 enum class FeeReason;
 enum class OutputType;
+
+namespace mw {
+struct Coin;
+} // namespace mw
 struct bilingual_str;
+
 namespace wallet {
 struct CreatedTransactionResult;
 class CCoinControl;
@@ -93,6 +102,9 @@ public:
 
     // Get a new address.
     virtual util::Result<CTxDestination> getNewDestination(OutputType type, const std::string& label) = 0;
+
+    //! MWEB: The address getNewDestination would return next, without taking it.
+    virtual util::Result<CTxDestination> peekNewDestination(OutputType type) = 0;
 
     //! Get public key.
     virtual bool getPubKey(const CScript& script, const CKeyID& address, CPubKey& pub_key) = 0;
@@ -235,10 +247,11 @@ public:
     virtual std::vector<WalletTxOut> getCoins(const std::vector<COutPoint>& outputs) = 0;
 
     //! Get required fee.
-    virtual CAmount getRequiredFee(unsigned int tx_bytes) = 0;
+    virtual CAmount getRequiredFee(unsigned int tx_bytes, uint64_t mweb_weight = 0) = 0;
 
     //! Get minimum fee.
     virtual CAmount getMinimumFee(unsigned int tx_bytes,
+        uint64_t mweb_weight,
         const wallet::CCoinControl& coin_control,
         std::optional<int>* returned_target,
         FeeReason* reason) = 0;
@@ -257,6 +270,22 @@ public:
 
     // Return whether the wallet contains a Taproot scriptPubKeyMan
     virtual bool taprootEnabled() = 0;
+
+    // MWEB hooks
+    virtual bool mwebEnabled() = 0;
+    virtual bool canGetMWEBAddresses() = 0;
+    virtual bool getPeginAddress(StealthAddress& pegin_address) = 0;
+    virtual bool findCoin(const mw::Hash& output_id, mw::Coin& coin) = 0;
+
+    struct MWEBUnspentEntry {
+        mw::Hash output_id;
+        Txid txid;
+        CAmount amount;
+        int depth;
+        StealthAddress address;
+        bool safe;
+    };
+    virtual std::vector<MWEBUnspentEntry> listMWEBUnspent() = 0;
 
     // Return whether wallet uses an external signer.
     virtual bool hasExternalSigner() = 0;
@@ -394,8 +423,30 @@ struct WalletTx
     std::optional<std::string> comment;
     std::optional<std::string> comment_to;
     bool is_coinbase;
+    // MWEB hooks
+    //! R/S wallet record identity when the transaction body is not yet known.
+    std::optional<Txid> mweb_placeholder_id;
+    CAmount fee{0}; //!< Wallet residual fee (L1 + MWEB kernel); 0 if not from us
+    bool is_hogex{false};
+    uint64_t mweb_weight{0};
+    std::vector<PegOutCoin> pegouts;
+    std::vector<bool> pegout_is_mine;
+    //! Per-extension-output metadata for history (stealth dest when known).
+    struct MWEBOut {
+        mw::Hash output_id;
+        CAmount amount{0};
+        bool is_mine{false};
+        bool is_change{false};
+        CTxDestination address{};
+    };
+    std::vector<MWEBOut> mweb_outs;
+    std::vector<bool> mweb_txin_is_mine;
+    //! True when HogEx L1 credits are already represented by an in-wallet MWEB peg-out tx.
+    bool suppress_hogex_credit{false};
 
-    bool operator<(const WalletTx& a) const { return tx->GetHash() < a.tx->GetHash(); }
+    const Txid& GetHash() const { return mweb_placeholder_id ? *mweb_placeholder_id : tx->GetHash(); }
+
+    bool operator<(const WalletTx& a) const { return GetHash() < a.GetHash(); }
 };
 
 //! Updated transaction status.

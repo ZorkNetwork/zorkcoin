@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qt/test/wallettests.h>
+#include <qt/test/mweb_wallet_tests.h>
 #include <qt/test/util.h>
 
 #include <wallet/coincontrol.h>
@@ -19,12 +20,19 @@
 #include <qt/receivecoinsdialog.h>
 #include <qt/receiverequestdialog.h>
 #include <qt/recentrequeststablemodel.h>
+#include <qt/addressbookpage.h>
+#include <qt/addresstablemodel.h>
 #include <qt/sendcoinsdialog.h>
 #include <qt/sendcoinsentry.h>
+#include <qt/sendcoinsrecipient.h>
+#include <qt/transactiondesc.h>
+#include <qt/transactionrecord.h>
 #include <qt/transactiontablemodel.h>
 #include <qt/transactionview.h>
 #include <qt/walletmodel.h>
 #include <script/solver.h>
+#include <kernel/chainparams.h>
+#include <outputtype.h>
 #include <test/util/setup_common.h>
 #include <validation.h>
 #include <wallet/test/util.h>
@@ -33,7 +41,10 @@
 #include <chrono>
 #include <memory>
 
+#include <QComboBox>
+#include <QLabel>
 #include <QAbstractButton>
+#include <QStandardItemModel>
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
@@ -41,9 +52,12 @@
 #include <QObject>
 #include <QPushButton>
 #include <QTimer>
+#include <QToolButton>
+#include <QTest>
 #include <QVBoxLayout>
 #include <QTextEdit>
 #include <QListView>
+#include <QMessageBox>
 #include <QDialogButtonBox>
 
 using wallet::AddWallet;
@@ -445,6 +459,7 @@ void TestGUI(interfaces::Node& node)
     // "Full" GUI tests, use descriptor wallet
     const std::shared_ptr<CWallet>& desc_wallet = SetupDescriptorsWallet(node, test);
     TestGUI(node, desc_wallet);
+    TestGUIMWEBReceive(node, desc_wallet);
 
     // Legacy watch-only wallet test
     // Verify PSBT creation.

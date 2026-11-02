@@ -201,8 +201,10 @@ util::Result<CreatedTransactionResult> CreateTransaction(CWallet& wallet, const 
 /**
  * Insert additional inputs into the transaction by
  * calling CreateTransaction();
+ * @param sign When false (fundrawtransaction / walletcreatefundedpsbt), MWEB
+ *             destinations and extensions are rejected (PSBT strips mweb_tx).
  */
-util::Result<CreatedTransactionResult> FundTransaction(CWallet& wallet, const CMutableTransaction& tx, const std::vector<CRecipient>& recipients, std::optional<unsigned int> change_pos, bool lockUnspents, CCoinControl);
+util::Result<CreatedTransactionResult> FundTransaction(CWallet& wallet, const CMutableTransaction& tx, const std::vector<CRecipient>& recipients, std::optional<unsigned int> change_pos, bool lockUnspents, CCoinControl coinControl, bool sign = false);
 } // namespace wallet
 
 #endif // BITCOIN_WALLET_SPEND_H

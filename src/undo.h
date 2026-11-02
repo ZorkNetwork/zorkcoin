@@ -9,21 +9,23 @@
 #include <coins.h>
 #include <compressor.h>
 #include <consensus/consensus.h>
+#include <mw/models/block/block_undo.h> // MWEB
 #include <primitives/transaction.h>
 #include <serialize.h>
 
 /** Formatter for undo information for a CTxIn
  *
  *  Contains the prevout's CTxOut being spent, and its metadata as well
- *  (coinbase or not, height). The serialization contains a dummy value of
- *  zero. This is compatible with older versions which expect to see
- *  the transaction version there.
+ *  (coinbase or not, height, pegout status). The serialization contains a
+ *  dummy value of zero. This is compatible with older versions which expect
+ *  to see the transaction version there.
  */
 struct TxInUndoFormatter
 {
     template<typename Stream>
     void Ser(Stream &s, const Coin& txout) {
-        uint32_t nCode{(uint32_t{txout.nHeight} << 1) | uint32_t{txout.fCoinBase}};
+        uint32_t nCode{(uint32_t{txout.nHeight} << 1) | uint32_t{txout.fCoinBase} |
+                       (txout.fPegout ? (uint32_t{1} << 31) : uint32_t{0})}; // MWEB
         ::Serialize(s, VARINT(nCode));
         if (txout.nHeight > 0) {
             // Required to maintain compatibility with older undo format.
@@ -36,7 +38,8 @@ struct TxInUndoFormatter
     void Unser(Stream &s, Coin& txout) {
         uint32_t nCode = 0;
         ::Unserialize(s, VARINT(nCode));
-        txout.nHeight = nCode >> 1;
+        txout.fPegout = nCode >> 31; // MWEB
+        txout.nHeight = (nCode & ~(uint32_t{1} << 31)) >> 1;
         txout.fCoinBase = nCode & 1;
         if (txout.nHeight > 0) {
             // Old versions stored the version number for the last spend of
@@ -64,8 +67,35 @@ class CBlockUndo
 {
 public:
     std::vector<CTxUndo> vtxundo; // for all but the coinbase
+    mw::BlockUndo::CPtr mwundo; // MWEB
 
-    SERIALIZE_METHODS(CBlockUndo, obj) { READWRITE(obj.vtxundo); }
+    SERIALIZE_METHODS(CBlockUndo, obj)
+    {
+        READWRITE(obj.vtxundo);
+        if (obj.mwundo != nullptr) { // MWEB
+            READWRITE(obj.mwundo);
+        }
+    }
 };
+
+template <typename Stream>
+inline void UnserializeBlockUndo(CBlockUndo& blockundo, Stream& s, const unsigned int num_bytes) // MWEB
+{
+    blockundo = CBlockUndo{};
+    const uint64_t num_txs = ::ReadCompactSize(s);
+    blockundo.vtxundo.reserve(num_txs);
+    for (uint64_t i = 0; i < num_txs; i++) {
+        CTxUndo txundo;
+        s >> txundo;
+        blockundo.vtxundo.emplace_back(std::move(txundo));
+    }
+
+    if (::GetSerializeSize(blockundo) < num_bytes) {
+        // There's more data to read. MWEB rewind data must be available.
+        mw::BlockUndo undo;
+        s >> undo;
+        blockundo.mwundo = std::make_shared<const mw::BlockUndo>(std::move(undo));
+    }
+}
 
 #endif // BITCOIN_UNDO_H

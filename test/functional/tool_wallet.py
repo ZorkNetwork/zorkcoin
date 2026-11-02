@@ -65,9 +65,11 @@ class ToolWalletTest(BitcoinTestFramework):
         result = 'unchanged' if new == old else 'increased!'
         self.log.debug('Wallet file timestamp {}'.format(result))
 
-    def get_expected_info_output(self, name="", transactions=0, keypool=2, address=0, imported_privs=0):
+    def get_expected_info_output(self, name="", transactions=0, keypool=2, mweb_keypool=None, address=0, imported_privs=0):
         wallet_name = self.default_wallet_name if name == "" else name
-        output_types = 4  # p2pkh, p2sh, segwit, bech32m
+        if mweb_keypool is None:
+            mweb_keypool = max(keypool - 1, 0)
+        keypool_size = keypool * 4 + mweb_keypool
         return textwrap.dedent('''\
             Wallet info
             ===========
@@ -79,7 +81,7 @@ class ToolWalletTest(BitcoinTestFramework):
             Keypool Size: %d
             Transactions: %d
             Address Book: %d
-        ''' % (wallet_name, keypool * output_types, transactions, imported_privs * 3 + address))
+        ''' % (wallet_name, keypool_size, transactions, imported_privs * 3 + address))
 
     def read_dump(self, filename):
         dump = OrderedDict()
@@ -211,7 +213,7 @@ class ToolWalletTest(BitcoinTestFramework):
         shasum_before = self.wallet_shasum()
         timestamp_before = self.wallet_timestamp()
         self.log.debug('Wallet file timestamp before calling create: {}'.format(timestamp_before))
-        out = "Topping up keypool...\n" + self.get_expected_info_output(name="foo", keypool=2000)
+        out = "Topping up keypool...\n" + self.get_expected_info_output(name="foo", keypool=2000, mweb_keypool=1000)
         self.assert_tool_output(out, '-wallet=foo', 'create')
         shasum_after = self.wallet_shasum()
         timestamp_after = self.wallet_timestamp()
@@ -237,7 +239,7 @@ class ToolWalletTest(BitcoinTestFramework):
         self.log.debug('Wallet file timestamp after calling getwalletinfo: {}'.format(timestamp_after))
 
         assert_equal(0, out['txcount'])
-        assert_equal(4000, out['keypoolsize'])
+        assert_equal(5000, out['keypoolsize'])
         assert_equal(4000, out['keypoolsize_hd_internal'])
 
         self.log_wallet_timestamp_comparison(timestamp_before, timestamp_after)
@@ -372,7 +374,7 @@ class ToolWalletTest(BitcoinTestFramework):
             Descriptors: yes
             Encrypted: no
             HD (hd seed available): yes
-            Keypool Size: 8
+            Keypool Size: 9
             Transactions: 4
             Address Book: 4
         ''')

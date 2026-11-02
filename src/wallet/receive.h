@@ -6,9 +6,12 @@
 #define BITCOIN_WALLET_RECEIVE_H
 
 #include <consensus/amount.h>
+#include <mw/models/crypto/hash.h>
 #include <primitives/transaction_identifier.h>
 #include <wallet/transaction.h>
 #include <wallet/wallet.h>
+
+#include <optional>
 
 namespace wallet {
 bool InputIsMine(const CWallet& wallet, const CTxIn& txin) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
@@ -26,13 +29,17 @@ CAmount TxGetChange(const CWallet& wallet, const CTransaction& tx);
 
 CAmount CachedTxGetCredit(const CWallet& wallet, const CWalletTx& wtx, bool avoid_reuse)
     EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
-CAmount CachedTxGetDebit(const CWallet& wallet, const CWalletTx& wtx, bool avoid_reuse);
+CAmount CachedTxGetDebit(const CWallet& wallet, const CWalletTx& wtx, bool avoid_reuse)
+    EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
+CAmount CachedTxGetFee(const CWallet& wallet, const CWalletTx& wtx);
+CAmount CachedTxGetAmount(const CWallet& wallet, const CWalletTx& wtx);
 CAmount CachedTxGetChange(const CWallet& wallet, const CWalletTx& wtx);
 struct COutputEntry
 {
     CTxDestination destination;
     CAmount amount;
-    int vout;
+    int vout; //!< L1 vout index, or -1 when MWEB/pegout-only
+    std::optional<mw::Hash> mweb_out{}; //!< Set for MWEB extension outputs (Litecoin listtransactions field); all zeros for peg-outs
 };
 void CachedTxGetAmounts(const CWallet& wallet, const CWalletTx& wtx,
                         std::list<COutputEntry>& listReceived,
@@ -40,6 +47,8 @@ void CachedTxGetAmounts(const CWallet& wallet, const CWalletTx& wtx,
                         CAmount& nFee,
                         bool include_change);
 bool CachedTxIsFromMe(const CWallet& wallet, const CWalletTx& wtx);
+//! MWEB: the wallet's own MWEB outputs in wtx (from its MWEB data or a partial receive), with their addresses.
+std::vector<std::pair<StealthAddress, mw::Coin>> WalletTxMWEBReceived(const CWallet& wallet, const CWalletTx& wtx) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
 bool CachedTxIsTrusted(const CWallet& wallet, const CWalletTx& wtx, std::set<Txid>& trusted_parents) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
 bool CachedTxIsTrusted(const CWallet& wallet, const CWalletTx& wtx);
 
@@ -50,7 +59,7 @@ struct Balance {
     CAmount m_mine_used{0};              //!< Trusted/untrusted/immature funds in utxos that have already been spent from (only populated if AVOID REUSE wallet flag is set)
     CAmount m_mine_nonmempool{0};        //!< Coins spent by wallet txs that are not in the mempool
 };
-Balance GetBalance(const CWallet& wallet, int min_depth = 0, bool avoid_reuse = true, bool include_nonmempool = false);
+Balance GetBalance(const CWallet& wallet, int min_depth = 0, bool avoid_reuse = true, bool include_nonmempool = false, bool include_mweb = false);
 
 std::map<CTxDestination, CAmount> GetAddressBalances(const CWallet& wallet);
 std::set<std::set<CTxDestination>> GetAddressGroupings(const CWallet& wallet) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);

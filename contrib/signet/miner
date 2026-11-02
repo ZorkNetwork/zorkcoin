@@ -98,6 +98,9 @@ def finish_block(block, signet_solution, grind_cmd):
     return block
 
 def new_block(tmpl, reward_spk, *, blocktime=None, poolid=None):
+    # ZORK: MWEB blocks are not supported by this miner.
+    if "mweb" in tmpl:
+        raise RuntimeError("Block template contains MWEB data, which this miner cannot include")
     scriptSig = script_BIP34_coinbase_height(tmpl["height"])
     if poolid is not None:
         scriptSig = CScript(b"" + scriptSig + CScriptOp.encode_op_pushdata(poolid))

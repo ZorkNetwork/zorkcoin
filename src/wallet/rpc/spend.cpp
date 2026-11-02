@@ -108,6 +108,30 @@ static UniValue FinishTransaction(const std::shared_ptr<CWallet> pwallet, const 
         DiscourageFeeSniping(rawTx, rng_fast, pwallet->chain(), pwallet->GetLastBlockHash(), pwallet->GetLastBlockHeight());
     }
 
+    const bool psbt_opt_in{options.exists("psbt") && options["psbt"].get_bool()};
+    bool add_to_wallet{options.exists("add_to_wallet") ? options["add_to_wallet"].get_bool() : true};
+
+    // An MWEB part signed while funding is finished directly; an unsigned one goes through the PSBT.
+    if (!rawTx.mweb_tx.IsNull() && rawTx.mweb_tx.IsFinal() && !psbt_opt_in) {
+        {
+            LOCK(pwallet->cs_wallet);
+            if (!pwallet->SignTransaction(rawTx)) {
+                throw JSONRPCError(RPC_WALLET_ERROR, "Signing transaction failed");
+            }
+        }
+        UniValue result(UniValue::VOBJ);
+        CTransactionRef tx = MakeTransactionRef(rawTx);
+        std::string hex{EncodeHexTx(*tx)};
+        result.pushKV("txid", tx->GetHash().GetHex());
+        result.pushKV("complete", true);
+        if (add_to_wallet) {
+            pwallet->CommitTransaction(tx);
+        } else {
+            result.pushKV("hex", hex);
+        }
+        return result;
+    }
+
     // Make a blank psbt
     PartiallySignedTransaction psbtx(rawTx, /*version=*/2);
 
@@ -125,8 +149,6 @@ static UniValue FinishTransaction(const std::shared_ptr<CWallet> pwallet, const 
 
     UniValue result(UniValue::VOBJ);
 
-    const bool psbt_opt_in{options.exists("psbt") && options["psbt"].get_bool()};
-    bool add_to_wallet{options.exists("add_to_wallet") ? options["add_to_wallet"].get_bool() : true};
     if (psbt_opt_in || !complete || !add_to_wallet) {
         // Serialize the PSBT
         DataStream ssTx{};
@@ -474,7 +496,15 @@ static std::vector<RPCArg> FundTxDoc(bool solving_data = true)
     return args;
 }
 
-CreatedTransactionResult FundTransaction(CWallet& wallet, const CMutableTransaction& tx, const std::vector<CRecipient>& recipients, const UniValue& options, CCoinControl& coinControl, bool override_min_fee)
+//! The funded transaction including its MWEB part, which may still be unsigned.
+static CMutableTransaction FundedMutableTx(const CreatedTransactionResult& txr)
+{
+    CMutableTransaction mtx(*txr.tx);
+    mtx.mweb_tx = txr.mweb_tx;
+    return mtx;
+}
+
+CreatedTransactionResult FundTransaction(CWallet& wallet, const CMutableTransaction& tx, const std::vector<CRecipient>& recipients, const UniValue& options, CCoinControl& coinControl, bool override_min_fee, bool sign = false, bool allow_mweb_result = true)
 {
     // We want to make sure tx.vout is not used now that we are passing outputs as a vector of recipients.
     // This sets us up to remove tx completely in a future PR in favor of passing the inputs directly.
@@ -682,9 +712,20 @@ CreatedTransactionResult FundTransaction(CWallet& wallet, const CMutableTransact
     if (recipients.empty())
         throw JSONRPCError(RPC_INVALID_PARAMETER, "TX must have at least one output");
 
-    auto txr = FundTransaction(wallet, tx, recipients, change_position, lockUnspents, coinControl);
+    auto txr = FundTransaction(wallet, tx, recipients, change_position, lockUnspents && allow_mweb_result, coinControl, sign);
     if (!txr) {
         throw JSONRPCError(RPC_WALLET_ERROR, ErrorString(txr).original);
+    }
+    if (!allow_mweb_result) {
+        if (!txr->mweb_tx.IsNull()) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "fundrawtransaction cannot return MWEB transaction hex; use walletcreatefundedpsbt for MWEB funding");
+        }
+        if (lockUnspents) {
+            LOCK(wallet.cs_wallet);
+            for (const CTxIn& txin : txr->tx->vin) {
+                wallet.LockCoin(txin.prevout, /*persist=*/false);
+            }
+        }
     }
     return *txr;
 }
@@ -704,6 +745,69 @@ static void SetOptionsInputWeights(const UniValue& inputs, UniValue& options)
         }
     }
     options.pushKV("input_weights", std::move(weights));
+}
+
+/**
+ * Move {"mweb_out": <output id>} entries of an inputs array into coin control and
+ * return the transparent inputs.
+ */
+static UniValue SelectMWEBInputs(const UniValue& inputs_in, CCoinControl& coin_control)
+{
+    if (!inputs_in.isArray()) {
+        return inputs_in;
+    }
+    UniValue l1_inputs(UniValue::VARR);
+    for (const UniValue& input : inputs_in.getValues()) {
+        const UniValue& o = input.get_obj();
+        if (!o.exists("mweb_out")) {
+            l1_inputs.push_back(input);
+            continue;
+        }
+        if (o.exists("txid") || o.exists("vout")) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, specify either mweb_out or txid and vout");
+        }
+        if (o.exists("sequence") || o.exists("weight")) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, sequence and weight do not apply to MWEB inputs");
+        }
+        const mw::Hash id = ParseMWEBOutputID(o.find_value("mweb_out"));
+        if (coin_control.IsMWEBSelected(id)) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid parameter, duplicated mweb_out: %s", id.ToHex()));
+        }
+        coin_control.SelectMWEB(id);
+    }
+    return l1_inputs;
+}
+
+/**
+ * Split send options.inputs into L1 ConstructTransaction inputs and MWEB SelectMWEB.
+ * L1: {txid, vout, sequence?, weight?}; MWEB: {mweb_out} or {output_id}. Reject mixed fields.
+ */
+static UniValue ParseSendInputs(const UniValue& inputs_in, CCoinControl& coin_control)
+{
+    UniValue l1_inputs(UniValue::VARR);
+    if (inputs_in.isNull() || !inputs_in.isArray() || inputs_in.empty()) {
+        return l1_inputs;
+    }
+    const UniValue inputs = SelectMWEBInputs(inputs_in, coin_control);
+    for (const UniValue& input : inputs.getValues()) {
+        const UniValue& o = input.get_obj();
+        const bool has_output_id = o.exists("output_id");
+        const bool has_l1 = o.exists("txid") || o.exists("vout") || o.exists("sequence") || o.exists("weight");
+        if (has_output_id && has_l1) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER,
+                "Invalid parameter, input must not mix output_id with L1 fields (txid/vout/sequence/weight)");
+        }
+        if (has_output_id) {
+            const uint256 hash = ParseHashO(o, "output_id");
+            coin_control.SelectMWEB(mw::Hash::FromHex(hash.GetHex()));
+        } else if (o.exists("txid") || o.exists("vout")) {
+            l1_inputs.push_back(input);
+        } else {
+            throw JSONRPCError(RPC_INVALID_PARAMETER,
+                "Invalid parameter, input must specify txid+vout or output_id");
+        }
+    }
+    return l1_inputs;
 }
 
 RPCMethod fundrawtransaction()
@@ -810,6 +914,12 @@ RPCMethod fundrawtransaction()
     if (!DecodeHexTx(tx, request.params[0].get_str(), try_no_witness, try_witness)) {
         throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "TX decode failed");
     }
+    if (tx.m_hogEx) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "HogEx transactions are miner-only and cannot be funded by a wallet");
+    }
+    if (!tx.mweb_tx.IsNull()) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "fundrawtransaction does not support MWEB transaction hex; use walletcreatefundedpsbt for MWEB transaction drafts");
+    }
     UniValue options = request.params[1];
     std::vector<std::pair<CTxDestination, CAmount>> destinations;
     for (const auto& tx_out : tx.vout) {
@@ -828,7 +938,7 @@ RPCMethod fundrawtransaction()
     // Clear tx.vout since it is not meant to be used now that we are passing outputs directly.
     // This sets us up for a future PR to completely remove tx from the function signature in favor of passing inputs directly
     tx.vout.clear();
-    auto txr = FundTransaction(*pwallet, tx, recipients, options, coin_control, /*override_min_fee=*/true);
+    auto txr = FundTransaction(*pwallet, tx, recipients, options, coin_control, /*override_min_fee=*/true, /*sign=*/false, /*allow_mweb_result=*/false);
 
     UniValue result(UniValue::VOBJ);
     result.pushKV("hex", EncodeHexTx(*txr.tx));
@@ -908,6 +1018,9 @@ RPCMethod signrawtransactionwithwallet()
     if (!DecodeHexTx(mtx, request.params[0].get_str())) {
         throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "TX decode failed. Make sure the tx has at least one input.");
     }
+    if (mtx.m_hogEx) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "HogEx transactions are miner-only and cannot be signed by a wallet");
+    }
 
     // Sign the transaction
     LOCK(pwallet->cs_wallet);
@@ -977,6 +1090,9 @@ static RPCMethod bumpfee_helper(std::string method_name)
         "Alternatively, the user can specify a fee rate in " + CURRENCY_ATOM + "/vB for the new transaction.\n"
         "At a minimum, the new fee rate must be high enough to pay an additional new relay fee (incrementalfee\n"
         "returned by getnetworkinfo) to enter the node's mempool.\n"
+        "A transaction with MWEB data is replaced by one paying at least 1.5x its fee over L1 plus MWEB weight,\n"
+        "keeping its MWEB inputs; the outputs and original_change_index options are not supported for it.\n"
+        + std::string(want_psbt ? "Broadcast an MWEB-only result with sendrawtransaction maxfeerate 0: its fee is above the default cap.\n" : "") +
         "* WARNING: before version 0.21, fee_rate was in " + CURRENCY_UNIT + "/kvB. As of 0.21, fee_rate is in " + CURRENCY_ATOM + "/vB. *\n",
         {
             {"txid", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The txid to be bumped"},
@@ -1151,6 +1267,9 @@ static RPCMethod bumpfee_helper(std::string method_name)
 
         result.pushKV("txid", txid.GetHex());
     } else {
+        if (psbt_version == 0 && !mtx.mweb_tx.IsNull()) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "MWEB PSBTs require PSBT version 2");
+        }
         PartiallySignedTransaction psbtx(mtx, psbt_version);
         bool complete = false;
         const auto err{pwallet->FillPSBT(psbtx, {.sign = false, .bip32_derivs = true}, complete)};
@@ -1208,9 +1327,13 @@ RPCMethod send()
                     {"change_type", RPCArg::Type::STR, RPCArg::DefaultHint{"set by -changetype"}, "The output type to use. Only valid if change_address is not specified. Options are " + FormatAllOutputTypes() + "."},
                     {"fee_rate", RPCArg::Type::AMOUNT, RPCArg::DefaultHint{"not set, fall back to wallet fee estimation"}, "Specify a fee rate in " + CURRENCY_ATOM + "/vB.", RPCArgOptions{.also_positional = true}},
                     {"include_watching", RPCArg::Type::BOOL, RPCArg::Default{false}, "(DEPRECATED) No longer used"},
-                    {"inputs", RPCArg::Type::ARR, RPCArg::Default{UniValue::VARR}, "Specify inputs instead of adding them automatically.",
+                    {"inputs", RPCArg::Type::ARR, RPCArg::Default{UniValue::VARR},
+                        "Specify inputs instead of adding them automatically.\n"
+                        "L1 inputs use {txid,vout}; MWEB inputs use {mweb_out} or {output_id} (from listunspent).\n"
+                        "Implied spend type: L1→MWEB peg-in, MWEB→L1 peg-out, MWEB→MWEB confidential.\n"
+                        "With an MWEB destination and no L1 inputs, send never auto peg-ins; insufficient MWEB funds is an error.",
                         {
-                          {"", RPCArg::Type::OBJ, RPCArg::Optional::OMITTED, "", {
+                          {"", RPCArg::Type::OBJ, RPCArg::Optional::OMITTED, "L1 outpoint", {
                             {"txid", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The transaction id"},
                             {"vout", RPCArg::Type::NUM, RPCArg::Optional::NO, "The output number"},
                             {"sequence", RPCArg::Type::NUM, RPCArg::DefaultHint{"depends on the value of the 'replaceable' and 'locktime' arguments"}, "The sequence number"},
@@ -1219,6 +1342,10 @@ RPCMethod send()
                                         "Note that signature sizes are not guaranteed to be consistent, "
                                         "so the maximum DER signatures size of 73 bytes should be used when considering ECDSA signatures."
                                         "Remember to convert serialized sizes to weight units when necessary."},
+                          }},
+                          {"", RPCArg::Type::OBJ, RPCArg::Optional::OMITTED, "MWEB coin", {
+                            {"mweb_out", RPCArg::Type::STR_HEX, RPCArg::Optional::OMITTED, "The MWEB output id to spend"},
+                            {"output_id", RPCArg::Type::STR_HEX, RPCArg::Optional::OMITTED, "Same as mweb_out"},
                           }},
                         },
                     },
@@ -1280,30 +1407,77 @@ RPCMethod send()
             );
             CCoinControl coin_control;
             coin_control.m_version = self.Arg<uint32_t>("version");
-            CMutableTransaction rawTx = ConstructTransaction(options["inputs"], request.params[0], options["locktime"], rbf, coin_control.m_version);
+            // Silent peg-in would privacy-link L1 UTXOs into a presumed confidential send.
+            coin_control.m_no_auto_pegin = true;
+            const UniValue l1_inputs = ParseSendInputs(options["inputs"], coin_control);
+            CMutableTransaction rawTx = ConstructTransaction(l1_inputs, request.params[0], options["locktime"], rbf, coin_control.m_version);
             // Automatically select coins, unless at least one is manually selected. Can
             // be overridden by options.add_inputs.
-            coin_control.m_allow_other_inputs = rawTx.vin.size() == 0;
+            coin_control.m_allow_other_inputs = rawTx.vin.size() == 0 && !coin_control.HasMWEBSelected();
             if (options.exists("max_tx_weight")) {
                 coin_control.m_max_tx_weight = options["max_tx_weight"].getInt<int>();
             }
 
-            SetOptionsInputWeights(options["inputs"], options);
+            SetOptionsInputWeights(l1_inputs, options);
             // Clear tx.vout since it is not meant to be used now that we are passing outputs directly.
             // This sets us up for a future PR to completely remove tx from the function signature in favor of passing inputs directly
             rawTx.vout.clear();
-            auto txr = FundTransaction(*pwallet, rawTx, recipients, options, coin_control, /*override_min_fee=*/false);
+            // A wallet with private keys signs while building, unless the caller asked for a PSBT or
+            // supplied external inputs. Otherwise the transaction, including any MWEB part, is funded
+            // unsigned and FinishTransaction signs what it can through the PSBT.
+            const bool psbt_opt_in{options.exists("psbt") && options["psbt"].get_bool()};
+            const bool has_keys = !pwallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS);
+            const bool sign = has_keys && !psbt_opt_in && !options.exists("solving_data");
+            auto txr = FundTransaction(*pwallet, rawTx, recipients, options, coin_control, /*override_min_fee=*/false, sign);
 
-            CMutableTransaction tx = CMutableTransaction(*txr.tx);
+            CMutableTransaction tx = FundedMutableTx(txr);
             return FinishTransaction(pwallet, options, tx);
         }
     };
+}
+
+/**
+ * Give the recipients without an amount equal shares of what the specified amounts leave of
+ * total_input_value, with the fee subtracted from those shares.
+ */
+static std::vector<CRecipient> BuildSendAllRecipients(const std::vector<CRecipient>& recipients, const std::set<std::string>& addresses_without_amount, CAmount total_input_value)
+{
+    CAmount specified_output_amounts{0};
+    size_t num_unspecified{0};
+    for (const CRecipient& recipient : recipients) {
+        if (addresses_without_amount.contains(EncodeDestination(recipient.dest))) {
+            ++num_unspecified;
+        } else {
+            specified_output_amounts += recipient.nAmount;
+        }
+    }
+    if (specified_output_amounts > total_input_value) {
+        throw JSONRPCError(RPC_WALLET_INSUFFICIENT_FUNDS, "Assigned more value to outputs than available funds.");
+    }
+    CHECK_NONFATAL(num_unspecified > 0);
+
+    const CAmount remainder = total_input_value - specified_output_amounts;
+    std::vector<CRecipient> sendall_recipients = recipients;
+    bool gave_remainder_to_first{false};
+    for (CRecipient& recipient : sendall_recipients) {
+        if (!addresses_without_amount.contains(EncodeDestination(recipient.dest))) {
+            continue;
+        }
+        recipient.nAmount = remainder / static_cast<CAmount>(num_unspecified);
+        recipient.fSubtractFeeFromAmount = true;
+        if (!gave_remainder_to_first) {
+            recipient.nAmount += remainder % static_cast<CAmount>(num_unspecified);
+            gave_remainder_to_first = true;
+        }
+    }
+    return sendall_recipients;
 }
 
 RPCMethod sendall()
 {
     return RPCMethod{"sendall",
         "Spend the value of all (or specific) confirmed UTXOs and unconfirmed change in the wallet to one or more recipients.\n"
+        "Bitcoin and MWEB recipient addresses may be combined in one transaction.\n"
         "Unconfirmed inbound UTXOs and locked UTXOs will not be spent. Sendall will respect the avoid_reuse wallet flag.\n"
         "If your wallet contains many small inputs, either because it received tiny payments or as a result of accumulating change, consider using `send_max` to exclude inputs that are worth less than the fees needed to spend them.\n",
         {
@@ -1329,12 +1503,13 @@ RPCMethod sendall()
                         {"add_to_wallet", RPCArg::Type::BOOL, RPCArg::Default{true}, "When false, returns the serialized transaction without broadcasting or adding it to the wallet"},
                         {"fee_rate", RPCArg::Type::AMOUNT, RPCArg::DefaultHint{"not set, fall back to wallet fee estimation"}, "Specify a fee rate in " + CURRENCY_ATOM + "/vB.", RPCArgOptions{.also_positional = true}},
                         {"include_watching", RPCArg::Type::BOOL, RPCArg::Default{false}, "(DEPRECATED) No longer used"},
-                        {"inputs", RPCArg::Type::ARR, RPCArg::Default{UniValue::VARR}, "Use exactly the specified inputs to build the transaction. Specifying inputs is incompatible with the send_max, minconf, and maxconf options.",
+                        {"inputs", RPCArg::Type::ARR, RPCArg::Default{UniValue::VARR}, "Use exactly the specified inputs to build the transaction. Each object must contain either txid and vout, or mweb_out. Specifying inputs is incompatible with the send_max, minconf, and maxconf options.",
                             {
                                 {"", RPCArg::Type::OBJ, RPCArg::Optional::OMITTED, "",
                                     {
-                                        {"txid", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The transaction id"},
-                                        {"vout", RPCArg::Type::NUM, RPCArg::Optional::NO, "The output number"},
+                                        {"txid", RPCArg::Type::STR_HEX, RPCArg::Optional::OMITTED, "The transaction id"},
+                                        {"vout", RPCArg::Type::NUM, RPCArg::Optional::OMITTED, "The output number"},
+                                        {"mweb_out", RPCArg::Type::STR_HEX, RPCArg::Optional::OMITTED, "The MWEB output id"},
                                         {"sequence", RPCArg::Type::NUM, RPCArg::DefaultHint{"depends on the value of the 'replaceable' and 'locktime' arguments"}, "The sequence number"},
                                     },
                                 },
@@ -1454,14 +1629,12 @@ RPCMethod sendall()
                 }
                 throw JSONRPCError(RPC_INVALID_PARAMETER, msg);
             }
-            if (fee_reason == FeeReason::FALLBACK && !pwallet->m_allow_fallback_fee) {
-                // eventually allow a fallback fee
-                throw JSONRPCError(RPC_WALLET_ERROR, "Fee estimation failed. Fallbackfee is disabled. Wait a few blocks or enable -fallbackfee.");
-            }
 
-            CMutableTransaction rawTx{ConstructTransaction(options["inputs"], recipient_key_value_pairs, options["locktime"], rbf, coin_control.m_version)};
+            const UniValue l1_inputs = SelectMWEBInputs(options["inputs"], coin_control);
+            CMutableTransaction rawTx{ConstructTransaction(l1_inputs, recipient_key_value_pairs, options["locktime"], rbf, coin_control.m_version)};
             LOCK(pwallet->cs_wallet);
 
+            const bool can_sign{!pwallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS) && !pwallet->IsLocked()};
             CAmount total_input_value(0);
             bool send_max{options.exists("send_max") ? options["send_max"].get_bool() : false};
             if (options.exists("inputs") && options.exists("send_max")) {
@@ -1486,6 +1659,16 @@ RPCMethod sendall()
                     }
                     total_input_value += tx->GetTx()->vout[input.prevout.n].nValue;
                 }
+                for (const mw::Hash& output_id : coin_control.ListMWEBSelected()) {
+                    if (pwallet->IsSpentMWEBInChainOrMempool(output_id)) {
+                        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Input not available. UTXO (%s) was already spent.", output_id.ToHex()));
+                    }
+                    mw::Coin coin;
+                    if (!pwallet->GetCoin(output_id, coin) || !coin.IsMine()) {
+                        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Input not found. UTXO (%s) is not part of wallet.", output_id.ToHex()));
+                    }
+                    total_input_value += coin.amount;
+                }
             } else {
                 CoinFilterParams coins_params;
                 coins_params.min_amount = 0;
@@ -1501,6 +1684,41 @@ RPCMethod sendall()
                     rawTx.vin.push_back(input);
                     total_input_value += output.txout.nValue;
                 }
+                for (const CWallet::MWEBUnspentEntry& entry : pwallet->ListMWEBUnspent(coin_control.m_min_depth, coin_control.m_max_depth,
+                         coin_control.m_include_unsafe_inputs, /*filter_destinations=*/nullptr, /*min_amount=*/0, MAX_MONEY)) {
+                    mw::Coin coin;
+                    if (pwallet->IsLockedCoin(entry.output_id) || !pwallet->GetCoin(entry.output_id, coin)) {
+                        continue;
+                    }
+                    // A wallet that can sign sweeps only the coins it can spend.
+                    if (can_sign && !coin.HasSpendMaterial()) {
+                        continue;
+                    }
+                    coin_control.SelectMWEB(entry.output_id);
+                    total_input_value += entry.amount;
+                }
+            }
+
+            std::vector<CRecipient> sendall_recipients{CreateRecipients(ParseOutputs(NormalizeOutputs(recipient_key_value_pairs)), {})};
+            if (coin_control.HasMWEBSelected() || std::any_of(sendall_recipients.begin(), sendall_recipients.end(), [](const CRecipient& r) { return r.IsMWEB(); })) {
+                const bool psbt_opt_in{options.exists("psbt") && options["psbt"].get_bool()};
+                const bool lock_unspents{options.exists("lock_unspents") ? options["lock_unspents"].get_bool() : false};
+                coin_control.m_allow_other_inputs = false;
+                coin_control.m_signal_bip125_rbf = rbf;
+                rawTx.vout.clear();
+                sendall_recipients = BuildSendAllRecipients(sendall_recipients, addresses_without_amount, total_input_value);
+                auto txr = FundTransaction(*pwallet, rawTx, sendall_recipients, /*change_pos=*/std::nullopt, lock_unspents, coin_control, /*sign=*/can_sign && !psbt_opt_in);
+                if (!txr) {
+                    throw JSONRPCError(RPC_WALLET_ERROR, ErrorString(txr).original);
+                }
+                CMutableTransaction tx = FundedMutableTx(*txr);
+                return FinishTransaction(pwallet, options, tx);
+            }
+
+            // MWEB: Checked after the MWEB path, whose funding checks the fee estimate itself.
+            if (fee_reason == FeeReason::FALLBACK && !pwallet->m_allow_fallback_fee) {
+                // eventually allow a fallback fee
+                throw JSONRPCError(RPC_WALLET_ERROR, "Fee estimation failed. Fallbackfee is disabled. Wait a few blocks or enable -fallbackfee.");
             }
 
             std::vector<COutPoint> outpoints_spent;
@@ -1694,6 +1912,11 @@ RPCMethod walletcreatefundedpsbt()
                                         "Remember to convert serialized sizes to weight units when necessary."},
                                 },
                             },
+                            {"", RPCArg::Type::OBJ, RPCArg::Optional::OMITTED, "MWEB coin",
+                                {
+                                    {"mweb_out", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The MWEB output id"},
+                                },
+                            },
                         },
                         },
                     {"outputs", RPCArg::Type::ARR, RPCArg::Optional::NO, "The outputs specified as key-value pairs.\n"
@@ -1768,7 +1991,8 @@ RPCMethod walletcreatefundedpsbt()
 
     const UniValue &replaceable_arg = options["replaceable"];
     const bool rbf{replaceable_arg.isNull() ? wallet.m_signal_rbf : replaceable_arg.get_bool()};
-    CMutableTransaction rawTx = ConstructTransaction(request.params[0], request.params[1], request.params[2], rbf, coin_control.m_version);
+    const UniValue l1_inputs = SelectMWEBInputs(request.params[0], coin_control);
+    CMutableTransaction rawTx = ConstructTransaction(l1_inputs, request.params[1], request.params[2], rbf, coin_control.m_version);
     UniValue outputs(UniValue::VOBJ);
     outputs = NormalizeOutputs(request.params[1]);
     std::vector<CRecipient> recipients = CreateRecipients(
@@ -1777,8 +2001,8 @@ RPCMethod walletcreatefundedpsbt()
     );
     // Automatically select coins, unless at least one is manually selected. Can
     // be overridden by options.add_inputs.
-    coin_control.m_allow_other_inputs = rawTx.vin.size() == 0;
-    SetOptionsInputWeights(request.params[0], options);
+    coin_control.m_allow_other_inputs = rawTx.vin.size() == 0 && !coin_control.HasMWEBSelected();
+    SetOptionsInputWeights(l1_inputs, options);
     // Clear tx.vout since it is not meant to be used now that we are passing outputs directly.
     // This sets us up for a future PR to completely remove tx from the function signature in favor of passing inputs directly
     rawTx.vout.clear();
@@ -1792,8 +2016,11 @@ RPCMethod walletcreatefundedpsbt()
     if (psbt_version != 2 && psbt_version != 0) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "The PSBT version can only be 2 or 0");
     }
+    if (psbt_version == 0 && !txr.mweb_tx.IsNull()) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "MWEB PSBTs require PSBT version 2");
+    }
 
-    PartiallySignedTransaction psbtx(CMutableTransaction(*txr.tx), psbt_version);
+    PartiallySignedTransaction psbtx(FundedMutableTx(txr), psbt_version);
 
     // Fill transaction with out data but don't sign
     bool bip32derivs = request.params[4].isNull() ? true : request.params[4].get_bool();
@@ -1810,7 +2037,11 @@ RPCMethod walletcreatefundedpsbt()
     UniValue result(UniValue::VOBJ);
     result.pushKV("psbt", EncodeBase64(ssTx.str()));
     result.pushKV("fee", ValueFromAmount(txr.fee));
-    result.pushKV("changepos", txr.change_pos ? (int)*txr.change_pos : -1);
+    if (txr.mweb_change_index) {
+        result.pushKV("changepos", static_cast<int>(txr.tx->vout.size() + *txr.mweb_change_index));
+    } else {
+        result.pushKV("changepos", txr.change_pos ? (int)*txr.change_pos : -1);
+    }
     return result;
 },
     };

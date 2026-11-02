@@ -8,6 +8,11 @@
 #include <consensus/amount.h>
 #include <interfaces/chain.h>
 #include <interfaces/handler.h>
+#include <key_io.h>
+#include <mweb/mweb_wallet.h>
+#include <mw/models/tx/input.h>
+#include <mw/models/tx/output.h>
+#include <mw/models/tx/peg_out_coin.h>
 #include <node/types.h>
 #include <primitives/transaction.h>
 #include <rpc/server.h>
@@ -28,6 +33,10 @@
 #include <wallet/rpc/wallet.h>
 #include <wallet/spend.h>
 #include <wallet/wallet.h>
+
+#include <mw/models/wallet/coin.h>
+#include <mw/models/wallet/stealth_address.h>
+#include <mw/wallet/keychain.h>
 
 #include <memory>
 #include <string>
@@ -58,6 +67,8 @@ WalletTx MakeWalletTx(CWallet& wallet, const CWalletTx& wtx)
     LOCK(wallet.cs_wallet);
     WalletTx result;
     result.tx = wtx.GetTx();
+    // MWEB placeholders share an empty body, but have distinct wallet records.
+    if (wtx.IsMWEBPlaceholder()) result.mweb_placeholder_id = wtx.GetHash();
     result.txin_is_mine.reserve(result.tx->vin.size());
     for (const auto& txin : result.tx->vin) {
         result.txin_is_mine.emplace_back(InputIsMine(wallet, txin));
@@ -67,7 +78,14 @@ WalletTx MakeWalletTx(CWallet& wallet, const CWalletTx& wtx)
     result.txout_address_is_mine.reserve(result.tx->vout.size());
     for (const auto& txout : result.tx->vout) {
         result.txout_is_mine.emplace_back(wallet.IsMine(txout));
-        result.txout_is_change.push_back(OutputIsChange(wallet, txout));
+        // Treat extension-backed peg-in scripts as change so history skips blank L1 "Sent to" rows.
+        bool skip_for_history = OutputIsChange(wallet, txout);
+        mw::Hash kernel_id;
+        if (txout.scriptPubKey.IsMWEBPegin(&kernel_id) && wtx.GetTx()->HasMWEBTx() &&
+            wtx.GetTx()->mweb_tx.GetKernelIDs().contains(kernel_id)) {
+            skip_for_history = true;
+        }
+        result.txout_is_change.push_back(skip_for_history);
         result.txout_address.emplace_back();
         result.txout_address_is_mine.emplace_back(ExtractDestination(txout.scriptPubKey, result.txout_address.back()) ?
                                                       wallet.IsMine(result.txout_address.back()) :
@@ -76,12 +94,99 @@ WalletTx MakeWalletTx(CWallet& wallet, const CWalletTx& wtx)
     result.credit = CachedTxGetCredit(wallet, wtx, /*avoid_reuse=*/true);
     result.debit = CachedTxGetDebit(wallet, wtx, /*avoid_reuse=*/true);
     result.change = CachedTxGetChange(wallet, wtx);
+    // MWEB: residual fee includes kernel fee / peg-in skip (matches gettransaction)
+    result.fee = result.debit > 0 ? CachedTxGetFee(wallet, wtx) : 0;
     result.time = wtx.GetTxTime();
     result.from = wtx.m_from;
     result.message = wtx.m_message;
     result.comment = wtx.m_comment;
     result.comment_to = wtx.m_comment_to;
     result.is_coinbase = wtx.IsCoinBase();
+    // MWEB hooks
+    result.is_hogex = wtx.GetTx()->IsHogEx();
+    if (wtx.GetTx()->HasMWEBTx()) {
+        result.mweb_weight = wtx.GetTx()->mweb_tx.GetMWEBWeight();
+        for (const PegOutCoin& pegout : wtx.GetTx()->mweb_tx.GetPegOuts()) {
+            result.pegouts.push_back(pegout);
+            const CTxOut pegout_out(pegout.GetAmount(), pegout.GetScriptPubKey());
+            result.pegout_is_mine.push_back(wallet.IsMine(pegout_out));
+        }
+        for (const Input& input : wtx.GetTx()->mweb_tx.m_transaction->GetInputs()) {
+            mw::Coin coin;
+            result.mweb_txin_is_mine.push_back(wallet.GetCoin(input.GetOutputID(), coin) && coin.IsMine());
+        }
+        for (const Output& output : wtx.GetTx()->mweb_tx.m_transaction->GetOutputs()) {
+            mw::Coin coin;
+            if (!wallet.GetCoin(output.GetOutputID(), coin)) {
+                continue;
+            }
+            WalletTx::MWEBOut mweb_out;
+            mweb_out.output_id = coin.output_id;
+            mweb_out.amount = coin.amount;
+            mweb_out.is_mine = coin.IsMine();
+            mweb_out.is_change = coin.IsChange();
+            if (coin.HasAddress()) {
+                mweb_out.address = *coin.address;
+            } else {
+                StealthAddress stealth;
+                if (wallet.GetMWWallet()->GetStealthAddress(coin, stealth)) {
+                    mweb_out.address = stealth;
+                }
+            }
+            result.mweb_outs.push_back(std::move(mweb_out));
+        }
+    } else if (wtx.mweb_wtx_info) {
+        if (wtx.mweb_wtx_info->spent_input) {
+            mw::Coin coin;
+            result.mweb_txin_is_mine.push_back(wallet.GetCoin(*wtx.mweb_wtx_info->spent_input, coin) && coin.IsMine());
+        }
+        if (wtx.mweb_wtx_info->received_coin) {
+            const mw::Coin& coin = *wtx.mweb_wtx_info->received_coin;
+            WalletTx::MWEBOut mweb_out;
+            mweb_out.output_id = coin.output_id;
+            mweb_out.amount = coin.amount;
+            mweb_out.is_mine = coin.IsMine();
+            mweb_out.is_change = coin.IsChange();
+            if (coin.HasAddress()) {
+                mweb_out.address = *coin.address;
+            } else {
+                StealthAddress stealth;
+                if (wallet.GetMWWallet()->GetStealthAddress(coin, stealth)) {
+                    mweb_out.address = stealth;
+                }
+            }
+            result.mweb_outs.push_back(std::move(mweb_out));
+        }
+    }
+    if (result.is_hogex) {
+        // Hide HogEx L1 credits already covered by an in-wallet MWEB peg-out tx (Litecoin TxList behavior).
+        bool any_unique_credit = false;
+        for (size_t i = 0; i < wtx.GetTx()->vout.size(); ++i) {
+            if (!result.txout_is_mine[i]) {
+                continue;
+            }
+            bool duplicate = false;
+            for (const auto& [_, other_wtx] : wallet.mapWallet) {
+                if (!other_wtx.GetTx()->HasMWEBTx()) {
+                    continue;
+                }
+                for (const PegOutCoin& pegout : other_wtx.GetTx()->mweb_tx.GetPegOuts()) {
+                    if (pegout.GetScriptPubKey() == wtx.GetTx()->vout[i].scriptPubKey &&
+                        pegout.GetAmount() == wtx.GetTx()->vout[i].nValue) {
+                        duplicate = true;
+                        break;
+                    }
+                }
+                if (duplicate) break;
+            }
+            if (duplicate) {
+                result.txout_is_mine[i] = false;
+            } else {
+                any_unique_credit = true;
+            }
+        }
+        result.suppress_hogex_credit = !any_unique_credit;
+    }
     return result;
 }
 
@@ -157,6 +262,10 @@ public:
     {
         LOCK(m_wallet->cs_wallet);
         return m_wallet->GetNewDestination(type, label);
+    }
+    util::Result<CTxDestination> peekNewDestination(const OutputType type) override // MWEB
+    {
+        return m_wallet->PeekNewDestination(type);
     }
     bool getPubKey(const CScript& script, const CKeyID& address, CPubKey& pub_key) override
     {
@@ -374,7 +483,10 @@ public:
     }
     WalletBalances getBalances() override
     {
-        const auto bal = GetBalance(*m_wallet);
+        // Match RPC getbalance: include spendable MWEB so the GUI does not
+        // under-report funds available for MWEB→MWEB / peg-out.
+        const auto bal = GetBalance(*m_wallet, /*min_depth=*/0, /*avoid_reuse=*/true,
+                                    /*include_nonmempool=*/false, /*include_mweb=*/true);
         WalletBalances result;
         result.balance = bal.m_mine_trusted;
         result.unconfirmed_balance = bal.m_mine_untrusted_pending;
@@ -397,9 +509,38 @@ public:
     CAmount getAvailableBalance(const CCoinControl& coin_control) override
     {
         LOCK(m_wallet->cs_wallet);
+        // MWEB: a wallet that can sign counts only the selected MWEB coins it can spend.
+        const bool can_sign{!m_wallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS) && !m_wallet->IsLocked()};
+        // A peg-out is funded from MWEB coins only.
+        if (coin_control.m_mweb_peg_out) {
+            CAmount total_amount = 0;
+            if (coin_control.HasMWEBSelected() && !coin_control.m_allow_other_inputs) {
+                for (const mw::Hash& output_id : coin_control.ListMWEBSelected()) {
+                    mw::Coin coin;
+                    if (m_wallet->GetCoin(output_id, coin) && coin.IsMine() && (!can_sign || coin.HasSpendMaterial())) {
+                        total_amount += coin.amount;
+                    }
+                }
+            } else {
+                for (const auto& entry : m_wallet->ListMWEBUnspent(coin_control.m_min_depth, coin_control.m_max_depth,
+                         coin_control.m_include_unsafe_inputs, nullptr, 0, MAX_MONEY)) {
+                    if (!m_wallet->IsLockedCoin(entry.output_id)) total_amount += entry.amount;
+                }
+            }
+            return total_amount;
+        }
+        // MWEB-inclusive affordability with no manual selection: match getBalances() /
+        // GetBalance(include_mweb) so GUI pre-check equals overview trusted balance.
+        if (coin_control.m_include_mweb &&
+            !coin_control.HasSelected() && !coin_control.HasMWEBSelected()) {
+            return GetBalance(*m_wallet, coin_control.m_min_depth, /*avoid_reuse=*/true,
+                              /*include_nonmempool=*/false, /*include_mweb=*/true)
+                .m_mine_trusted;
+        }
+
         CAmount total_amount = 0;
-        // Fetch selected coins total amount
-        if (coin_control.HasSelected()) {
+        // Fetch selected L1 coins total amount
+        if (coin_control.HasSelected() && !coin_control.ListSelected().empty()) {
             FastRandomContext rng{};
             CoinSelectionParams params(rng);
             // Note: for now, swallow any error.
@@ -408,9 +549,33 @@ public:
             }
         }
 
-        // And fetch the wallet available coins
+        // Selected MWEB coins (coin control)
+        if (coin_control.HasMWEBSelected()) {
+            for (const mw::Hash& output_id : coin_control.ListMWEBSelected()) {
+                mw::Coin coin;
+                if (m_wallet->GetCoin(output_id, coin) && coin.IsMine() && (!can_sign || coin.HasSpendMaterial())) {
+                    total_amount += coin.amount;
+                }
+            }
+        }
+
+        // And fetch the wallet available L1 coins
         if (coin_control.m_allow_other_inputs) {
             total_amount += AvailableCoins(*m_wallet, &coin_control).GetTotalAmount();
+        }
+
+        // MWEB: include spendable MWEB for MWEB→MWEB with other inputs,
+        // or when MWEB coins were manually selected alongside L1.
+        if (coin_control.m_include_mweb && !coin_control.HasMWEBSelected()) {
+            for (const auto& entry : m_wallet->ListMWEBUnspent(
+                     coin_control.m_min_depth,
+                     coin_control.m_max_depth,
+                     /*include_unsafe=*/true,
+                     nullptr,
+                     0,
+                     MAX_MONEY)) {
+                total_amount += entry.amount;
+            }
         }
 
         return total_amount;
@@ -465,14 +630,18 @@ public:
         }
         return result;
     }
-    CAmount getRequiredFee(unsigned int tx_bytes) override { return GetRequiredFee(*m_wallet, tx_bytes); }
+    CAmount getRequiredFee(unsigned int tx_bytes, uint64_t mweb_weight) override
+    {
+        return GetRequiredFee(*m_wallet, tx_bytes, mweb_weight);
+    }
     CAmount getMinimumFee(unsigned int tx_bytes,
+        uint64_t mweb_weight,
         const CCoinControl& coin_control,
         std::optional<int>* returned_target,
         FeeReason* reason) override
     {
         auto min_fee_rate{GetMinimumFeeRate(*m_wallet, coin_control)};
-        auto result = GetMinimumFee(min_fee_rate, tx_bytes);
+        CAmount result = min_fee_rate.fee_rate.GetTotalFee(static_cast<int32_t>(tx_bytes), mweb_weight);
         if (returned_target) *returned_target = min_fee_rate.returned_target;
         if (reason) *reason = min_fee_rate.fee_reason;
         return result;
@@ -485,6 +654,40 @@ public:
     bool taprootEnabled() override {
         auto spk_man = m_wallet->GetScriptPubKeyMan(OutputType::BECH32M, /*internal=*/false);
         return spk_man != nullptr;
+    }
+    bool mwebEnabled() override {
+        return m_wallet->GetScriptPubKeyMan(OutputType::MWEB, /*internal=*/false) != nullptr;
+    }
+    bool canGetMWEBAddresses() override {
+        auto* spk_man = m_wallet->GetScriptPubKeyMan(OutputType::MWEB, /*internal=*/false);
+        return spk_man && spk_man->CanGetAddresses(false);
+    }
+    bool getPeginAddress(StealthAddress& pegin_address) override
+    {
+        LOCK(m_wallet->cs_wallet);
+        return m_wallet->GetMWWallet()->GetStealthAddress(mw::PEGIN_INDEX, pegin_address);
+    }
+    bool findCoin(const mw::Hash& output_id, mw::Coin& coin) override
+    {
+        LOCK(m_wallet->cs_wallet);
+        return m_wallet->GetCoin(output_id, coin);
+    }
+    std::vector<Wallet::MWEBUnspentEntry> listMWEBUnspent() override
+    {
+        LOCK(m_wallet->cs_wallet);
+        std::vector<Wallet::MWEBUnspentEntry> result;
+        for (const auto& entry : m_wallet->ListMWEBUnspent(
+                 DEFAULT_MIN_DEPTH, DEFAULT_MAX_DEPTH, /*include_unsafe=*/true, nullptr, 0, MAX_MONEY)) {
+            Wallet::MWEBUnspentEntry out;
+            out.output_id = entry.output_id;
+            out.txid = entry.txid;
+            out.amount = entry.amount;
+            out.depth = entry.depth;
+            out.address = entry.address;
+            out.safe = entry.safe;
+            result.push_back(std::move(out));
+        }
+        return result;
     }
     OutputType getDefaultAddressType() override { return m_wallet->m_default_address_type; }
     CAmount getDefaultMaxTxFee() override { return m_wallet->m_default_max_tx_fee; }

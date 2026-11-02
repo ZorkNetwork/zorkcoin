@@ -11,6 +11,7 @@
 #include <consensus/consensus.h>
 #include <consensus/tx_verify.h>
 #include <consensus/validation.h>
+#include <mw/models/tx/output.h> // MWEB
 #include <policy/policy.h>
 #include <policy/settings.h>
 #include <random.h>
@@ -28,6 +29,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numeric>
 #include <optional>
 #include <ranges>
@@ -64,6 +66,11 @@ std::vector<CTxMemPoolEntry::CTxMemPoolEntryRef> CTxMemPool::GetChildren(const C
         for (; iter != mapNextTx.end() && iter->first->hash == hash; ++iter) {
             ret.emplace_back(*(iter->second));
         }
+        for (const mw::Hash& output_id : entry.GetTx().mweb_tx.GetOutputIDs()) {
+            if (auto mweb_iter = m_mweb.FindSpender(output_id)) {
+                ret.emplace_back(**mweb_iter);
+            }
+        }
     }
     std::ranges::sort(ret, CompareIteratorByHash{});
     auto removed = std::ranges::unique(ret, [](auto& a, auto& b) noexcept { return &a.get() == &b.get(); });
@@ -76,8 +83,14 @@ std::vector<CTxMemPoolEntry::CTxMemPoolEntryRef> CTxMemPool::GetParents(const CT
     LOCK(cs);
     std::vector<CTxMemPoolEntry::CTxMemPoolEntryRef> ret;
     std::set<Txid> inputs;
-    for (const auto& txin : entry.GetTx().vin) {
-        inputs.insert(txin.prevout.hash);
+    for (const CTxInput& input : entry.GetTx().GetInputs()) {
+        if (input.IsMWEB()) {
+            if (const CTransaction* creator = m_mweb.FindCreatingTx(input.ToMWEB())) {
+                inputs.insert(creator->GetHash());
+            }
+        } else {
+            inputs.insert(input.GetTxIn().prevout.hash);
+        }
     }
     for (const auto& hash : inputs) {
         std::optional<txiter> piter = GetIter(hash);
@@ -92,6 +105,7 @@ void CTxMemPool::UpdateTransactionsFromBlock(const std::vector<Txid>& vHashesToU
 {
     AssertLockHeld(cs);
 
+    std::vector<std::pair<Txid, Txid>> mweb_market_deps; // MWEB
     // Iterate in reverse, so that whenever we are looking at a transaction
     // we are sure that all in-mempool descendants have already been processed.
     for (const Txid& hash : vHashesToUpdate | std::views::reverse) {
@@ -108,6 +122,14 @@ void CTxMemPool::UpdateTransactionsFromBlock(const std::vector<Txid>& vHashesToU
                 // Add dependencies that are discovered between transactions in the
                 // block and transactions that were in the mempool to txgraph.
                 m_txgraph->AddDependency(/*parent=*/*it, /*child=*/*childIter);
+                mweb_market_deps.emplace_back(hash, childIter->GetTx().GetHash()); // MWEB
+            }
+        }
+        // MWEB: children spending this transaction's MWEB outputs.
+        for (const mw::Hash& output_id : it->GetTx().mweb_tx.GetOutputIDs()) {
+            if (auto child = m_mweb.FindSpender(output_id)) {
+                m_txgraph->AddDependency(/*parent=*/*it, /*child=*/**child);
+                mweb_market_deps.emplace_back(hash, (*child)->GetTx().GetHash());
             }
         }
     }
@@ -116,6 +138,12 @@ void CTxMemPool::UpdateTransactionsFromBlock(const std::vector<Txid>& vHashesToU
     for (auto txptr : txs_to_remove) {
         const CTxMemPoolEntry& entry = *(static_cast<const CTxMemPoolEntry*>(txptr));
         removeUnchecked(mapTx.iterator_to(entry), MemPoolRemovalReason::SIZELIMIT);
+    }
+    // MWEB: link the dependencies added above in the eviction graphs.
+    for (const auto& [parent, child] : mweb_market_deps) {
+        auto parent_it{mapTx.find(parent)};
+        auto child_it{mapTx.find(child)};
+        if (parent_it != mapTx.end() && child_it != mapTx.end()) m_mweb_markets->Link(*m_txgraph, *parent_it, *child_it);
     }
 }
 
@@ -146,8 +174,15 @@ CTxMemPool::setEntries CTxMemPool::CalculateMemPoolAncestors(const CTxMemPoolEnt
     const CTransaction &tx = entry.GetTx();
 
     // Get parents of this transaction that are in the mempool
-    for (unsigned int i = 0; i < tx.vin.size(); i++) {
-        std::optional<txiter> piter = GetIter(tx.vin[i].prevout.hash);
+    for (const CTxInput& input : tx.GetInputs()) {
+        std::optional<txiter> piter;
+        if (input.IsMWEB()) {
+            if (const CTransaction* creator = m_mweb.FindCreatingTx(input.ToMWEB())) {
+                piter = GetIter(creator->GetHash());
+            }
+        } else {
+            piter = GetIter(input.GetTxIn().prevout.hash);
+        }
         if (piter) {
             staged_parents.insert(*piter);
         }
@@ -185,6 +220,8 @@ CTxMemPool::CTxMemPool(Options opts, bilingual_str& error)
             const Txid& txid_b = static_cast<const CTxMemPoolEntry&>(b).GetTx().GetHash();
             return txid_a <=> txid_b;
         });
+    // MWEB: eviction graphs per market, with the main graph's cluster limits.
+    m_mweb_markets = std::make_unique<MWEBMempoolMarkets>(m_opts.limits.cluster_count, m_opts.limits.cluster_size_vbytes * WITNESS_SCALE_FACTOR, ACCEPTABLE_COST);
 }
 
 bool CTxMemPool::isSpent(const COutPoint& outpoint) const
@@ -210,6 +247,8 @@ void CTxMemPool::Apply(ChangeSet* changeset)
 
     RemoveStaged(changeset->m_to_remove, MemPoolRemovalReason::REPLACED);
 
+    std::vector<const CTxMemPoolEntry*> added; // MWEB
+    added.reserve(changeset->m_entry_vec.size());
     for (size_t i=0; i<changeset->m_entry_vec.size(); ++i) {
         auto tx_entry = changeset->m_entry_vec[i];
         // First splice this entry into mapTx.
@@ -220,7 +259,9 @@ void CTxMemPool::Apply(ChangeSet* changeset)
         txiter it = result.position;
 
         addNewTransaction(it);
+        added.push_back(&*it); // MWEB
     }
+    m_mweb_markets->Add(*m_txgraph, added); // MWEB
     if (!m_txgraph->DoWork(/*max_cost=*/POST_CHANGE_COST)) {
         LogDebug(BCLog::MEMPOOL, "Mempool in non-optimal ordering after addition(s).");
     }
@@ -236,9 +277,13 @@ void CTxMemPool::addNewTransaction(CTxMemPool::txiter newit)
     cachedInnerUsage += entry.DynamicMemoryUsage();
 
     const CTransaction& tx = newit->GetTx();
-    for (unsigned int i = 0; i < tx.vin.size(); i++) {
-        mapNextTx.insert(std::make_pair(&tx.vin[i].prevout, newit));
+    // Keys in mapNextTx must point at prevouts inside the mempool transaction, not
+    // copies from GetInputs() (which would dangle after this function returns).
+    for (const CTxIn& txin : tx.vin) {
+        mapNextTx.insert(std::make_pair(&txin.prevout, newit));
     }
+    // MWEB: index spends and outputs on the mempool sidecar
+    m_mweb.Add(newit, tx);
     // Don't bother worrying about child transactions of this one.
     // Normal case of a new transaction arriving is that there can't be any
     // children, because such children would be orphans.
@@ -284,6 +329,9 @@ void CTxMemPool::removeUnchecked(txiter it, MemPoolRemovalReason reason)
     for (const CTxIn& txin : it->GetTx().vin)
         mapNextTx.erase(txin.prevout);
 
+    // MWEB: drop sidecar indexes; cache by kernel on BLOCK/REORG for reorg replay
+    m_mweb.Remove(it->GetSharedTx(), reason);
+
     RemoveUnbroadcastTx(it->GetTx().GetHash(), true /* add logging because unchecked */);
 
     if (txns_randomized.size() > 1) {
@@ -301,6 +349,7 @@ void CTxMemPool::removeUnchecked(txiter it, MemPoolRemovalReason reason)
     totalTxSize -= it->GetTxSize();
     m_total_fee -= it->GetFee();
     cachedInnerUsage -= it->DynamicMemoryUsage();
+    m_mweb_markets->Remove(*it); // MWEB
     mapTx.erase(it);
     nTransactionsUpdated++;
 }
@@ -348,6 +397,11 @@ void CTxMemPool::removeRecursive(const CTransaction &origTx, MemPoolRemovalReaso
         while (iter != mapNextTx.end() && iter->first->hash == origTx.GetHash()) {
             to_remove.emplace_back(&*(iter->second));
             ++iter;
+        }
+        for (const mw::Hash& output_id : origTx.mweb_tx.GetOutputIDs()) {
+            if (auto mweb_iter = m_mweb.FindSpender(output_id)) {
+                to_remove.emplace_back(&**mweb_iter);
+            }
         }
         auto all_removes = m_txgraph->GetDescendantsUnion(to_remove, TxGraph::Level::MAIN);
         for (auto ref : all_removes) {
@@ -400,6 +454,15 @@ void CTxMemPool::removeConflicts(const CTransaction &tx)
             }
         }
     }
+    for (const mw::Hash& spent_id : tx.mweb_tx.GetSpentIDs()) {
+        if (auto it = m_mweb.FindSpender(spent_id)) {
+            const CTransaction& txConflict = (*it)->GetTx();
+            if (Assume(txConflict.GetHash() != tx.GetHash())) {
+                ClearPrioritisation(txConflict.GetHash());
+                removeRecursive(*it, MemPoolRemovalReason::CONFLICT);
+            }
+        }
+    }
 }
 
 std::vector<RemovedMempoolTransactionInfo> CTxMemPool::removeForBlock(const std::vector<CTransactionRef>& vtx)
@@ -422,13 +485,15 @@ std::vector<RemovedMempoolTransactionInfo> CTxMemPool::removeForBlock(const std:
     }
     lastRollingFeeUpdate = GetTime();
     blockSinceLastRollingFeeBump = true;
+    mweb_last_rolling_fee_update = lastRollingFeeUpdate; // MWEB
+    mweb_block_since_rolling_fee_bump = true; // MWEB
     if (!m_txgraph->DoWork(/*max_cost=*/POST_CHANGE_COST)) {
         LogDebug(BCLog::MEMPOOL, "Mempool in non-optimal ordering after block.");
     }
     return txs_removed_for_block;
 }
 
-void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendheight) const
+void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendheight, const Consensus::Params& consensus_params) const
 {
     if (m_opts.check_ratio == 0) return;
 
@@ -446,6 +511,7 @@ void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendhei
 
     assert(!m_txgraph->IsOversized(TxGraph::Level::MAIN));
     m_txgraph->SanityCheck();
+    m_mweb_markets->SanityCheck(*m_txgraph, mapTx.size()); // MWEB
 
     CCoinsViewCache mempoolDuplicate(const_cast<CCoinsViewCache*>(&active_coins_tip));
 
@@ -485,7 +551,7 @@ void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendhei
 
         std::set<CTxMemPoolEntry::CTxMemPoolEntryRef, CompareIteratorByHash> setParentCheck;
         std::set<CTxMemPoolEntry::CTxMemPoolEntryRef, CompareIteratorByHash> setParentsStored;
-        for (const CTxIn &txin : tx.vin) {
+        for (const CTxIn& txin : tx.vin) {
             // Check that every mempool transaction's inputs refer to available coins, or other mempool tx's.
             indexed_transaction_set::const_iterator it2 = mapTx.find(txin.prevout.hash);
             if (it2 != mapTx.end()) {
@@ -504,6 +570,21 @@ void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendhei
             assert(it3->first == &txin.prevout);
             assert(&it3->second->GetTx() == &tx);
         }
+        for (const CTxInput& input : tx.GetInputs()) {
+            if (!input.IsMWEB()) {
+                continue;
+            }
+            auto parent_creator = m_mweb.FindCreatingTx(input.ToMWEB());
+            if (parent_creator) {
+                indexed_transaction_set::const_iterator it2 = mapTx.find(parent_creator->GetHash());
+                if (it2 != mapTx.end()) {
+                    setParentCheck.insert(*it2);
+                }
+            }
+            auto it3 = m_mweb.FindSpender(input.ToMWEB());
+            assert(it3);
+            assert(&(*it3)->GetTx() == &tx);
+        }
         auto comp = [](const CTxMemPoolEntry& a, const CTxMemPoolEntry& b) -> bool {
             return a.GetTx().GetHash() == b.GetTx().GetHash();
         };
@@ -513,7 +594,7 @@ void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendhei
         assert(setParentCheck.size() == setParentsStored.size());
         assert(std::equal(setParentCheck.begin(), setParentCheck.end(), setParentsStored.begin(), comp));
 
-        // Check children against mapNextTx
+        // Check children against mapNextTx and MWEB spend index
         std::set<CTxMemPoolEntry::CTxMemPoolEntryRef, CompareIteratorByHash> setChildrenCheck;
         std::set<CTxMemPoolEntry::CTxMemPoolEntryRef, CompareIteratorByHash> setChildrenStored;
         auto iter = mapNextTx.lower_bound(COutPoint(it->GetTx().GetHash(), 0));
@@ -521,6 +602,13 @@ void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendhei
             txiter childit = iter->second;
             assert(childit != mapTx.end()); // mapNextTx points to in-mempool transactions
             setChildrenCheck.insert(*childit);
+        }
+        for (const mw::Hash& output_id : it->GetTx().mweb_tx.GetOutputIDs()) {
+            if (auto mweb_iter = m_mweb.FindSpender(output_id)) {
+                txiter childit = *mweb_iter;
+                assert(childit != mapTx.end());
+                setChildrenCheck.insert(*childit);
+            }
         }
         for (auto &txentry : GetChildren(*it)) {
             setChildrenStored.insert(dynamic_cast<const CTxMemPoolEntry&>(txentry.get()));
@@ -531,9 +619,14 @@ void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendhei
         TxValidationState dummy_state; // Not used. CheckTxInputs() should always pass
         CAmount txfee = 0;
         assert(!tx.IsCoinBase());
-        assert(Consensus::CheckTxInputs(tx, dummy_state, mempoolDuplicate, spendheight, txfee));
+        assert(Consensus::CheckTxInputs(tx, dummy_state, mempoolDuplicate, spendheight, consensus_params, txfee));
         for (const auto& input: tx.vin) mempoolDuplicate.SpendCoin(input.prevout);
         AddCoins(mempoolDuplicate, tx, std::numeric_limits<int>::max());
+        if (auto mweb_cache = mempoolDuplicate.GetMWEBCacheView()) {
+            if (tx.HasMWEBTx()) {
+                mweb_cache->AddTx(tx.mweb_tx.m_transaction);
+            }
+        }
     }
     for (auto it = mapNextTx.cbegin(); it != mapNextTx.cend(); it++) {
         indexed_transaction_set::const_iterator it2 = it->second;
@@ -687,6 +780,7 @@ void CTxMemPool::PrioritiseTransaction(const Txid& hash, const CAmount& nFeeDelt
             // transaction fee to be current modified fee + feedelta.
             it->UpdateModifiedFee(nFeeDelta);
             m_txgraph->SetTransactionFee(*it, it->GetModifiedFee());
+            m_mweb_markets->SetFee(*it); // MWEB
             ++nTransactionsUpdated;
         }
         if (delta == 0) {
@@ -740,6 +834,125 @@ const CTransaction* CTxMemPool::GetConflictTx(const COutPoint& prevout) const
     return it == mapNextTx.end() ? nullptr : &(it->second->GetTx());
 }
 
+const CTransaction* CTxMemPool::GetMWEBConflictTx(const mw::Hash& output_id) const
+{
+    return m_mweb.GetConflictTx(output_id);
+}
+
+void CTxMemPool::removeMWEBConflictsForBlock(const std::vector<CTransactionRef>& vtx, const MWEB::Block& mweb_block)
+{
+    AssertLockHeld(cs);
+    Assume(!m_have_changeset);
+    if (mweb_block.IsNull()) return;
+
+    // Kernel IDs do not commit to inputs or outputs, and an aggregate can share
+    // some kernels with the block while another component conflicts with a
+    // block input. Kernel identity stays the BLOCK boundary; non-mined branches
+    // whose outputs do not survive the block are removed here.
+    const std::set<mw::Hash> block_kernels{mweb_block.GetKernelIDs()};
+    const std::vector<mw::Hash> block_spent_ids{mweb_block.GetSpentIDs()};
+    const std::set<mw::Hash> block_spent(block_spent_ids.begin(), block_spent_ids.end());
+    const std::vector<mw::Hash> block_output_ids{mweb_block.GetOutputIDs()};
+    const std::set<mw::Hash> block_outputs(block_output_ids.begin(), block_output_ids.end());
+    std::set<Txid> block_txids;
+    std::set<COutPoint> block_spent_outpoints;
+    for (const auto& tx : vtx) {
+        block_txids.insert(tx->GetHash());
+        for (const CTxIn& txin : tx->vin) {
+            block_spent_outpoints.insert(txin.prevout);
+        }
+    }
+
+    std::set<Txid> mined;
+    std::vector<txiter> conflicts;
+    for (txiter it = mapTx.begin(); it != mapTx.end(); ++it) {
+        const CTransaction& tx = it->GetTx();
+        if (!tx.HasMWEBTx()) {
+            if (block_txids.contains(tx.GetHash())) mined.insert(tx.GetHash());
+            continue;
+        }
+
+        const auto tx_kernels{tx.mweb_tx.GetKernelIDs()};
+        const auto in_block = [&](const mw::Hash& kernel_id) { return block_kernels.contains(kernel_id); };
+        const bool shares_kernel = std::ranges::any_of(tx_kernels, in_block);
+        const bool all_kernels_mined = !tx_kernels.empty() && std::ranges::all_of(tx_kernels, in_block);
+        const bool spends_block_input = std::ranges::any_of(tx.mweb_tx.GetSpentIDs(),
+            [&](const mw::Hash& spent_id) { return block_spent.contains(spent_id); });
+        const bool canonical_side_mined = tx.IsMWEBOnly() || block_txids.contains(tx.GetHash());
+
+        if (canonical_side_mined && all_kernels_mined) {
+            mined.insert(tx.GetHash());
+        } else if (shares_kernel || spends_block_input) {
+            conflicts.push_back(it);
+        }
+    }
+
+    // Collect in-mempool spenders of tx's outputs that do not survive the block
+    // (spent by it, cut through, or never created because tx was not mined).
+    const auto add_spenders_of_lost_outputs = [&](const CTransaction& tx) EXCLUSIVE_LOCKS_REQUIRED(cs) {
+        for (uint32_t n = 0; n < tx.vout.size(); ++n) {
+            const COutPoint outpoint{tx.GetHash(), n};
+            if (block_txids.contains(outpoint.hash) && !block_spent_outpoints.contains(outpoint)) continue;
+            if (auto child = mapNextTx.find(outpoint); child != mapNextTx.end()) conflicts.push_back(child->second);
+        }
+        for (const mw::Hash& output_id : tx.mweb_tx.GetOutputIDs()) {
+            if (block_outputs.contains(output_id) && !block_spent.contains(output_id)) continue;
+            if (auto spender = m_mweb.FindSpender(output_id)) conflicts.push_back(*spender);
+        }
+    };
+
+    // Mined parents can have a non-mined alternative child when their output
+    // was consumed (or cut through) by this block.
+    for (const Txid& txid : mined) {
+        if (auto it = mapTx.find(txid); it != mapTx.end()) add_spenders_of_lost_outputs(it->GetTx());
+    }
+
+    setEntries to_remove;
+    for (size_t i = 0; i < conflicts.size(); ++i) {
+        const txiter conflict = conflicts[i];
+        if (mined.contains(conflict->GetTx().GetHash()) || !to_remove.insert(conflict).second) continue;
+        add_spenders_of_lost_outputs(conflict->GetTx());
+    }
+
+    for (txiter it : to_remove) {
+        const Txid txid{it->GetTx().GetHash()};
+        removeUnchecked(it, MemPoolRemovalReason::CONFLICT);
+        ClearPrioritisation(txid);
+    }
+}
+
+std::vector<RemovedMempoolTransactionInfo> CTxMemPool::removeForMWEBKernels(const std::set<mw::Hash>& block_kernels)
+{
+    AssertLockHeld(cs);
+    Assume(!m_have_changeset);
+
+    std::vector<RemovedMempoolTransactionInfo> txs_removed_for_block;
+    std::vector<CTransactionRef> mined;
+    for (txiter it = mapTx.begin(); it != mapTx.end(); ++it) {
+        CTransactionRef ptx = it->GetSharedTx();
+        if (!ptx->HasMWEBTx()) continue;
+
+        const auto& tx_kernels = ptx->mweb_tx.GetKernelIDs();
+        const bool remove_tx = std::any_of(tx_kernels.begin(), tx_kernels.end(),
+            [&block_kernels](const mw::Hash& kernel_id) {
+                return block_kernels.contains(kernel_id);
+            });
+        if (remove_tx) {
+            txs_removed_for_block.emplace_back(*it);
+            mined.push_back(std::move(ptx));
+        }
+    }
+
+    for (const CTransactionRef& ptx : mined) {
+        if (auto it = mapTx.find(ptx->GetHash()); it != mapTx.end()) {
+            removeUnchecked(it, MemPoolRemovalReason::BLOCK);
+        }
+        removeConflicts(*ptx);
+        ClearPrioritisation(ptx->GetHash());
+    }
+    return txs_removed_for_block;
+}
+
 std::optional<CTxMemPool::txiter> CTxMemPool::GetIter(const Txid& txid) const
 {
     AssertLockHeld(cs);
@@ -779,9 +992,15 @@ std::vector<CTxMemPool::txiter> CTxMemPool::GetIterVec(const std::vector<Txid>& 
 
 bool CTxMemPool::HasNoInputsOf(const CTransaction &tx) const
 {
-    for (unsigned int i = 0; i < tx.vin.size(); i++)
-        if (exists(tx.vin[i].prevout.hash))
+    for (const CTxInput& input : tx.GetInputs()) {
+        if (input.IsMWEB()) {
+            if (m_mweb.HasCreatingTx(input.ToMWEB())) {
+                return false;
+            }
+        } else if (exists(input.GetTxIn().prevout.hash)) {
             return false;
+        }
+    }
     return true;
 }
 
@@ -810,23 +1029,54 @@ std::optional<Coin> CCoinsViewMemPool::GetCoin(const COutPoint& outpoint) const
     return base->GetCoin(outpoint);
 }
 
+bool CCoinsViewMemPool::GetMWEBCoin(const mw::Hash& output_id, Output& coin) const
+{
+    if (auto it = m_temp_added_mweb.find(output_id); it != m_temp_added_mweb.end()) {
+        coin = it->second;
+        return true;
+    }
+
+    if (mempool.m_mweb.IsSpentInMempool(output_id)) {
+        return false;
+    }
+
+    if (const CTransaction* creator = mempool.m_mweb.FindCreatingTx(output_id)) {
+        return creator->mweb_tx.GetOutput(output_id, coin);
+    }
+
+    if (auto mweb_view = GetMWEBView()) {
+        if (auto pUTXO = mweb_view->GetUTXO(output_id)) {
+            coin = pUTXO->GetOutput();
+            return true;
+        }
+    }
+
+    return base->GetMWEBCoin(output_id, coin);
+}
+
 void CCoinsViewMemPool::PackageAddTransaction(const CTransactionRef& tx)
 {
     for (unsigned int n = 0; n < tx->vout.size(); ++n) {
         m_temp_added.emplace(COutPoint(tx->GetHash(), n), Coin(tx->vout[n], MEMPOOL_HEIGHT, false));
         m_non_base_coins.emplace(tx->GetHash(), n);
     }
+    if (tx->HasMWEBTx()) {
+        for (const Output& output : tx->mweb_tx.m_transaction->GetOutputs()) {
+            m_temp_added_mweb.emplace(output.GetOutputID(), output);
+        }
+    }
 }
 void CCoinsViewMemPool::Reset()
 {
     m_temp_added.clear();
+    m_temp_added_mweb.clear();
     m_non_base_coins.clear();
 }
 
 size_t CTxMemPool::DynamicMemoryUsage() const {
     LOCK(cs);
     // Estimate the overhead of mapTx to be 9 pointers (3 pointers per index) + an allocation, as no exact formula for boost::multi_index_contained is implemented.
-    return memusage::MallocUsage(sizeof(CTxMemPoolEntry) + 9 * sizeof(void*)) * mapTx.size() + memusage::DynamicUsage(mapNextTx) + memusage::DynamicUsage(mapDeltas) + memusage::DynamicUsage(txns_randomized) + m_txgraph->GetMainMemoryUsage() + cachedInnerUsage;
+    return memusage::MallocUsage(sizeof(CTxMemPoolEntry) + 9 * sizeof(void*)) * mapTx.size() + memusage::DynamicUsage(mapNextTx) + m_mweb.DynamicMemoryUsage() + memusage::DynamicUsage(mapDeltas) + memusage::DynamicUsage(txns_randomized) + m_txgraph->GetMainMemoryUsage() + m_mweb_markets->DynamicMemoryUsage() + cachedInnerUsage;
 }
 
 void CTxMemPool::RemoveUnbroadcastTx(const Txid& txid, const bool unchecked) {
@@ -898,11 +1148,58 @@ CFeeRate CTxMemPool::GetMinFee(size_t sizelimit) const {
     return std::max(CFeeRate(llround(rollingMinimumFeeRate)), m_opts.incremental_relay_feerate);
 }
 
+CFeeRate CTxMemPool::GetMWEBMinFee(size_t mweb_cap) const
+{
+    LOCK(cs);
+    if (!mweb_block_since_rolling_fee_bump || mweb_rolling_minimum_fee_rate == 0) {
+        return CFeeRate(llround(mweb_rolling_minimum_fee_rate));
+    }
+
+    // Own clock so a preceding GetMinFee() cannot skip MWEB decay.
+    int64_t time = GetTime();
+    if (time > mweb_last_rolling_fee_update + 10) {
+        double halflife = ROLLING_FEE_HALFLIFE;
+        const size_t mweb_usage{m_mweb_markets->GetUsage(MempoolMarket::MWEB)};
+        if (mweb_cap > 0) {
+            if (mweb_usage < mweb_cap / 4)
+                halflife /= 4;
+            else if (mweb_usage < mweb_cap / 2)
+                halflife /= 2;
+        }
+
+        mweb_rolling_minimum_fee_rate = mweb_rolling_minimum_fee_rate / pow(2.0, (time - mweb_last_rolling_fee_update) / halflife);
+        mweb_last_rolling_fee_update = time;
+
+        // Drop to zero once below half a satoshi per 1000 weight.
+        if (mweb_rolling_minimum_fee_rate < 0.5) {
+            mweb_rolling_minimum_fee_rate = 0;
+            return CFeeRate(0);
+        }
+    }
+    return CFeeRate(llround(mweb_rolling_minimum_fee_rate));
+}
+
+CFeeRate CTxMemPool::GetMWEBMinFee() const
+{
+    const size_t mweb_cap{MWEBMempoolMarkets::MWEBCap(
+        static_cast<size_t>(std::max<int64_t>(m_opts.max_size_bytes, 0)), m_opts.max_mempool_mweb_pct)};
+    return GetMWEBMinFee(mweb_cap);
+}
+
 void CTxMemPool::trackPackageRemoved(const CFeeRate& rate) {
     AssertLockHeld(cs);
     if (rate.GetFeePerK() > rollingMinimumFeeRate) {
         rollingMinimumFeeRate = rate.GetFeePerK();
         blockSinceLastRollingFeeBump = false;
+    }
+}
+
+void CTxMemPool::trackMWEBPackageRemoved(const CFeeRate& rate)
+{
+    AssertLockHeld(cs);
+    if (rate.GetFeePerK() > mweb_rolling_minimum_fee_rate) {
+        mweb_rolling_minimum_fee_rate = rate.GetFeePerK();
+        mweb_block_since_rolling_fee_bump = false;
     }
 }
 
@@ -912,34 +1209,52 @@ void CTxMemPool::TrimToSize(size_t sizelimit, std::vector<COutPoint>* pvNoSpends
 
     unsigned nTxnRemoved = 0;
     CFeeRate maxFeeRateRemoved(0);
+    CFeeRate maxMWEBFeeRateRemoved(0);
 
     while (!mapTx.empty() && DynamicMemoryUsage() > sizelimit) {
-        const auto &[worst_chunk, feeperweight] = m_txgraph->GetWorstMainChunk();
-        FeePerVSize feerate = ToFeePerVSize(feeperweight);
-        CFeeRate removed{feerate.fee, feerate.size};
-
-        // We set the new mempool min fee to the feerate of the removed set, plus the
-        // "minimum reasonable fee rate" (ie some value under which we consider txn
-        // to have 0 fee). This way, we don't allow txn to enter mempool with feerate
-        // equal to txn which were removed with no block in between.
-        removed += m_opts.incremental_relay_feerate;
-        trackPackageRemoved(removed);
-        maxFeeRateRemoved = std::max(maxFeeRateRemoved, removed);
-
-        nTxnRemoved += worst_chunk.size();
-
-        std::vector<CTransaction> txn;
-        if (pvNoSpendsRemaining) {
-            txn.reserve(worst_chunk.size());
-            for (auto ref : worst_chunk) {
-                txn.emplace_back(static_cast<const CTxMemPoolEntry&>(*ref).GetTx());
-            }
+        const auto worst{m_mweb_markets->GetWorstChunk(sizelimit, m_opts.max_mempool_mweb_pct)};
+        // Fail closed: an empty chunk with a non-empty mapTx would spin forever under cs.
+        if (worst.refs.empty()) {
+            LogError("TrimToSize: GetWorstChunk returned no refs with %u txs still in the mempool; aborting trim\n",
+                     mapTx.size());
+            break;
         }
 
+        CAmount chunk_fee{0};
+        int32_t chunk_vsize{0};
+        uint64_t chunk_mweb_weight{0};
         setEntries stage;
-        for (auto ref : worst_chunk) {
-            stage.insert(mapTx.iterator_to(static_cast<const CTxMemPoolEntry&>(*ref)));
+        std::vector<CTransaction> txn;
+        if (pvNoSpendsRemaining) txn.reserve(worst.refs.size());
+
+        for (TxGraph::Ref* ref : worst.refs) {
+            const CTxMemPoolEntry& entry{MWEBMempoolMarkets::Entry(*ref)};
+            chunk_fee += entry.GetModifiedFee();
+            chunk_vsize += entry.GetTxSize();
+            chunk_mweb_weight += entry.GetMWEBWeight();
+            if (pvNoSpendsRemaining) txn.emplace_back(entry.GetTx());
+            // Remove the chunk and all its main-graph descendants (may cross markets).
+            CalculateDescendants(mapTx.iterator_to(entry), stage);
         }
+
+        if (worst.market == MempoolMarket::L1) {
+            // Exclude the base MWEB fee so hybrid MWEB data does not spike the L1 minimum.
+            CFeeRate removed{chunk_fee, chunk_vsize, chunk_mweb_weight};
+            removed += m_opts.incremental_relay_feerate;
+            trackPackageRemoved(removed);
+            maxFeeRateRemoved = std::max(maxFeeRateRemoved, removed);
+        } else {
+            // Excess above the base MWEB fee, per 1000 weight, plus 1 sat per weight.
+            const CAmount base{CFeeRate::GetMWEBFee(chunk_mweb_weight)};
+            const CAmount excess{std::max<CAmount>(chunk_fee - base, 0)};
+            const int32_t weight_i{static_cast<int32_t>(std::min<uint64_t>(chunk_mweb_weight, std::numeric_limits<int32_t>::max()))};
+            CFeeRate removed{excess, std::max(weight_i, 1)};
+            removed += CFeeRate(CAmount{1000}); // +1 sat per weight (= 1000 sat per 1000 W)
+            trackMWEBPackageRemoved(removed);
+            maxMWEBFeeRateRemoved = std::max(maxMWEBFeeRateRemoved, removed);
+        }
+
+        nTxnRemoved += stage.size();
         for (auto e : stage) {
             removeUnchecked(e, MemPoolRemovalReason::SIZELIMIT);
         }
@@ -955,6 +1270,9 @@ void CTxMemPool::TrimToSize(size_t sizelimit, std::vector<COutPoint>* pvNoSpends
 
     if (maxFeeRateRemoved > CFeeRate(0)) {
         LogDebug(BCLog::MEMPOOL, "Removed %u txn, rolling minimum fee bumped to %s\n", nTxnRemoved, maxFeeRateRemoved.ToString());
+    }
+    if (maxMWEBFeeRateRemoved > CFeeRate(0)) {
+        LogDebug(BCLog::MEMPOOL, "MWEB rolling minimum fee bumped to %s\n", maxMWEBFeeRateRemoved.ToString());
     }
 }
 
@@ -973,6 +1291,15 @@ std::tuple<size_t, size_t, CAmount> CTxMemPool::CalculateAncestorData(const CTxM
     return {ancestor_count, ancestor_size, ancestor_fees};
 }
 
+uint64_t CTxMemPool::CalculateAncestorMWEBWeight(const CTxMemPoolEntry& entry) const
+{
+    uint64_t ancestor_mweb_weight = 0;
+    for (auto tx : m_txgraph->GetAncestors(entry, TxGraph::Level::MAIN)) {
+        ancestor_mweb_weight += static_cast<const CTxMemPoolEntry&>(*tx).GetMWEBWeight();
+    }
+    return ancestor_mweb_weight;
+}
+
 std::tuple<size_t, size_t, CAmount> CTxMemPool::CalculateDescendantData(const CTxMemPoolEntry& entry) const
 {
     auto descendants = m_txgraph->GetDescendants(entry, TxGraph::Level::MAIN);
@@ -986,6 +1313,15 @@ std::tuple<size_t, size_t, CAmount> CTxMemPool::CalculateDescendantData(const CT
         descendant_fees += desc.GetModifiedFee();
     }
     return {descendant_count, descendant_size, descendant_fees};
+}
+
+uint64_t CTxMemPool::CalculateDescendantMWEBWeight(const CTxMemPoolEntry& entry) const
+{
+    uint64_t descendant_mweb_weight = 0;
+    for (auto tx : m_txgraph->GetDescendants(entry, TxGraph::Level::MAIN)) {
+        descendant_mweb_weight += static_cast<const CTxMemPoolEntry&>(*tx).GetMWEBWeight();
+    }
+    return descendant_mweb_weight;
 }
 
 void CTxMemPool::GetTransactionAncestry(const Txid& txid, size_t& ancestors, size_t& cluster_count, size_t* const ancestorsize, CAmount* const ancestorfees) const {
@@ -1062,8 +1398,8 @@ CTxMemPool::ChangeSet::TxHandle CTxMemPool::ChangeSet::StageAddition(const CTran
     CAmount delta{0};
     m_pool->ApplyDelta(tx->GetHash(), delta);
 
-    FeePerWeight feerate(fee, GetSigOpsAdjustedWeight(GetTransactionWeight(*tx), sigops_cost, ::nBytesPerSigOp));
     auto newit = m_to_add.emplace(tx, fee, time, entry_height, entry_sequence, spends_coinbase, sigops_cost, lp).first;
+    FeePerWeight feerate(fee, newit->GetAdjustedWeight());
     m_pool->m_txgraph->AddTransaction(const_cast<CTxMemPoolEntry&>(*newit), feerate);
     if (delta) {
         newit->UpdateModifiedFee(delta);
@@ -1100,12 +1436,26 @@ void CTxMemPool::ChangeSet::ProcessDependencies()
     LOCK(m_pool->cs);
     Assume(!m_dependencies_processed); // should only call this once.
     for (const auto& entryptr : m_entry_vec) {
-        for (const auto &txin : entryptr->GetSharedTx()->vin) {
-            std::optional<txiter> piter = m_pool->GetIter(txin.prevout.hash);
-            if (!piter) {
-                auto it = m_to_add.find(txin.prevout.hash);
-                if (it != m_to_add.end()) {
-                    piter = std::make_optional(it);
+        for (const CTxInput& input : entryptr->GetTx().GetInputs()) {
+            std::optional<txiter> piter;
+            if (input.IsMWEB()) {
+                if (const CTransaction* creator = m_pool->m_mweb.FindCreatingTx(input.ToMWEB())) {
+                    piter = m_pool->GetIter(creator->GetHash());
+                } else {
+                    for (const auto& staged : m_entry_vec) {
+                        if (staged->GetTx().mweb_tx.GetOutputIDs().contains(input.ToMWEB())) {
+                            piter = staged;
+                            break;
+                        }
+                    }
+                }
+            } else {
+                piter = m_pool->GetIter(input.GetTxIn().prevout.hash);
+                if (!piter) {
+                    auto it = m_to_add.find(input.GetTxIn().prevout.hash);
+                    if (it != m_to_add.end()) {
+                        piter = std::make_optional(it);
+                    }
                 }
             }
             if (piter) {

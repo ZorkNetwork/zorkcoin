@@ -17,10 +17,12 @@
 #include <qt/sendcoinsentry.h>
 
 #include <chainparams.h>
+#include <addresstype.h>
 #include <interfaces/node.h>
 #include <key_io.h>
 #include <node/interface_ui.h>
 #include <node/types.h>
+#include <script/script.h> // MWEB
 #include <txmempool.h>
 #include <validation.h>
 #include <wallet/coincontrol.h>
@@ -33,6 +35,7 @@
 #include <fstream>
 #include <memory>
 #include <optional>
+#include <set> // MWEB
 
 #include <QFontMetrics>
 #include <QScrollBar>
@@ -218,6 +221,12 @@ void SendCoinsDialog::setModel(WalletModel *_model)
             ui->confTargetSelector->setCurrentIndex(getIndexForConfTarget(model->wallet().getConfirmTarget()));
         else
             ui->confTargetSelector->setCurrentIndex(getIndexForConfTarget(settings.value("nConfTarget").toInt()));
+
+        for (int i = 0; i < ui->entries->count(); ++i) {
+            if (SendCoinsEntry* entry = qobject_cast<SendCoinsEntry*>(ui->entries->itemAt(i)->widget())) {
+                entry->updateMWEBButtons();
+            }
+        }
     }
 }
 
@@ -259,6 +268,8 @@ bool SendCoinsDialog::PrepareSendText(QString& question_string, QString& informa
         return false;
     }
 
+    if (!checkPegOutAddresses(recipients, /*take=*/false)) return false; // MWEB
+
     fNewRecipientAllowed = false;
     WalletModel::UnlockContext ctx(model->requestUnlock());
     if(!ctx.isValid())
@@ -288,6 +299,13 @@ bool SendCoinsDialog::PrepareSendText(QString& question_string, QString& informa
     }
 
     CAmount txFee = m_current_transaction->getTransactionFee();
+    // MWEB: L1 recipients of a peg-out are paid from MWEB coins by peg-outs.
+    std::set<CScript> pegout_scripts;
+    for (const mw::MutableKernel& kernel : m_current_transaction->getUnsignedTx().mweb_tx.kernels) {
+        for (const PegOutCoin& pegout : kernel.GetPegOuts()) {
+            pegout_scripts.insert(pegout.GetScriptPubKey());
+        }
+    }
     QStringList formatted;
     for (const SendCoinsRecipient &rcp : m_current_transaction->getRecipients())
     {
@@ -312,6 +330,9 @@ bool SendCoinsDialog::PrepareSendText(QString& question_string, QString& informa
             {
                 recipientElement.append(tr("%1 to %2").arg(amount, address));
             }
+        }
+        if (pegout_scripts.contains(GetScriptForDestination(DecodeDestination(rcp.address.toStdString())))) { // MWEB
+            recipientElement.append(QString(" (%1)").arg(tr("Peg-Out")));
         }
         formatted.append(recipientElement);
     }
@@ -483,10 +504,15 @@ void SendCoinsDialog::sendButtonClicked([[maybe_unused]] bool checked)
         return;
     }
 
+    if (!checkPegOutAddresses(m_current_transaction->getRecipients(), /*take=*/true)) { // MWEB
+        fNewRecipientAllowed = true;
+        return;
+    }
+
     bool send_failure = false;
     if (retval == QMessageBox::Save) {
         // "Create Unsigned" clicked
-        CMutableTransaction mtx = CMutableTransaction{*(m_current_transaction->getWtx())};
+        CMutableTransaction mtx = m_current_transaction->getUnsignedTx(); // MWEB
         PartiallySignedTransaction psbtx(mtx);
         bool complete = false;
         // Fill without signing
@@ -501,7 +527,7 @@ void SendCoinsDialog::sendButtonClicked([[maybe_unused]] bool checked)
         assert(!model->wallet().privateKeysDisabled() || model->wallet().hasExternalSigner());
         bool broadcast = true;
         if (model->wallet().hasExternalSigner()) {
-            CMutableTransaction mtx = CMutableTransaction{*(m_current_transaction->getWtx())};
+            CMutableTransaction mtx = m_current_transaction->getUnsignedTx(); // MWEB
             PartiallySignedTransaction psbtx(mtx);
             bool complete = false;
             // Always fill without signing first. This prevents an external signer
@@ -581,6 +607,7 @@ SendCoinsEntry *SendCoinsDialog::addEntry()
     connect(entry, &SendCoinsEntry::useAvailableBalance, this, &SendCoinsDialog::useAvailableBalance);
     connect(entry, &SendCoinsEntry::payAmountChanged, this, &SendCoinsDialog::coinControlUpdateLabels);
     connect(entry, &SendCoinsEntry::subtractFeeFromAmountChanged, this, &SendCoinsDialog::coinControlUpdateLabels);
+    connect(entry, &SendCoinsEntry::manualPaymentKindChanged, this, &SendCoinsDialog::onEntryManualPaymentKindChanged);
 
     // Focus the field, so that entry can start immediately
     entry->clear();
@@ -769,6 +796,29 @@ void SendCoinsDialog::useAvailableBalance(SendCoinsEntry* entry)
     CCoinControl coin_control = *m_coin_control;
     coin_control.m_allow_other_inputs = !coin_control.HasSelected();
 
+    bool peg_out_balance = entry->paymentKind() == SendCoinsRecipient::PaymentKind::PEGOUT;
+    bool include_mweb = peg_out_balance;
+    if (entry->paymentKind() == SendCoinsRecipient::PaymentKind::REGULAR) {
+        const CTxDestination dest = DecodeDestination(entry->getValue().address.toStdString());
+        if (IsValidDestination(dest) && !std::holds_alternative<StealthAddress>(dest) &&
+            !coin_control.m_mweb_selected.empty() && !coin_control.HasL1Selected()) {
+            peg_out_balance = true;
+            include_mweb = true;
+        } else if (std::holds_alternative<StealthAddress>(dest)) {
+            // MWEB→MWEB: "use available" should fill from MWEB (+ L1 via getBalances).
+            include_mweb = true;
+        }
+    }
+    if (peg_out_balance) {
+        coin_control.m_mweb_peg_out = true;
+    }
+    if (include_mweb) {
+        coin_control.m_include_mweb = true;
+    }
+    if (entry->paymentKind() == SendCoinsRecipient::PaymentKind::PEGIN) {
+        coin_control.m_mweb_peg_in = true;
+    }
+
     // Calculate available amount to send.
     CAmount amount = model->getAvailableBalance(&coin_control);
     for (int i = 0; i < ui->entries->count(); ++i) {
@@ -840,7 +890,7 @@ void SendCoinsDialog::updateSmartFeeLabel()
     m_coin_control->m_feerate.reset(); // Explicitly use only fee estimation rate for smart fee labels
     std::optional<int> returned_target;
     FeeReason reason;
-    CFeeRate feeRate = CFeeRate(model->wallet().getMinimumFee(1000, *m_coin_control, &returned_target, &reason));
+    CFeeRate feeRate = CFeeRate(model->wallet().getMinimumFee(1000, /*mweb_weight=*/0, *m_coin_control, &returned_target, &reason));
 
     ui->labelSmartFee->setText(tr("%1/kvB").arg(BitcoinUnits::formatWithUnit(model->getOptionsModel()->getDisplayUnit(), feeRate.GetFeePerK())));
 
@@ -1005,6 +1055,7 @@ void SendCoinsDialog::coinControlUpdateLabels()
 
     // set pay amounts
     CoinControlDialog::payAmounts.clear();
+    CoinControlDialog::payAddresses.clear();
     CoinControlDialog::fSubtractFeeFromAmount = false;
 
     for(int i = 0; i < ui->entries->count(); ++i)
@@ -1014,6 +1065,7 @@ void SendCoinsDialog::coinControlUpdateLabels()
         {
             SendCoinsRecipient rcp = entry->getValue();
             CoinControlDialog::payAmounts.append(rcp.amount);
+            CoinControlDialog::payAddresses.append(rcp.address);
             if (rcp.fSubtractFeeFromAmount)
                 CoinControlDialog::fSubtractFeeFromAmount = true;
         }
@@ -1034,6 +1086,56 @@ void SendCoinsDialog::coinControlUpdateLabels()
         ui->labelCoinControlAutomaticallySelected->show();
         ui->widgetCoinControl->hide();
         ui->labelCoinControlInsuffFunds->hide();
+    }
+}
+
+bool SendCoinsDialog::checkPegOutAddresses(const QList<SendCoinsRecipient>& recipients, bool take)
+{
+    for (const SendCoinsRecipient& rcp : recipients) {
+        if (rcp.payment_kind != SendCoinsRecipient::PaymentKind::PEGOUT) continue;
+        const CTxDestination previewed{DecodeDestination(rcp.address.toStdString())};
+        const auto next{[&]() -> util::Result<CTxDestination> {
+            auto peeked{model->wallet().peekNewDestination(rcp.pegout_address_type)};
+            if (!take || !peeked || *peeked != previewed) return peeked;
+            return model->wallet().getNewDestination(rcp.pegout_address_type, rcp.label.toStdString());
+        }()};
+        if (!next || *next != previewed) {
+            Q_EMIT message(tr("Send Coins"),
+                next ? tr("The peg-out address has changed. Please review the new address and send again.") : QString::fromStdString(util::ErrorString(next).translated),
+                CClientUIInterface::MSG_ERROR);
+            for (int i = 0; i < ui->entries->count(); ++i) {
+                if (auto* entry = qobject_cast<SendCoinsEntry*>(ui->entries->itemAt(i)->widget())) entry->updatePegOutAddress();
+            }
+            return false;
+        }
+    }
+    return true;
+}
+
+void SendCoinsDialog::onEntryManualPaymentKindChanged(SendCoinsEntry* source, SendCoinsRecipient::PaymentKind kind)
+{
+    if (kind == SendCoinsRecipient::PaymentKind::REGULAR) {
+        return;
+    }
+
+    for (int i = 0; i < ui->entries->count(); ++i) {
+        SendCoinsEntry* entry = qobject_cast<SendCoinsEntry*>(ui->entries->itemAt(i)->widget());
+        if (entry && entry != source) {
+            entry->setPaymentKind(SendCoinsRecipient::PaymentKind::REGULAR);
+        }
+    }
+
+    if (kind == SendCoinsRecipient::PaymentKind::PEGOUT) {
+        // A peg-out pays a single recipient; drop every other entry.
+        for (int i = ui->entries->count() - 1; i >= 0; --i) {
+            QWidget* widget = ui->entries->itemAt(i)->widget();
+            if (widget != source) {
+                delete ui->entries->takeAt(i);
+                widget->hide();
+                widget->deleteLater();
+            }
+        }
+        updateTabsAndLabels();
     }
 }
 

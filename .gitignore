@@ -27,3 +27,7 @@ target/
 /guix-build-*
 
 /ci/scratch/
+/test/cache/*
+/cache/*
+.regression-*
+.bip324-packing-*

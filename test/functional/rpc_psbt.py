@@ -1340,6 +1340,7 @@ class PSBTTest(BitcoinTestFramework):
         # Check fee and size things
         assert_equal(analyzed['fee'], Decimal('0.001'))
         assert_equal(analyzed['estimated_vsize'], 134)
+        assert 'estimated_mweb_weight' not in analyzed
         assert_equal(analyzed['estimated_feerate'], Decimal('0.00746268'))
 
         # After signing and finalizing, needs extracting

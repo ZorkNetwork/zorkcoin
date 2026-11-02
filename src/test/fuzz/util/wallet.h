@@ -32,6 +32,7 @@ struct FuzzedWallet {
             wallet->SetLastBlockProcessed(height, chain.getBlockHash(height));
         }
         wallet->m_keypool_size = 1; // Avoid timeout in TopUp()
+        wallet->m_mweb_keypool_size = 1;
         assert(wallet->IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS));
         ImportDescriptors(seed_insecure);
     }

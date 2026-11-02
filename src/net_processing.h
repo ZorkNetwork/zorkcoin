@@ -8,6 +8,7 @@
 
 #include <consensus/amount.h>
 #include <net.h>
+#include <node/mweb_serve_types.h>
 #include <node/txorphanage.h>
 #include <node/types.h>
 #include <private_broadcast.h>
@@ -43,7 +44,7 @@ inline constexpr bool DEFAULT_TXRECONCILIATION_ENABLE{false};
     orphan, replaced, and rejected transactions. */
 inline constexpr uint32_t DEFAULT_BLOCK_RECONSTRUCTION_EXTRA_TXN{100};
 /** Default maximum per-second rate for sending transaction inventory to peers. */
-inline constexpr unsigned int DEFAULT_TX_SEND_RATE{14};
+inline constexpr unsigned int DEFAULT_TX_SEND_RATE{25};
 inline constexpr bool DEFAULT_PEERBLOOMFILTERS = false;
 inline constexpr bool DEFAULT_PEERBLOCKFILTERS = false;
 /** Maximum number of outstanding CMPCTBLOCK requests for the same block. */
@@ -53,6 +54,8 @@ inline constexpr unsigned int MAX_CMPCTBLOCKS_INFLIGHT_PER_BLOCK = 3;
 inline constexpr unsigned int MAX_HEADERS_RESULTS = 2000;
 /** The compactblocks version we support. See BIP 152. */
 inline constexpr uint64_t CMPCTBLOCKS_VERSION{2};
+/** MWEB: compactblocks version including extension block data. */
+inline constexpr uint64_t CMPCTBLOCKS_VERSION_MWEB{3};
 
 struct CNodeStateStats {
     int nSyncHeight = -1;
@@ -109,6 +112,18 @@ public:
         bool private_broadcast{DEFAULT_PRIVATE_BROADCAST};
         //! Maximum per-second rate for sending transaction inventory to peers.
         unsigned int tx_send_rate{DEFAULT_TX_SEND_RATE};
+        //! MWEB light-client serve mode (-mwebserve).
+        MwebServeMode mweb_serve{DEFAULT_MWEB_SERVE_MODE};
+        //! Serve MWEB light-client data under -blocksonly.
+        bool mweb_serve_in_blocksonly{DEFAULT_MWEB_SERVE_IN_BLOCKSONLY};
+        //! Per-peer MWEB serve credit burst.
+        double mweb_serve_burst{DEFAULT_MWEB_SERVE_BURST};
+        //! Per-turn materialize byte budget (-mwebservematerialbudget).
+        size_t mweb_serve_material_budget{DEFAULT_MWEB_SERVE_MATERIAL_BUDGET};
+        //! Per-turn materialize leaf op budget (-mwebservematerialleafops).
+        size_t mweb_serve_material_leaf_ops{DEFAULT_MWEB_SERVE_MATERIAL_LEAF_OPS};
+        //! Credit denials in 60s before disconnect (-mwebservecreditdenydisconnect).
+        int mweb_serve_credit_deny_disconnect{DEFAULT_MWEB_SERVE_CREDIT_DENY_DISCONNECT};
     };
 
     static std::unique_ptr<PeerManager> make(CConnman& connman, AddrMan& addrman,
@@ -123,6 +138,13 @@ public:
      * @param[in]  block_index  The blockindex
      */
     virtual util::Expected<void, std::string> FetchBlock(NodeId peer_id, const CBlockIndex& block_index) = 0;
+
+    /**
+     * Fetch a block from any fully connected peer that can serve it.
+     * For post-MWEB blocks the peer must advertise NODE_MWEB so the GETDATA
+     * uses MSG_MWEB_BLOCK. Prefers outbound peers.
+     */
+    virtual util::Expected<void, std::string> FetchBlockFromCapablePeer(const CBlockIndex& block_index) = 0;
 
     /** Begin running background tasks, should only be called once */
     virtual void StartScheduledTasks(CScheduler& scheduler) = 0;

@@ -53,6 +53,7 @@ static RPCMethod validateaddress()
                 {RPCResult::Type::BOOL, "iswitness", /*optional=*/true, "If the address is a witness address"},
                 {RPCResult::Type::NUM, "witness_version", /*optional=*/true, "The version number of the witness program"},
                 {RPCResult::Type::STR_HEX, "witness_program", /*optional=*/true, "The hex value of the witness program"},
+                {RPCResult::Type::BOOL, "ismweb", /*optional=*/true, "If the address is an MWEB stealth address"}, // MWEB
                 {RPCResult::Type::STR, "error", /*optional=*/true, "Error message, if any"},
                 {RPCResult::Type::ARR, "error_locations", /*optional=*/true, "Indices of likely error locations in address, if known (e.g. Bech32 errors)",
                     {
@@ -146,6 +147,8 @@ static RPCMethod createmultisig()
                 throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, tfm::format("Unknown address type '%s'", address_type));
             } else if (output_type.value() == OutputType::BECH32M) {
                 throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "createmultisig cannot create bech32m multisig addresses");
+            } else if (output_type.value() == OutputType::MWEB) { // MWEB
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "MWEB address type not supported for multi-sig");
             }
 
             FlatSigningProvider keystore;
@@ -233,6 +236,10 @@ static RPCMethod getdescriptorinfo()
 static UniValue DeriveAddresses(const Descriptor* desc, int64_t range_begin, int64_t range_end, FlatSigningProvider& key_provider)
 {
     UniValue addresses(UniValue::VARR);
+
+    if (desc->GetOutputType() == OutputType::MWEB) { // MWEB
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "deriveaddresses does not support MWEB descriptors");
+    }
 
     for (int64_t i = range_begin; i <= range_end; ++i) {
         FlatSigningProvider provider;

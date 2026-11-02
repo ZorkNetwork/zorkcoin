@@ -30,6 +30,7 @@ from test_framework.util import (
     assert_not_equal,
     assert_raises_rpc_error,
 )
+from test_framework.authproxy import JSONRPCException
 
 LAST_KEYPOOL_INDEX = 9 # Index of the last derived address with the keypool size of 10
 
@@ -92,6 +93,10 @@ class BackwardsCompatibilityTest(BitcoinTestFramework):
     def major_version_at_least(self, node, major):
         node_major, _, _ = self.split_version(node)
         return node_major >= major
+
+    def supports_mweb_descriptors(self, node):
+        """Only the in-tree build understands mweb() descriptors."""
+        return node.version is None
 
     def test_v22_inactivehdchain_path(self):
         self.log.info("Testing inactive hd chain bad derivation path cleanup")
@@ -359,6 +364,9 @@ class BackwardsCompatibilityTest(BitcoinTestFramework):
         for node in descriptors_nodes:
             self.log.info(f"- {node.version}")
             for wallet_name in ["w1", "w2", "w3", "miniscript"]:
+                if not self.supports_mweb_descriptors(node):
+                    # Default wallets created on master include mweb() descriptors.
+                    continue
                 if self.major_version_less_than(node, 22) and wallet_name == "w1":
                     # Descriptor wallets created after 0.21 have taproot descriptors which 0.21 does not support, tested below
                     continue
@@ -423,6 +431,20 @@ class BackwardsCompatibilityTest(BitcoinTestFramework):
         # w1 cannot be opened by 0.21 since it contains a taproot descriptor
         self.log.info("Test that 0.21 cannot open wallet containing tr() descriptors")
         assert_raises_rpc_error(-1, "map::at", node_v21.loadwallet, "w1")
+
+        self.log.info("Test that previous releases cannot open master wallets with mweb() descriptors")
+        for node in descriptors_nodes:
+            if self.major_version_equals(node, 21):
+                # w1 incompatibility on 0.21 is covered by the taproot test above.
+                continue
+            try:
+                node.loadwallet("w1")
+            except JSONRPCException as e:
+                assert e.error["code"] in (-1, -4), e
+                msg = e.error["message"]
+                assert "Unrecognized descriptor" in msg or "map::at" in msg, msg
+            else:
+                raise AssertionError(f"loadwallet w1 should have failed on node {node.version}")
 
         self.log.info("Test that a wallet can upgrade to and downgrade from master, from:")
         for node in descriptors_nodes:
@@ -507,6 +529,10 @@ class BackwardsCompatibilityTest(BitcoinTestFramework):
                     assert_greater_than(len(lh_cache_recs), 0)
 
             self.inspect_sqlite_db(down_backup_path, check_upgraded_records, old_flags)
+
+            if not self.supports_mweb_descriptors(node):
+                # Master may add mweb() descriptors during restore; older releases cannot load them.
+                continue
 
             # Check that no automatic upgrade broke downgrading the wallet
             target_dir = node.wallets_path / down_wallet_name

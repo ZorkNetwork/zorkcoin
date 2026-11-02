@@ -24,5 +24,13 @@ target_sources(test_bitcoin
     wallet_transaction_tests.cpp
     walletdb_tests.cpp
     walletload_tests.cpp
+    mweb_descriptor_tests.cpp
+    mweb_keychain_tests.cpp
+    mweb_coin_encryption_tests.cpp
+    mweb_optional_serialization_tests.cpp
+    mweb_output_match_tests.cpp
+    mweb_sender_key_tests.cpp
+    mweb_spend_tests.cpp
+    mweb_psbt_wallet_tests.cpp
 )
 target_link_libraries(test_bitcoin bitcoin_wallet)

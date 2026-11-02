@@ -7,6 +7,9 @@
 #define BITCOIN_CONSENSUS_VALIDATION_H
 
 #include <consensus/consensus.h>
+#include <mw/models/tx/peg_in_coin.h>
+#include <mw/models/tx/peg_out_coin.h>
+#include <mweb/mweb_models.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
@@ -14,6 +17,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -136,13 +140,43 @@ class BlockValidationState : public ValidationState<BlockValidationResult> {};
 // using only serialization with and without witness data. As witness_size
 // is equal to total_size - stripped_size, this formula is identical to:
 // weight = (stripped_size * 3) + total_size.
+//
+// MWEB extension-block data is excluded from L1 weight (see GetBlockWeight).
+// Peg-in/peg-out L1 costs are accounted explicitly; MWEB weight is charged
+// separately via CFeeRate::GetMWEBFee / GetTotalFee(..., mweb_weight).
 static inline int32_t GetTransactionWeight(const CTransaction& tx)
 {
-    return ::GetSerializeSize(TX_NO_WITNESS(tx)) * (WITNESS_SCALE_FACTOR - 1) + ::GetSerializeSize(TX_WITH_WITNESS(tx));
+    int64_t pegout_weight = 0;
+    for (const PegOutCoin& pegout : tx.mweb_tx.GetPegOuts()) {
+        const CTxOut pegout_output(pegout.GetAmount(), pegout.GetScriptPubKey());
+        pegout_weight += static_cast<int64_t>(::GetSerializeSize(pegout_output)) * WITNESS_SCALE_FACTOR;
+    }
+
+    // MWEB-only transactions have no L1 vin/vout; only peg-out outputs (if any)
+    // contribute to L1 weight. Kernel fees cover MWEB weight.
+    if (tx.IsMWEBOnly()) {
+        if (pegout_weight > std::numeric_limits<int32_t>::max()) {
+            return std::numeric_limits<int32_t>::max();
+        }
+        return static_cast<int32_t>(pegout_weight);
+    }
+
+    // Each peg-in is spent by a HogEx input (41 bytes * WITNESS_SCALE_FACTOR = 164 weight).
+    const int64_t pegin_weight = 164 * static_cast<int64_t>(tx.mweb_tx.GetPegIns().size());
+    const int64_t weight =
+        static_cast<int64_t>(::GetSerializeSize(TX_NO_WITNESS_NO_MWEB(tx))) * (WITNESS_SCALE_FACTOR - 1) +
+        static_cast<int64_t>(::GetSerializeSize(TX_NO_MWEB(tx)));
+    const int64_t total = weight + pegout_weight + pegin_weight;
+    if (total > std::numeric_limits<int32_t>::max()) {
+        return std::numeric_limits<int32_t>::max();
+    }
+    return static_cast<int32_t>(total);
 }
+
 static inline int64_t GetBlockWeight(const CBlock& block)
 {
-    return ::GetSerializeSize(TX_NO_WITNESS(block)) * (WITNESS_SCALE_FACTOR - 1) + ::GetSerializeSize(TX_WITH_WITNESS(block));
+    // MWEB: extension block weight is accounted for separately; exclude from block weight.
+    return ::GetSerializeSize(TX_NO_WITNESS_NO_MWEB(block)) * (WITNESS_SCALE_FACTOR - 1) + ::GetSerializeSize(TX_NO_MWEB(block));
 }
 static inline int64_t GetTransactionInputWeight(const CTxIn& txin)
 {

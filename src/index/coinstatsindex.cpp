@@ -17,10 +17,12 @@
 #include <interfaces/chain.h>
 #include <interfaces/types.h>
 #include <kernel/coinstats.h>
+#include <node/blockstorage.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
 #include <serialize.h>
+#include <sync.h>
 #include <uint256.h>
 #include <undo.h>
 #include <util/check.h>
@@ -105,7 +107,24 @@ CoinStatsIndex::CoinStatsIndex(std::unique_ptr<interfaces::Chain> chain, size_t 
     m_db = std::make_unique<CoinStatsIndex::DB>(path / "db", n_cache_size, f_memory, f_wipe);
 }
 
-bool CoinStatsIndex::CustomAppend(const interfaces::BlockInfo& block)
+void CoinStatsIndex::ResetMuhashState()
+{
+    m_muhash = MuHash3072();
+    m_transaction_output_count = 0;
+    m_bogo_size = 0;
+    m_total_amount = 0;
+    m_total_subsidy = 0;
+    m_total_prevout_spent_amount = 0;
+    m_total_new_outputs_ex_coinbase_amount = 0;
+    m_total_coinbase_amount = 0;
+    m_total_unspendables_genesis_block = 0;
+    m_total_unspendables_bip30 = 0;
+    m_total_unspendables_scripts = 0;
+    m_total_unspendables_unclaimed_rewards = 0;
+    m_current_block_hash = uint256::ZERO;
+}
+
+bool CoinStatsIndex::ApplyBlockToMuhashState(const interfaces::BlockInfo& block)
 {
     const CAmount block_subsidy{GetBlockSubsidy(block.height, Params().GetConsensus())};
     m_total_subsidy += block_subsidy;
@@ -187,6 +206,44 @@ bool CoinStatsIndex::CustomAppend(const interfaces::BlockInfo& block)
     assert(unclaimed_rewards <= arith_uint256(std::numeric_limits<CAmount>::max()));
     m_total_unspendables_unclaimed_rewards += static_cast<CAmount>(unclaimed_rewards.GetLow64());
 
+    m_current_block_hash = block.hash;
+    return true;
+}
+
+bool CoinStatsIndex::ReplayMuhashToHeight(int target_height)
+{
+    ResetMuhashState();
+
+    LOCK(::cs_main);
+    const CBlockIndex* pindex{m_chainstate->m_chain.Genesis()};
+    CBlock block;
+    CBlockUndo block_undo;
+
+    while (pindex && pindex->nHeight <= target_height) {
+        if (!m_chainstate->m_blockman.ReadBlock(block, *pindex)) {
+            return false;
+        }
+        interfaces::BlockInfo block_info = kernel::MakeBlockInfo(pindex, &block);
+        if (pindex->nHeight > 0) {
+            if (!m_chainstate->m_blockman.ReadBlockUndo(block_undo, *pindex)) {
+                return false;
+            }
+            block_info.undo_data = &block_undo;
+        }
+        if (!ApplyBlockToMuhashState(block_info)) {
+            return false;
+        }
+        pindex = m_chainstate->m_chain.Next(*pindex);
+    }
+    return true;
+}
+
+bool CoinStatsIndex::CustomAppend(const interfaces::BlockInfo& block)
+{
+    if (!ApplyBlockToMuhashState(block)) {
+        return false;
+    }
+
     std::pair<uint256, DBVal> value;
     value.first = block.hash;
     value.second.transaction_output_count = m_transaction_output_count;
@@ -204,8 +261,6 @@ bool CoinStatsIndex::CustomAppend(const interfaces::BlockInfo& block)
     uint256 out;
     m_muhash.Finalize(out);
     value.second.muhash = out;
-
-    m_current_block_hash = block.hash;
 
     // Intentionally do not update DB_MUHASH here so it stays in sync with
     // DB_BEST_BLOCK, and the index is not corrupted if there is an unclean shutdown.
@@ -347,7 +402,9 @@ bool CoinStatsIndex::RevertBlock(const interfaces::BlockInfo& block)
     }
 
     // Roll back muhash by removing the new UTXOs that were created by the
-    // block and reapplying the old UTXOs that were spent by the block
+    // block and reapplying the old UTXOs that were spent by the block.
+    // Operate on a copy so a failed revert does not corrupt in-memory state.
+    MuHash3072 rolled_back{m_muhash};
     assert(block.data);
     assert(block.undo_data);
     for (size_t i = 0; i < block.data->vtx.size(); ++i) {
@@ -364,7 +421,7 @@ bool CoinStatsIndex::RevertBlock(const interfaces::BlockInfo& block)
             const Coin coin{out, block.height, is_coinbase};
 
             if (!coin.out.scriptPubKey.IsUnspendable()) {
-                RemoveCoinHash(m_muhash, outpoint, coin);
+                RemoveCoinHash(rolled_back, outpoint, coin);
             }
         }
 
@@ -375,15 +432,30 @@ bool CoinStatsIndex::RevertBlock(const interfaces::BlockInfo& block)
             for (size_t j = 0; j < tx_undo.vprevout.size(); ++j) {
                 const Coin& coin{tx_undo.vprevout[j]};
                 const COutPoint outpoint{tx->vin[j].prevout.hash, tx->vin[j].prevout.n};
-                ApplyCoinHash(m_muhash, outpoint, coin);
+                ApplyCoinHash(rolled_back, outpoint, coin);
             }
         }
     }
 
     // Check that the rolled back muhash is consistent with the DB read out
     uint256 out;
-    m_muhash.Finalize(out);
-    Assert(read_out.second.muhash == out);
+    rolled_back.Finalize(out);
+    if (read_out.second.muhash != out) {
+        LogWarning("CoinStatsIndex::RevertBlock(): muhash mismatch at height %d (expected %s, got %s); rebuilding from chain",
+                   block.height, read_out.second.muhash.ToString(), out.ToString());
+        if (!ReplayMuhashToHeight(block.height - 1)) {
+            LogError("CoinStatsIndex::RevertBlock(): failed to rebuild state at height %d", block.height - 1);
+            return false;
+        }
+        m_muhash.Finalize(out);
+        if (read_out.second.muhash != out) {
+            LogError("CoinStatsIndex::RevertBlock(): muhash mismatch after rebuild at height %d (expected %s, got %s)",
+                     block.height, read_out.second.muhash.ToString(), out.ToString());
+            return false;
+        }
+    } else {
+        m_muhash = rolled_back;
+    }
 
     // Apply the other values from the DB to the member variables
     m_transaction_output_count = read_out.second.transaction_output_count;

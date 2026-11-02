@@ -23,6 +23,16 @@ EXPECTED_CIRCULAR_DEPENDENCIES = (
     "kernel/coinstats -> validation -> kernel/coinstats",
     "versionbits -> versionbits_impl -> versionbits",
 
+    # MWEB integration
+    "mweb/mweb_wallet -> wallet/wallet -> mweb/mweb_wallet",
+    "mweb/mweb_wallet -> wallet/walletdb -> mweb/mweb_wallet",
+    "mweb/mweb_wallet_scan -> wallet/wallet -> mweb/mweb_wallet_scan",
+    "wallet/receive -> wallet/wallet -> wallet/receive",
+    "node/mweb_historical_cache -> validation -> node/mweb_historical_cache",
+    "node/mweb_leafdb_sync -> validation -> node/mweb_leafdb_sync",
+    "node/mweb_serve_coordinator -> validation -> node/mweb_serve_coordinator",
+    "script/descriptor -> script/mweb_descriptor -> script/descriptor",
+
     # Temporary, removed in followup https://github.com/bitcoin/bitcoin/pull/24230
     "index/base -> node/context -> net_processing -> index/blockfilterindex -> index/base",
 )

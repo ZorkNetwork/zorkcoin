@@ -53,7 +53,9 @@ static_assert(TRUC_MAX_VSIZE + TRUC_CHILD_MAX_VSIZE <= DEFAULT_CLUSTER_SIZE_LIMI
  * @param[in]   direct_conflicts        In-mempool transactions this tx conflicts with. These conflicts
  *                                      are used to more accurately calculate the resulting descendant
  *                                      count of in-mempool ancestors.
- * @param[in]   vsize                   The sigop-adjusted virtual size of ptx.
+ * @param[in]   vsize                   The sigop-adjusted virtual size of ptx. MWEB: with MWEB
+ *                                      weight, the adjusted weight in vbytes
+ *                                      (MWEB::MempoolAccept::AdjustedVSize).
  *
  * @returns 3 possibilities:
  * - std::nullopt if all TRUC checks were applied successfully
@@ -86,6 +88,9 @@ std::optional<std::pair<std::string, CTransactionRef>> SingleTRUCChecks(const CT
  *   then PTRUCC(T) and PTRUCC(U) will fail
  * - if a TRUC transaction T has a parent P and a grandparent G in the package, then
  *   PTRUCC(P) will fail (though PTRUCC(G) and PTRUCC(T) might succeed).
+ *
+ * MWEB: spending another package transaction's MWEB output makes it a parent too, and vsize is
+ * as for SingleTRUCChecks.
  *
  * @returns debug string if an error occurs, std::nullopt otherwise.
  * */

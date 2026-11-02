@@ -57,6 +57,9 @@ TRACEPOINT_SEMAPHORE(net, outbound_message);
 /** Maximum number of block-relay-only anchor connections */
 static constexpr size_t MAX_BLOCK_RELAY_ONLY_ANCHORS = 2;
 static_assert (MAX_BLOCK_RELAY_ONLY_ANCHORS <= static_cast<size_t>(MAX_BLOCK_RELAY_ONLY_CONNECTIONS), "MAX_BLOCK_RELAY_ONLY_ANCHORS must not exceed MAX_BLOCK_RELAY_ONLY_CONNECTIONS.");
+static_assert(
+    MAX_PROTOCOL_MESSAGE_LENGTH > MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB,
+    "MAX_PROTOCOL_MESSAGE_LENGTH must exceed MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB.");
 /** Anchor IP address database file name */
 const char* const ANCHORS_DATABASE_FILENAME = "anchors.dat";
 
@@ -1218,9 +1221,11 @@ bool V2Transport::ProcessReceivedPacketBytes() noexcept
     // - 0x00 byte: indicating long message type encoding
     // - 12 bytes of message type
     // - payload
-    static constexpr size_t MAX_CONTENTS_LEN =
-        1 + CMessageHeader::MESSAGE_TYPE_SIZE +
-        std::min<size_t>(MAX_SIZE, MAX_PROTOCOL_MESSAGE_LENGTH);
+    // BIP324 encodes contents length in 3 bytes (max 2^24-1). Clamp to that even
+    // when MAX_PROTOCOL_MESSAGE_LENGTH is larger (Litecoin/MWEB uses 32 MB on v1).
+    static constexpr size_t MAX_CONTENTS_LEN = std::min<size_t>(
+        1 + CMessageHeader::MESSAGE_TYPE_SIZE + std::min<size_t>(MAX_SIZE, MAX_PROTOCOL_MESSAGE_LENGTH),
+        (size_t{1} << 24) - 1);
 
     if (m_recv_buffer.size() == BIP324Cipher::LENGTH_LEN) {
         // Length descriptor received.
@@ -1509,6 +1514,14 @@ bool V2Transport::SetMessageToSend(CSerializedNetMsg& msg) noexcept
         contents.resize(1 + CMessageHeader::MESSAGE_TYPE_SIZE + msg.data.size(), 0);
         std::copy(msg.m_type.begin(), msg.m_type.end(), contents.data() + 1);
         std::copy(msg.data.begin(), msg.data.end(), contents.begin() + 1 + CMessageHeader::MESSAGE_TYPE_SIZE);
+    }
+    // BIP324's 3-byte length field cannot encode contents >= 2^24. Refuse rather
+    // than silently truncating the length in Encrypt (v1 carries up to 32 MB for MWEB).
+    if (contents.size() >= (size_t{1} << 24)) {
+        LogDebug(BCLog::NET, "V2 transport error: cannot send packet of %u bytes (BIP324 length field max is 2^24-1)\n",
+                 contents.size());
+        ClearShrink(contents);
+        return false;
     }
     // Construct ciphertext in send buffer.
     m_send_buffer.resize(contents.size() + BIP324Cipher::EXPANSION);
@@ -3224,6 +3237,10 @@ void CConnman::ThreadMessageHandler()
     {
         bool fMoreWork = false;
 
+        if (m_msgproc->ProcessBackgroundWork()) {
+            fMoreWork = true;
+        }
+
         {
             // Randomize the order in which we process messages from/to our peers.
             // This prevents attacks in which an attacker exploits having multiple
@@ -4024,7 +4041,7 @@ bool CConnman::OutboundTargetReached(bool historicalBlockServingLimit) const
     {
         // keep a large enough buffer to at least relay each block once
         const std::chrono::seconds timeLeftInCycle = GetMaxOutboundTimeLeftInCycle_();
-        const uint64_t buffer = timeLeftInCycle / std::chrono::minutes{10} * MAX_BLOCK_SERIALIZED_SIZE;
+        const uint64_t buffer = timeLeftInCycle / std::chrono::minutes{10} * MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB;
         if (buffer >= nMaxOutboundLimit || nMaxOutboundTotalBytesSentInCycle >= nMaxOutboundLimit - buffer)
             return true;
     }

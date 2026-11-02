@@ -50,6 +50,8 @@ WalletContext& EnsureWalletContext(const std::any& context);
 
 bool GetAvoidReuseFlag(const CWallet& wallet, const UniValue& param);
 std::string LabelFromValue(const UniValue& value);
+//! Parse the value of an {"mweb_out": <output id>} input object.
+mw::Hash ParseMWEBOutputID(const UniValue& value);
 //! Fetch parent descriptors of this scriptPubKey.
 void PushParentDescriptors(const CWallet& wallet, const CScript& script_pubkey, UniValue& entry);
 

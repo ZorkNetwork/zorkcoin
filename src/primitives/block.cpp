@@ -8,6 +8,7 @@
 #include <hash.h>
 #include <tinyformat.h>
 
+#include <cassert>
 #include <memory>
 #include <sstream>
 
@@ -30,4 +31,14 @@ std::string CBlock::ToString() const
         s << "  " << tx->ToString() << "\n";
     }
     return s.str();
+}
+
+CTransactionRef CBlock::GetHogEx() const noexcept
+{
+    if (vtx.size() >= 2 && vtx.back()->IsHogEx()) {
+        assert(!vtx.back()->vout.empty());
+        return vtx.back();
+    }
+
+    return nullptr;
 }

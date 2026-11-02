@@ -135,7 +135,7 @@ The wallet passphrase and the seed are two separate components in wallet securit
 The passphrase serves as a protective measure, securing your funds in situations where an unauthorized user gains access to your unlocked computer or device while your wallet application is active. Without the passphrase, they would be unable to access your wallet's funds or execute transactions. However, it's essential to be aware that someone with access can potentially compromise the security of your passphrase by installing a keylogger.
 
 - **Doesn't Encrypt Metadata or Public Keys:**
-It's important to note that the passphrase primarily secures the private keys and access to funds within the wallet. It does not encrypt metadata associated with transactions or public keys. Information about your transaction history and the public keys involved may still be visible.
+It's important to note that the passphrase primarily secures the private keys and access to funds within the wallet. It does not encrypt metadata associated with transactions or public keys. Information about your transaction history and the public keys involved may still be visible. The MWEB scan key is not encrypted either, so the wallet can detect MWEB payments while locked: anyone who can read the wallet file can see its MWEB payments and amounts (see [MWEB descriptors](mweb/descriptors.md#wallet-storage-of-secrets)).
 
 - **Risk of Fund Loss if Forgotten or Lost:**
 If the wallet passphrase is too complex and is subsequently forgotten or lost, there is a risk of losing access to the funds permanently. A forgotten passphrase will result in the inability to unlock the wallet and access the funds.

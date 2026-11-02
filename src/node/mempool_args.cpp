@@ -54,6 +54,13 @@ util::Result<void> ApplyArgsManOptions(const ArgsManager& argsman, const CChainP
         mempool_opts.max_size_bytes = *mb * 1'000'000;
     }
 
+    if (auto pct = argsman.GetIntArg("-maxmempoolmweb")) {
+        if (*pct < 0 || *pct > 100) {
+            return util::Error{Untranslated(strprintf("-maxmempoolmweb must be between 0 and 100 (got %i)", *pct))};
+        }
+        mempool_opts.max_mempool_mweb_pct = static_cast<unsigned>(*pct);
+    }
+
     if (auto hours = argsman.GetIntArg("-mempoolexpiry")) mempool_opts.expiry = std::chrono::hours{*hours};
 
     // incremental relay fee sets the minimum feerate increase necessary for replacement in the mempool

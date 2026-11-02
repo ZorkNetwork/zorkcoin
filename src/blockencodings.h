@@ -6,6 +6,7 @@
 #define BITCOIN_BLOCKENCODINGS_H
 
 #include <crypto/siphash.h>
+#include <mweb/mweb_models.h> // MWEB
 #include <primitives/block.h>
 
 #include <functional>
@@ -103,6 +104,7 @@ public:
     static constexpr int SHORTTXIDS_LENGTH = 6;
 
     CBlockHeader header;
+    MWEB::Block mweb_block; // MWEB
 
     /**
      * Dummy for deserialization
@@ -121,6 +123,10 @@ public:
     SERIALIZE_METHODS(CBlockHeaderAndShortTxIDs, obj)
     {
         READWRITE(obj.header, obj.nonce, Using<VectorFormatter<CustomUintFormatter<SHORTTXIDS_LENGTH>>>(obj.shorttxids), obj.prefilledtxn);
+        if (MwebAllowedInBlockSerialization(s)) { // MWEB
+            READWRITE(obj.mweb_block);
+        }
+
         if (ser_action.ForRead()) {
             if (obj.BlockTxCount() > std::numeric_limits<uint16_t>::max()) {
                 throw std::ios_base::failure("indexes overflowed 16 bits");
@@ -137,6 +143,7 @@ protected:
     const CTxMemPool* pool;
 public:
     CBlockHeader header;
+    MWEB::Block mweb_block; // MWEB
 
     // Can be overridden for testing
     using IsBlockMutatedFn = std::function<bool(const CBlock&, bool)>;

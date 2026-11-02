@@ -8,6 +8,7 @@
 
 #include <arith_uint256.h>
 #include <consensus/params.h>
+#include <mw/models/block/header.h> // MWEB
 #include <flatfile.h>
 #include <kernel/cs_main.h>
 #include <primitives/block.h>
@@ -83,6 +84,11 @@ enum BlockStatus : uint32_t {
 
     BLOCK_STATUS_RESERVED    =   256, //!< Unused flag that was previously set on assumeutxo snapshot blocks and their
                                       //!< ancestors before they were validated, and unset when they were validated.
+
+    BLOCK_HAVE_MWEB          =   (1 << 28), // MWEB: extension block data available
+
+    //! MWEB: a mutated serialization was discarded, but validated transaction metadata is retained.
+    BLOCK_DISCARDED_MUTATED_DATA = (1 << 29),
 };
 
 /** The block chain is a tree shaped structure starting with the
@@ -142,6 +148,11 @@ public:
     uint32_t nTime{0};
     uint32_t nBits{0};
     uint32_t nNonce{0};
+
+    //! MWEB data (only populated when BLOCK_HAVE_MWEB is set)
+    mw::Header::CPtr mweb_header{nullptr};
+    Txid hogex_hash{};
+    CAmount mweb_amount{0};
 
     //! (memory only) Sequential id assigned to distinguish order in which blocks are received.
     //! Initialized to SEQ_ID_INIT_FROM_DISK{1} when loading blocks from disk, except for blocks
@@ -349,6 +360,13 @@ public:
         if (obj.nStatus & (BLOCK_HAVE_DATA | BLOCK_HAVE_UNDO)) READWRITE(VARINT_MODE(obj.nFile, VarIntMode::NONNEGATIVE_SIGNED));
         if (obj.nStatus & BLOCK_HAVE_DATA) READWRITE(VARINT(obj.nDataPos));
         if (obj.nStatus & BLOCK_HAVE_UNDO) READWRITE(VARINT(obj.nUndoPos));
+
+        // MWEB: persist extension block index fields when present
+        if (obj.nStatus & BLOCK_HAVE_MWEB) {
+            READWRITE(obj.mweb_header);
+            READWRITE(obj.hogex_hash);
+            READWRITE(VARINT_MODE(obj.mweb_amount, VarIntMode::NONNEGATIVE_SIGNED));
+        }
 
         // block header
         READWRITE(obj.nVersion);

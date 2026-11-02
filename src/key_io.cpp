@@ -6,6 +6,7 @@
 
 #include <base58.h>
 #include <bech32.h>
+#include <mw/models/crypto/big_integer.h> // MWEB
 #include <script/interpreter.h>
 #include <script/solver.h>
 #include <tinyformat.h>
@@ -78,6 +79,21 @@ public:
         return bech32::Encode(bech32::Encoding::BECH32M, m_params.Bech32HRP(), data);
     }
 
+    std::string operator()(const PayToAnchor& id) const
+    {
+        return operator()(static_cast<const WitnessUnknown&>(id));
+    }
+
+    std::string operator()(const StealthAddress& id) const // MWEB
+    {
+        const std::vector<uint8_t> serialized = id.Serialized();
+
+        std::vector<uint8_t> converted = {0};
+        ConvertBits<8, 5, true>([&](unsigned char c) { converted.push_back(c); }, serialized.begin(), serialized.end());
+
+        return bech32::Encode(bech32::Encoding::BECH32, m_params.MWEB_HRP(), converted);
+    }
+
     std::string operator()(const CNoDestination& no) const { return {}; }
     std::string operator()(const PubKeyDestination& pk) const { return {}; }
 };
@@ -89,9 +105,13 @@ CTxDestination DecodeDestination(const std::string& str, const CChainParams& par
     error_str = "";
 
     // Note this will be false if it is a valid Bech32 address for a different network
-    bool is_bech32 = (ToLower(str.substr(0, params.Bech32HRP().size())) == params.Bech32HRP());
+    const bool is_bech32 = str.size() >= params.Bech32HRP().size() &&
+        ToLower(str.substr(0, params.Bech32HRP().size())) == params.Bech32HRP();
+    // MWEB: bc1m/tb1m addresses use a separate HRP from segwit
+    const bool is_mweb_bech32 = str.size() >= params.MWEB_HRP().size() &&
+        ToLower(str.substr(0, params.MWEB_HRP().size())) == params.MWEB_HRP();
 
-    if (!is_bech32 && DecodeBase58Check(str, data, 21)) {
+    if (!is_bech32 && !is_mweb_bech32 && DecodeBase58Check(str, data, 21)) {
         // base58-encoded Bitcoin addresses.
         // Public-key-hash-addresses have version 0 (or 111 testnet).
         // The data vector contains RIPEMD160(SHA256(pubkey)), where pubkey is the serialized public key.
@@ -118,7 +138,7 @@ CTxDestination DecodeDestination(const std::string& str, const CChainParams& par
             error_str = "Invalid or unsupported Base58-encoded address.";
         }
         return CNoDestination();
-    } else if (!is_bech32) {
+    } else if (!is_bech32 && !is_mweb_bech32) {
         // Try Base58 decoding without the checksum, using a much larger max length
         if (!DecodeBase58(str, data, 100)) {
             error_str = "Invalid or unsupported Segwit (Bech32) or Base58 encoding.";
@@ -129,7 +149,24 @@ CTxDestination DecodeDestination(const std::string& str, const CChainParams& par
     }
 
     data.clear();
-    const auto dec = bech32::Decode(str);
+    const auto dec = bech32::Decode(str, is_mweb_bech32 ? bech32::CharLimit::MWEB : bech32::CharLimit::BECH32);
+
+    // MWEB: Stealth address decoding (bc1m/tb1m HRP)
+    if (dec.encoding == bech32::Encoding::BECH32 && dec.hrp == params.MWEB_HRP()) {
+        std::vector<uint8_t> converted;
+        converted.reserve(((dec.data.size() - 1) * 5) / 8);
+
+        if (ConvertBits<5, 8, false>([&](unsigned char c) { converted.push_back(c); }, dec.data.begin() + 1, dec.data.end())) {
+            if (converted.size() == 66) {
+                return StealthAddress(
+                    PublicKey(BigInt<33>(converted.data())),
+                    PublicKey(BigInt<33>(converted.data() + 33)));
+            }
+        }
+        error_str = "Invalid MWEB stealth address";
+        return CNoDestination();
+    }
+
     if (dec.encoding == bech32::Encoding::BECH32 || dec.encoding == bech32::Encoding::BECH32M) {
         if (dec.data.empty()) {
             error_str = "Empty Bech32 data section";

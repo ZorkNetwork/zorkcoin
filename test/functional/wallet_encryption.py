@@ -46,10 +46,17 @@ class WalletEncryptionTest(BitcoinTestFramework):
         assert_raises_rpc_error(-8, "passphrase cannot be empty", self.nodes[0].walletpassphrase, '', 1)
         assert_raises_rpc_error(-8, "passphrase cannot be empty", self.nodes[0].walletpassphrasechange, '', 'ff')
 
+        # A locked wallet still issues MWEB addresses: they derive from the scan
+        # secret and the spend public key, not the spend secret.
+        locked_mweb = [self.nodes[0].getnewaddress(address_type='mweb') for _ in range(2)]
+        assert locked_mweb[0] != locked_mweb[1]
+        assert all(self.nodes[0].getaddressinfo(a)['ismine'] for a in locked_mweb)
+
         # Check that walletpassphrase works
         self.nodes[0].walletpassphrase(passphrase, 2)
         sig = self.nodes[0].signmessage(address, msg)
         assert self.nodes[0].verifymessage(address, sig, msg)
+        assert self.nodes[0].getnewaddress(address_type='mweb') not in locked_mweb
 
         # Check that the timeout is right
         time.sleep(3)

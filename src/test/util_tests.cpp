@@ -673,10 +673,23 @@ static void TestAddMatrix()
     BOOST_CHECK_EQUAL(-1, SaturatingAdd(MINI, MAXI));
 }
 
+static void TestNegateMatrix()
+{
+    using T = int64_t;
+    constexpr T MINI{std::numeric_limits<T>::min()};
+    constexpr T MAXI{std::numeric_limits<T>::max()};
+    BOOST_CHECK_EQUAL(MAXI, SaturatingNegate(MINI));
+    BOOST_CHECK_EQUAL(-MAXI, SaturatingNegate(MAXI));
+    BOOST_CHECK_EQUAL(T{0}, SaturatingNegate(T{0}));
+    BOOST_CHECK_EQUAL(T{1}, SaturatingNegate(T{-1}));
+    BOOST_CHECK_EQUAL(T{-1}, SaturatingNegate(T{1}));
+}
+
 BOOST_AUTO_TEST_CASE(util_overflow)
 {
     TestAddMatrixOverflow<unsigned>();
     TestAddMatrix<signed>();
+    TestNegateMatrix();
 }
 
 template <typename T>

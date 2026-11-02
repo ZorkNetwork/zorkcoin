@@ -8,6 +8,7 @@
 #include <common/system.h>
 #include <consensus/validation.h>
 #include <interfaces/chain.h>
+#include <mweb/mweb_spend.h>
 #include <policy/policy.h>
 #include <util/moneystr.h>
 #include <util/rbf.h>
@@ -45,6 +46,13 @@ static feebumper::Result PreconditionChecks(const CWallet& wallet, const CWallet
         return feebumper::Result::WALLET_ERROR;
     }
 
+    for (const mw::Hash& output_id : wtx.GetTx()->mweb_tx.GetOutputIDs()) {
+        if (wallet.IsSpentMWEB(output_id)) {
+            errors.emplace_back(Untranslated("Transaction has descendants in the wallet"));
+            return feebumper::Result::INVALID_PARAMETER;
+        }
+    }
+
     if (require_mine) {
         // check that original tx consists entirely of our inputs
         // if not, we can't bump the fee, because the wallet has no way of knowing the value of the other inputs (thus the fee)
@@ -58,8 +66,10 @@ static feebumper::Result PreconditionChecks(const CWallet& wallet, const CWallet
 }
 
 //! Check if the user provided a valid feeRate
-static feebumper::Result CheckFeeRate(const CWallet& wallet, const CMutableTransaction& mtx, const CFeeRate& newFeerate, const int64_t maxTxSize, CAmount old_fee, std::vector<bilingual_str>& errors)
+static feebumper::Result CheckFeeRate(const CWallet& wallet, const CWalletTx& wtx, const CFeeRate& newFeerate, const int64_t maxTxSize, CAmount old_fee, std::vector<bilingual_str>& errors)
 {
+    const uint64_t mweb_weight = wtx.GetTx()->mweb_tx.GetMWEBWeight();
+
     // check that fee rate is higher than mempool's minimum fee
     // (no point in bumping fee if we know that the new tx won't be accepted to the mempool)
     // This may occur if fallbackfee is too low, or, perhaps,
@@ -76,8 +86,8 @@ static feebumper::Result CheckFeeRate(const CWallet& wallet, const CMutableTrans
     }
 
     std::vector<COutPoint> reused_inputs;
-    reused_inputs.reserve(mtx.vin.size());
-    for (const CTxIn& txin : mtx.vin) {
+    reused_inputs.reserve(wtx.GetTx()->vin.size());
+    for (const CTxIn& txin : wtx.GetTx()->vin) {
         reused_inputs.push_back(txin.prevout);
     }
 
@@ -86,20 +96,25 @@ static feebumper::Result CheckFeeRate(const CWallet& wallet, const CMutableTrans
         errors.push_back(Untranslated(strprintf("Failed to calculate bump fees, because unconfirmed UTXOs depend on an enormous cluster of unconfirmed transactions.")));
         return feebumper::Result::WALLET_ERROR;
     }
-    CAmount new_total_fee = newFeerate.GetFee(maxTxSize) + combined_bump_fee.value();
+    CAmount new_total_fee = newFeerate.GetTotalFee(maxTxSize, mweb_weight) + combined_bump_fee.value();
 
     CFeeRate incrementalRelayFee = wallet.chain().relayIncrementalFee();
 
+    const int64_t txSize = GetVirtualTransactionSize(*(wtx.GetTx()));
+    const CAmount mweb_fee = CFeeRate::GetMWEBFee(mweb_weight);
+    const CAmount byte_fee = old_fee >= mweb_fee ? old_fee - mweb_fee : 0;
+    CFeeRate nOldFeeRate(byte_fee, txSize);
+
     // Min total fee is old fee + relay fee
-    CAmount minTotalFee = old_fee + incrementalRelayFee.GetFee(maxTxSize);
+    CAmount minTotalFee = nOldFeeRate.GetTotalFee(maxTxSize, mweb_weight) + incrementalRelayFee.GetFee(maxTxSize);
 
     if (new_total_fee < minTotalFee) {
         errors.push_back(Untranslated(strprintf("Insufficient total fee %s, must be at least %s (oldFee %s + incrementalFee %s)",
-            FormatMoney(new_total_fee), FormatMoney(minTotalFee), FormatMoney(old_fee), FormatMoney(incrementalRelayFee.GetFee(maxTxSize)))));
+            FormatMoney(new_total_fee), FormatMoney(minTotalFee), FormatMoney(nOldFeeRate.GetTotalFee(maxTxSize, mweb_weight)), FormatMoney(incrementalRelayFee.GetFee(maxTxSize)))));
         return feebumper::Result::INVALID_PARAMETER;
     }
 
-    CAmount requiredFee = GetRequiredFee(wallet, maxTxSize);
+    CAmount requiredFee = GetRequiredFee(wallet, maxTxSize, mweb_weight);
     if (new_total_fee < requiredFee) {
         errors.push_back(Untranslated(strprintf("Insufficient total fee (cannot be less than required fee %s)",
             FormatMoney(requiredFee))));
@@ -123,7 +138,10 @@ static CFeeRate EstimateFeeRate(const CWallet& wallet, const CWalletTx& wtx, con
     // the tx fee/vsize, so it may have been rounded down. Add 1 satoshi to the
     // result.
     int64_t txSize = GetVirtualTransactionSize(*(wtx.GetTx()));
-    CFeeRate feerate(old_fee, txSize);
+    const uint64_t mweb_weight = wtx.GetTx()->mweb_tx.GetMWEBWeight();
+    const CAmount mweb_fee = CFeeRate::GetMWEBFee(mweb_weight);
+    const CAmount byte_fee = old_fee >= mweb_fee ? old_fee - mweb_fee : 0;
+    CFeeRate feerate(byte_fee, txSize);
     feerate += CFeeRate(1);
 
     // The node has a configurable incremental relay fee. Increment the fee by
@@ -142,6 +160,25 @@ static CFeeRate EstimateFeeRate(const CWallet& wallet, const CWalletTx& wtx, con
 
     // Set the required fee rate for the replacement transaction in coin control.
     return std::max(feerate, min_feerate);
+}
+
+//! MWEB: the least fee a replacement of an MWEB transaction pays to enter the mempool:
+//! 1.5x the old fee over adjusted weight (MWEB::Policy::CheckReplacementFeeRate), and the
+//! old fee plus the incremental relay fee on the L1 size. Weights are counted once signed.
+static CAmount ReplacementMinFee(const CWallet& wallet, const CMutableTransaction& mtx, const CCoinControl& coin_control, CAmount old_fee, int64_t old_weight) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet)
+{
+    int64_t l1_weight{MWEB::EstimateBuiltTxWeight(mtx)};
+    if (!mtx.vin.empty()) {
+        CMutableTransaction l1_mtx{mtx};
+        l1_mtx.mweb_tx.SetNull();
+        const CTransaction l1_tx{l1_mtx};
+        const TxSize signed_size{CalculateMaximumSignedTxSize(l1_tx, &wallet, &coin_control)};
+        if (signed_size.weight > 0) l1_weight += signed_size.weight - GetTransactionWeight(l1_tx);
+    }
+    const int64_t new_weight{l1_weight + static_cast<int64_t>(mtx.mweb_tx.GetMWEBWeight())};
+    const CAmount rate_fee{(3 * old_fee * new_weight + 2 * old_weight - 1) / (2 * old_weight)};
+    const CAmount relay_fee{old_fee + wallet.chain().relayIncrementalFee().GetFee(GetVirtualTransactionSize(l1_weight, 0, 0))};
+    return std::max(rate_fee, relay_fee);
 }
 
 namespace feebumper {
@@ -178,6 +215,12 @@ Result CreateRateBumpTransaction(CWallet& wallet, const Txid& txid, const CCoinC
     }
     const CWalletTx& wtx = it->second;
     const CTransactionRef& tx = wtx.GetTx();
+    const bool has_mweb{tx->HasMWEBTx()};
+
+    if (has_mweb && (!outputs.empty() || original_change_index.has_value())) {
+        errors.emplace_back(Untranslated("The options 'outputs' and 'original_change_index' are not supported for transactions with MWEB data"));
+        return Result::INVALID_PARAMETER;
+    }
 
     // Make sure that original_change_index is valid
     if (original_change_index.has_value() && original_change_index.value() >= tx->vout.size()) {
@@ -206,6 +249,14 @@ Result CreateRateBumpTransaction(CWallet& wallet, const Txid& txid, const CCoinC
         }
         input_value += coin.out.nValue;
         spent_outputs.push_back(coin.out);
+    }
+    for (const mw::Hash& output_id : tx->mweb_tx.GetSpentIDs()) {
+        mw::Coin coin;
+        if (!wallet.GetCoin(output_id, coin) || !coin.IsMine()) {
+            errors.emplace_back(Untranslated("Transaction contains inputs that don't belong to this wallet"));
+            return Result::WALLET_ERROR;
+        }
+        new_coin_control.SelectMWEB(output_id);
     }
 
     // Figure out if we need to compute the input weight, and do so if necessary
@@ -243,7 +294,12 @@ Result CreateRateBumpTransaction(CWallet& wallet, const Txid& txid, const CCoinC
         output_value += old_output.nValue;
     }
 
-    old_fee = input_value - output_value;
+    const std::optional<CAmount> kernel_fee{tx->mweb_tx.GetFee()};
+    if (!kernel_fee) {
+        errors.emplace_back(Untranslated("Unable to read the MWEB kernel fee"));
+        return Result::MISC_ERROR;
+    }
+    old_fee = input_value - output_value + *kernel_fee;
 
     // Fill in recipients (and preserve a single change key if there
     // is one). If outputs vector is non-empty, replace original
@@ -253,6 +309,8 @@ Result CreateRateBumpTransaction(CWallet& wallet, const Txid& txid, const CCoinC
     const auto& txouts = outputs.empty() ? tx->vout : outputs;
     for (size_t i = 0; i < txouts.size(); ++i) {
         const CTxOut& output = txouts.at(i);
+        // The peg-in output is rebuilt from the MWEB recipients.
+        if (has_mweb && output.scriptPubKey.IsMWEBPegin()) continue;
         CTxDestination dest;
         ExtractDestination(output.scriptPubKey, dest);
         if (original_change_index.has_value() ?  original_change_index.value() == i : OutputIsChange(wallet, output)) {
@@ -262,6 +320,34 @@ Result CreateRateBumpTransaction(CWallet& wallet, const Txid& txid, const CCoinC
             recipients.push_back(recipient);
         }
         new_outputs_value += output.nValue;
+    }
+    if (has_mweb) {
+        for (const Output& output : tx->mweb_tx.m_transaction->GetOutputs()) {
+            mw::Coin coin;
+            if (!wallet.GetCoin(output.GetOutputID(), coin)) {
+                errors.emplace_back(Untranslated(strprintf("Unable to read MWEB output %s", output.GetOutputID().ToHex())));
+                return Result::WALLET_ERROR;
+            }
+            if (coin.IsMine() && coin.IsChange()) continue;
+            StealthAddress address;
+            if (coin.HasAddress()) {
+                address = *coin.address;
+            } else if (!wallet.GetMWWallet()->GetStealthAddress(coin, address)) {
+                errors.emplace_back(Untranslated(strprintf("Unable to read the address of MWEB output %s", output.GetOutputID().ToHex())));
+                return Result::WALLET_ERROR;
+            }
+            recipients.push_back(CRecipient{address, coin.amount, false});
+        }
+        for (const PegOutCoin& pegout : tx->mweb_tx.GetPegOuts()) {
+            CTxDestination dest;
+            ExtractDestination(pegout.GetScriptPubKey(), dest);
+            if (ScriptIsChange(wallet, pegout.GetScriptPubKey())) {
+                new_coin_control.destChange = dest;
+            } else {
+                recipients.push_back(CRecipient{dest, pegout.GetAmount(), false});
+            }
+            new_outputs_value += pegout.GetAmount();
+        }
     }
 
     // If no recipients, means that we are sending coins to a change address
@@ -278,7 +364,8 @@ Result CreateRateBumpTransaction(CWallet& wallet, const Txid& txid, const CCoinC
         new_coin_control.destChange = CNoDestination();
     }
 
-    if (coin_control.m_feerate) {
+    // A transaction without L1 inputs has no L1 size to check a fee rate against; ReplacementMinFee sets its fee.
+    if (coin_control.m_feerate && !tx->vin.empty()) {
         // The user provided a feeRate argument.
         // We calculate this here to avoid compiler warning on the cs_wallet lock
         // We need to make a temporary transaction with no input witnesses as the dummy signer expects them to be empty for external inputs
@@ -289,11 +376,11 @@ Result CreateRateBumpTransaction(CWallet& wallet, const Txid& txid, const CCoinC
         }
         temp_mtx.vout = txouts;
         const int64_t maxTxSize{CalculateMaximumSignedTxSize(CTransaction(temp_mtx), &wallet, &new_coin_control).vsize};
-        Result res = CheckFeeRate(wallet, temp_mtx, *new_coin_control.m_feerate, maxTxSize, old_fee, errors);
+        Result res = CheckFeeRate(wallet, wtx, *new_coin_control.m_feerate, maxTxSize, old_fee, errors);
         if (res != Result::OK) {
             return res;
         }
-    } else {
+    } else if (!coin_control.m_feerate) {
         // The user did not provide a feeRate argument
         new_coin_control.m_feerate = EstimateFeeRate(wallet, wtx, old_fee, new_coin_control);
     }
@@ -313,18 +400,32 @@ Result CreateRateBumpTransaction(CWallet& wallet, const Txid& txid, const CCoinC
     // We cannot source new unconfirmed inputs(bip125 rule 2)
     new_coin_control.m_min_depth = 1;
 
-    auto res = CreateTransaction(wallet, recipients, /*change_pos=*/std::nullopt, new_coin_control, false);
-    if (!res) {
-        errors.emplace_back(Untranslated("Unable to create transaction.") + Untranslated(" ") + util::ErrorString(res));
-        return Result::WALLET_ERROR;
+    const int64_t old_weight{GetTransactionWeight(*tx) + static_cast<int64_t>(tx->mweb_tx.GetMWEBWeight())};
+    for (int attempt{0};; ++attempt) {
+        auto res = CreateTransaction(wallet, recipients, /*change_pos=*/std::nullopt, new_coin_control, false);
+        if (!res) {
+            errors.emplace_back(Untranslated("Unable to create transaction.") + Untranslated(" ") + util::ErrorString(res));
+            return Result::WALLET_ERROR;
+        }
+
+        const auto& txr = *res;
+        // Write back new fee if successful
+        new_fee = txr.fee;
+
+        // Write back transaction
+        mtx = CMutableTransaction(*txr.tx);
+        mtx.mweb_tx = txr.mweb_tx;
+
+        if (!has_mweb) break;
+        const CAmount min_fee{ReplacementMinFee(wallet, mtx, new_coin_control, old_fee, old_weight)};
+        if (new_fee >= min_fee) break;
+        if (attempt == 2) {
+            errors.emplace_back(Untranslated(strprintf("Unable to create transaction. Fee %s is below the %s an MWEB replacement must pay",
+                FormatMoney(new_fee), FormatMoney(min_fee))));
+            return Result::WALLET_ERROR;
+        }
+        new_coin_control.m_mweb_min_fee = min_fee;
     }
-
-    const auto& txr = *res;
-    // Write back new fee if successful
-    new_fee = txr.fee;
-
-    // Write back transaction
-    mtx = CMutableTransaction(*txr.tx);
 
     return Result::OK;
 }
@@ -332,7 +433,8 @@ Result CreateRateBumpTransaction(CWallet& wallet, const Txid& txid, const CCoinC
 bool SignTransaction(CWallet& wallet, CMutableTransaction& mtx) {
     LOCK(wallet.cs_wallet);
 
-    if (wallet.IsWalletFlagSet(WALLET_FLAG_EXTERNAL_SIGNER)) {
+    // MWEB data is signed through a PSBT.
+    if (wallet.IsWalletFlagSet(WALLET_FLAG_EXTERNAL_SIGNER) || !mtx.mweb_tx.IsNull()) {
         // Make a blank psbt
         PartiallySignedTransaction psbtx(mtx);
 

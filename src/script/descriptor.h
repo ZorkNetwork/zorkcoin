@@ -5,8 +5,11 @@
 #ifndef BITCOIN_SCRIPT_DESCRIPTOR_H
 #define BITCOIN_SCRIPT_DESCRIPTOR_H
 
+#include <addresstype.h>
+#include <key.h>
 #include <outputtype.h>
 #include <pubkey.h>
+#include <script/mweb_descriptor.h>
 #include <uint256.h>
 
 #include <cstddef>
@@ -22,6 +25,8 @@
 class CScript;
 class SigningProvider;
 struct FlatSigningProvider;
+
+namespace mw { class Keychain; }
 
 using ExtPubKeyMap = std::unordered_map<uint32_t, CExtPubKey>;
 
@@ -167,6 +172,17 @@ struct Descriptor {
      */
     virtual bool ExpandFromCache(int pos, const DescriptorCache& read_cache, std::vector<CScript>& output_scripts, FlatSigningProvider& out) const = 0;
 
+    /** Expand a descriptor at a specified position into transaction destinations.
+     *
+     * For script-based descriptors this delegates to Expand() + ExtractDestination().
+     * MWEB descriptors delegate to the provided keychain (libmw index space).
+     *
+     * @param[in] keychain Required for MWEB descriptors when expanding live addresses.
+     */
+    virtual bool ExpandDestinations(int pos, const SigningProvider& provider, std::vector<CTxDestination>& output_destinations, FlatSigningProvider& out, DescriptorCache* write_cache, const mw::Keychain* keychain) const = 0;
+
+    virtual bool ExpandDestinationsFromCache(int pos, const DescriptorCache& read_cache, std::vector<CTxDestination>& output_destinations, FlatSigningProvider& out, const mw::Keychain* keychain) const = 0;
+
     /** Expand the private key for a descriptor at a specified position, if possible.
      *
      * @param[in] pos The position at which to expand the descriptor. If IsRange() is false, this is ignored.
@@ -208,6 +224,46 @@ struct Descriptor {
 
     /** Get the number of key expressions in this descriptor. Used only for tests */
     virtual size_t GetKeyCount() const = 0;
+
+    /** The mweb() form of this descriptor, or NONE for non-MWEB descriptors. */
+    virtual MWEBDescriptorForm GetMWEBForm() const { return MWEBDescriptorForm::NONE; }
+    /** The account checksum of a wallet-internal mweb(A_i,B_i,i,acct_cksum) descriptor. */
+    virtual std::optional<std::string> GetMWEBAccountChecksum() const { return std::nullopt; }
+    /** The stealth index of an indexed or wallet-internal mweb() descriptor. */
+    virtual std::optional<uint32_t> GetMWEBIndex() const { return std::nullopt; }
+
+    /** Extract scan (first KEY) and spend (second KEY) private material for MWEB capability forms. */
+    virtual bool GetMWEBScanSpendKeys(const SigningProvider& provider, std::optional<CKey>& scan, std::optional<CKey>& spend) const
+    {
+        (void)provider;
+        scan.reset();
+        spend.reset();
+        return false;
+    }
+
+    /** The master spend pubkey of an mweb(master_scan,master_spend,*) account, when it can be
+     * derived without private keys (a plain or unhardened spend key) or read from read_cache. */
+    virtual std::optional<CPubKey> GetMWEBAccountSpendPubKey(const SigningProvider& provider, const DescriptorCache* read_cache = nullptr) const
+    {
+        (void)provider;
+        (void)read_cache;
+        return std::nullopt;
+    }
+
+    /** The scan public key (first KEY) of an account, indexed or single-subaddress mweb() descriptor,
+     * when it can be derived without private keys. */
+    virtual std::optional<CPubKey> GetMWEBScanPubKey(const SigningProvider& provider) const
+    {
+        (void)provider;
+        return std::nullopt;
+    }
+
+    /** The root public key of the scan argument (first KEY): the key itself, or the root of an
+     * extended key expression. */
+    virtual std::optional<CPubKey> GetMWEBScanRootPubKey() const { return std::nullopt; }
+
+    /** The root public key of the spend argument (second KEY), as for GetMWEBScanRootPubKey. */
+    virtual std::optional<CPubKey> GetMWEBSpendRootPubKey() const { return std::nullopt; }
 };
 
 /** Parse a `descriptor` string. Included private keys are put in `out`.

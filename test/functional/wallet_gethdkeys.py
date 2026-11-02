@@ -15,6 +15,18 @@ from test_framework.util import (
 from test_framework.wallet_util import WalletUnlock
 
 
+def is_mweb_internal_descriptor(desc):
+  """MWEB reserved internals (mweb(A_i,B_i,i,acct_cksum)) never embed the wallet xprv."""
+  body = desc["desc"].split("#")[0]
+  return body.startswith("mweb(") and body.count(",") == 3
+
+
+def is_mweb_account_descriptor(desc):
+  """Ranged LIP-0008 account mweb(scan,spend,*) embeds HD keys; shape has three commas ends with *."""
+  body = desc["desc"].split("#")[0]
+  return body.startswith("mweb(") and body.endswith(",*)")
+
+
 class WalletGetHDKeyTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
@@ -48,6 +60,8 @@ class WalletGetHDKeyTest(BitcoinTestFramework):
 
         descs = wallet.listdescriptors(True)
         for desc in descs["descriptors"]:
+            if is_mweb_internal_descriptor(desc):
+                continue
             assert xprv in desc["desc"]
 
         self.log.info("HD pubkey can be retrieved from encrypted wallets")
@@ -68,6 +82,8 @@ class WalletGetHDKeyTest(BitcoinTestFramework):
             xpub_info = wallet.gethdkeys(active_only=True, private=True)[0]
             assert_not_equal(xpub_info["xprv"], xprv)
             for desc in wallet.listdescriptors(True)["descriptors"]:
+                if is_mweb_internal_descriptor(desc):
+                    continue
                 if desc["active"]:
                     # After encrypting, HD key was rotated and should appear in all active descriptors
                     assert xpub_info["xprv"] in desc["desc"]

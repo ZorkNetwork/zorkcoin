@@ -8,11 +8,15 @@
 
 #include <attributes.h>
 #include <consensus/amount.h>
+#include <mw/models/crypto/hash.h>
+#include <mw/models/tx/mutable_tx.h>
+#include <mweb/mweb_models.h>
 #include <primitives/transaction_identifier.h> // IWYU pragma: export
 #include <script/script.h>
 #include <serialize.h>
 
 #include <algorithm>
+#include <cassert>
 #include <compare>
 #include <cstddef>
 #include <cstdint>
@@ -20,10 +24,15 @@
 #include <limits>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <utility>
+#include <variant>
 #include <vector>
+
+// MWEB: Serialization flag to omit extension-block data from (de)serialization.
+static const int SERIALIZE_NO_MWEB = 0x20000000;
 
 /** An outpoint - a combination of a transaction hash and an index n into its vout */
 class COutPoint
@@ -134,6 +143,44 @@ public:
     std::string ToString() const;
 };
 
+using OutputIndex = std::variant<COutPoint, mw::Hash>; // MWEB
+
+/// MWEB: A generic transaction input (canonical CTxIn or MWEB output ID).
+class CTxInput
+{
+public:
+    CTxInput(mw::Hash output_id)
+        : m_input(std::move(output_id)) {}
+    CTxInput(CTxIn txin)
+        : m_input(std::move(txin)) {}
+
+    bool IsMWEB() const noexcept { return std::holds_alternative<mw::Hash>(m_input); }
+    OutputIndex GetIndex() const noexcept
+    {
+        return IsMWEB() ? OutputIndex{ToMWEB()} : OutputIndex{GetTxIn().prevout};
+    }
+
+    std::string ToString() const
+    {
+        return IsMWEB() ? ToMWEB().ToHex() : GetTxIn().ToString();
+    }
+
+    const mw::Hash& ToMWEB() const noexcept
+    {
+        assert(IsMWEB());
+        return std::get<mw::Hash>(m_input);
+    }
+
+    const CTxIn& GetTxIn() const noexcept
+    {
+        assert(!IsMWEB());
+        return std::get<CTxIn>(m_input);
+    }
+
+private:
+    std::variant<CTxIn, mw::Hash> m_input;
+};
+
 /** An output of a transaction.  It contains the public key that the next input
  * must be able to sign with to claim it.
  */
@@ -172,14 +219,59 @@ public:
     std::string ToString() const;
 };
 
+/// MWEB: A generic transaction output (canonical CTxOut or MWEB output ID).
+class CTxOutput
+{
+public:
+    CTxOutput() = default;
+    CTxOutput(mw::Hash output_id)
+        : m_idx(std::move(output_id)), m_txout(std::nullopt) {}
+    CTxOutput(OutputIndex idx, CTxOut txout)
+        : m_idx(std::move(idx)), m_txout(std::move(txout)) {}
+
+    bool IsMWEB() const noexcept { return std::holds_alternative<mw::Hash>(m_idx); }
+
+    const OutputIndex& GetIndex() const noexcept { return m_idx; }
+
+    std::string ToString() const
+    {
+        return IsMWEB() ? ToMWEB().ToHex() : GetTxOut().ToString();
+    }
+
+    const mw::Hash& ToMWEB() const noexcept
+    {
+        assert(IsMWEB());
+        return std::get<mw::Hash>(m_idx);
+    }
+
+    const CTxOut& GetTxOut() const noexcept
+    {
+        assert(!IsMWEB() && m_txout.has_value());
+        return *m_txout;
+    }
+
+    const CScript& GetScriptPubKey() const noexcept
+    {
+        assert(!IsMWEB());
+        return GetTxOut().scriptPubKey;
+    }
+
+private:
+    OutputIndex m_idx;
+    std::optional<CTxOut> m_txout;
+};
+
 struct CMutableTransaction;
 
 struct TransactionSerParams {
     const bool allow_witness;
+    const bool allow_mweb; // MWEB
     SER_PARAMS_OPFUNC
 };
-inline constexpr TransactionSerParams TX_WITH_WITNESS{.allow_witness = true};
-inline constexpr TransactionSerParams TX_NO_WITNESS{.allow_witness = false};
+inline constexpr TransactionSerParams TX_WITH_WITNESS{.allow_witness = true, .allow_mweb = true};
+inline constexpr TransactionSerParams TX_NO_WITNESS{.allow_witness = false, .allow_mweb = true};
+inline constexpr TransactionSerParams TX_NO_MWEB{.allow_witness = true, .allow_mweb = false};
+inline constexpr TransactionSerParams TX_NO_WITNESS_NO_MWEB{.allow_witness = false, .allow_mweb = false};
 
 /**
  * Basic transaction serialization format:
@@ -202,11 +294,15 @@ template<typename Stream, typename TxType>
 void UnserializeTransaction(TxType& tx, Stream& s, const TransactionSerParams& params)
 {
     const bool fAllowWitness = params.allow_witness;
+    const bool fAllowMWEB = params.allow_mweb; // MWEB
 
     s >> tx.version;
     unsigned char flags = 0;
     tx.vin.clear();
     tx.vout.clear();
+    tx.mweb_tx.SetNull(); // MWEB
+    tx.m_hogEx = false; // MWEB
+    tx.m_had_attached_mweb = false; // MWEB
     /* Try to read the vin. In case the dummy is there, this will be read as an empty vector. */
     s >> tx.vin;
     if (tx.vin.size() == 0 && fAllowWitness) {
@@ -231,6 +327,22 @@ void UnserializeTransaction(TxType& tx, Stream& s, const TransactionSerParams& p
             throw std::ios_base::failure("Superfluous witness record");
         }
     }
+    if ((flags & 8) && fAllowMWEB) { // MWEB
+        flags ^= 8;
+
+        s >> tx.mweb_tx;
+        // Sticky only when a present payload cannot survive Finalized() (e.g.
+        // feature-0 inputs). Final payloads use HasMWEBTx(); intentional strip
+        // of those must not leave a sticky bit that fails CheckBlock.
+        tx.m_had_attached_mweb = !tx.mweb_tx.IsNull() && !tx.mweb_tx.IsFinal();
+        if (tx.mweb_tx.IsNull()) {
+            if (tx.vout.empty()) {
+                throw std::ios_base::failure("Missing HogEx output");
+            }
+
+            tx.m_hogEx = true;
+        }
+    }
     if (flags) {
         /* Unknown flag in the serialization */
         throw std::ios_base::failure("Unknown transaction optional data");
@@ -242,6 +354,7 @@ template<typename Stream, typename TxType>
 void SerializeTransaction(const TxType& tx, Stream& s, const TransactionSerParams& params)
 {
     const bool fAllowWitness = params.allow_witness;
+    const bool fAllowMWEB = params.allow_mweb; // MWEB
 
     s << tx.version;
     unsigned char flags = 0;
@@ -250,6 +363,11 @@ void SerializeTransaction(const TxType& tx, Stream& s, const TransactionSerParam
         /* Check whether witnesses need to be serialized. */
         if (tx.HasWitness()) {
             flags |= 1;
+        }
+    }
+    if (fAllowMWEB) { // MWEB
+        if (tx.m_hogEx || !tx.mweb_tx.IsNull()) {
+            flags |= 8;
         }
     }
     if (flags) {
@@ -264,6 +382,9 @@ void SerializeTransaction(const TxType& tx, Stream& s, const TransactionSerParam
         for (size_t i = 0; i < tx.vin.size(); i++) {
             s << tx.vin[i].scriptWitness.stack;
         }
+    }
+    if (flags & 8) { // MWEB
+        s << tx.mweb_tx;
     }
     s << tx.nLockTime;
 }
@@ -298,6 +419,12 @@ public:
     const std::vector<CTxOut> vout;
     const uint32_t version;
     const uint32_t nLockTime;
+    const MWEB::Tx mweb_tx; // MWEB
+
+    /** Memory only. */
+    const bool m_hogEx; // MWEB
+    /** Memory only. True if a non-null MWEB payload was present before Finalized() drop. */
+    const bool m_had_attached_mweb; // MWEB
 
 private:
     /** Memory only. */
@@ -365,6 +492,17 @@ public:
     std::string ToString() const;
 
     bool HasWitness() const { return m_has_witness; }
+
+    // MWEB
+    bool HasMWEBTx() const noexcept { return !mweb_tx.IsNull(); }
+    bool IsHogEx() const noexcept { return m_hogEx; }
+    bool HadAttachedMWEB() const noexcept { return m_had_attached_mweb; }
+    bool IsMWEBOnly() const noexcept { return HasMWEBTx() && vin.empty() && vout.empty(); }
+
+    std::vector<CTxInput> GetInputs() const noexcept;
+    CTxOutput GetOutput(size_t index) const noexcept;
+    CTxOutput GetOutput(const OutputIndex& idx) const noexcept;
+    std::vector<CTxOutput> GetOutputs() const noexcept;
 };
 
 /** A mutable version of CTransaction. */
@@ -374,9 +512,22 @@ struct CMutableTransaction
     std::vector<CTxOut> vout;
     uint32_t version;
     uint32_t nLockTime;
+    mw::MutableTx mweb_tx; // MWEB
+
+    /** Memory only. */
+    bool m_hogEx = false; // MWEB
+    /** Memory only. True if a non-null MWEB payload was present before Finalized() drop. */
+    bool m_had_attached_mweb = false; // MWEB
 
     explicit CMutableTransaction();
     explicit CMutableTransaction(const CTransaction& tx);
+
+    /** Drop attached MWEB and clear the non-final sticky bit (canonical vtx / BIP152). */
+    void ClearAttachedMWEB()
+    {
+        mweb_tx.SetNull();
+        m_had_attached_mweb = false;
+    }
 
     template <typename Stream>
     inline void Serialize(Stream& s) const {
@@ -412,6 +563,11 @@ struct CMutableTransaction
         }
         return false;
     }
+
+    // MWEB
+    bool HasMWEBTx() const noexcept { return !mweb_tx.IsNull(); }
+    bool HadAttachedMWEB() const noexcept { return m_had_attached_mweb; }
+    bool IsMWEBOnly() const noexcept { return HasMWEBTx() && vin.empty() && vout.empty(); }
 };
 
 typedef std::shared_ptr<const CTransaction> CTransactionRef;

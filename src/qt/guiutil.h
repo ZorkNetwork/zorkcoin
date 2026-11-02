@@ -85,6 +85,9 @@ namespace GUIUtil
     // Returns true if given address+amount meets "dust" definition
     bool isDust(interfaces::Node& node, const QString& address, const CAmount& amount);
 
+    // MWEB: true if address is stealth/MWEB and consensus has not activated yet
+    bool isMWEBAddressBeforeActivated(interfaces::Node& node, const QString& address);
+
     // HTML escaping for rich text controls
     QString HtmlEscape(const QString& str, bool fMultiLine=false);
     QString HtmlEscape(const std::string& str, bool fMultiLine=false);

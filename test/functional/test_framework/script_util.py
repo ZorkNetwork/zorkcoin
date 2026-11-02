@@ -65,6 +65,9 @@ assert_equal(MIN_PADDING, 5)
 
 # This script cannot be spent, allowing dust output values under
 # standardness checks
+# The following script constant consists of a single push of 21 bytes of 'a':
+DUMMY_P2WPKH_SCRIPT = CScript([b'a' * 21])
+
 DUMMY_MIN_OP_RETURN_SCRIPT = CScript([OP_RETURN] + ([OP_0] * (MIN_PADDING - 1)))
 assert_equal(len(DUMMY_MIN_OP_RETURN_SCRIPT), MIN_PADDING)
 
@@ -134,6 +137,10 @@ def script_to_p2sh_p2wsh_script(script):
     script = check_script(script)
     p2shscript = CScript([OP_0, sha256(script)])
     return script_to_p2sh_script(p2shscript)
+
+
+def hogaddr_script(mweb_hash):
+    return program_to_witness_script(8, mweb_hash)
 
 def bulk_vout(tx, target_vsize):
     if target_vsize < tx.get_vsize():

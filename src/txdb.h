@@ -10,6 +10,7 @@
 #include <dbwrapper.h>
 #include <kernel/caches.h>
 #include <kernel/cs_main.h>
+#include <mw/node/coins_view.h> // MWEB
 #include <sync.h>
 #include <util/fs.h>
 
@@ -42,6 +43,7 @@ protected:
     Mutex m_db_mutex;
     std::unique_ptr<CDBWrapper> m_db;
     std::shared_future<void> m_compaction;
+    mw::ICoinsView::Ptr mweb_view; // MWEB
 public:
     explicit CCoinsViewDB(DBParams db_params, CoinsViewOptions options);
     ~CCoinsViewDB() override;
@@ -51,9 +53,14 @@ public:
     bool HaveCoin(const COutPoint& outpoint) const override;
     uint256 GetBestBlock() const override;
     std::vector<uint256> GetHeadBlocks() const override;
-    void BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block_hash) override;
+    void BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block_hash, const mw::CoinsViewCache::Ptr& mweb_cache = nullptr) override;
     //! Get a cursor to iterate over the whole state.
     std::unique_ptr<CCoinsViewCursor> Cursor() const;
+
+    CDBWrapper* GetDB() noexcept { return m_db.get(); }
+    void SetMWEBView(const mw::ICoinsView::Ptr& view) { mweb_view = view; }
+    mw::ICoinsView::Ptr GetMWEBView() const final { return mweb_view; }
+    bool GetMWEBCoin(const mw::Hash& output_id, Output& coin) const final;
 
     //! Whether an unsupported database format is used.
     bool NeedsUpgrade();

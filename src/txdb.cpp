@@ -8,6 +8,7 @@
 #include <coins.h>
 #include <dbwrapper.h>
 #include <logging/timer.h>
+#include <mweb/mweb_db.h> // MWEB
 #include <primitives/transaction.h>
 #include <random.h>
 #include <serialize.h>
@@ -132,9 +133,9 @@ std::vector<uint256> CCoinsViewDB::GetHeadBlocks() const {
     return vhashHeadBlocks;
 }
 
-void CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block_hash)
+void CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block_hash, const mw::CoinsViewCache::Ptr& mweb_cache)
 {
-    CDBBatch batch(*m_db);
+    auto batch = std::make_shared<CDBBatch>(*m_db);
     size_t count = 0;
     const size_t dirty_count{cursor.GetDirtyCount()};
     assert(!block_hash.IsNull());
@@ -160,25 +161,25 @@ void CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block
     // transition from old_tip to block_hash.
     // A vector is used for future extensibility, as we may want to support
     // interrupting after partial writes from multiple independent reorgs.
-    batch.Erase(DB_BEST_BLOCK);
-    batch.Write(DB_HEAD_BLOCKS, Vector(block_hash, old_tip));
+    batch->Erase(DB_BEST_BLOCK);
+    batch->Write(DB_HEAD_BLOCKS, Vector(block_hash, old_tip));
 
     for (auto it{cursor.Begin()}; it != cursor.End();) {
         if (it->second.IsDirty()) {
             CoinEntry entry(&it->first);
             if (it->second.coin.IsSpent()) {
-                batch.Erase(entry);
+                batch->Erase(entry);
             } else {
-                batch.Write(entry, it->second.coin);
+                batch->Write(entry, it->second.coin);
             }
         }
         count++;
         it = cursor.NextAndMaybeErase(*it);
-        if (batch.ApproximateSize() > m_options.batch_write_bytes) {
-            LogDebug(BCLog::COINDB, "Writing partial batch of %.2f MiB\n", batch.ApproximateSize() / double(1_MiB));
+        if (batch->ApproximateSize() > m_options.batch_write_bytes) {
+            LogDebug(BCLog::COINDB, "Writing partial batch of %.2f MiB\n", batch->ApproximateSize() / double(1_MiB));
 
-            m_db->WriteBatch(batch);
-            batch.Clear();
+            m_db->WriteBatch(*batch);
+            batch->Clear();
             if (m_options.simulate_crash_ratio) {
                 static FastRandomContext rng;
                 if (rng.randrange(m_options.simulate_crash_ratio) == 0) {
@@ -189,13 +190,33 @@ void CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block
         }
     }
 
-    // In the last batch, mark the database as consistent with block_hash again.
-    batch.Erase(DB_HEAD_BLOCKS);
-    batch.Write(DB_BEST_BLOCK, block_hash);
+    // MWEB: flush extension block state using the same batch before publishing the new tip.
+    if (mweb_cache) {
+        mweb_cache->Flush(std::make_unique<MWEB::DBBatch>(m_db.get(), batch));
+    }
 
-    LogDebug(BCLog::COINDB, "Writing final batch of %.2f MiB\n", batch.ApproximateSize() / double(1_MiB));
-    m_db->WriteBatch(batch);
+    // In the last batch, mark the database as consistent with block_hash again.
+    batch->Erase(DB_HEAD_BLOCKS);
+    batch->Write(DB_BEST_BLOCK, block_hash);
+
+    LogDebug(BCLog::COINDB, "Writing final batch of %.2f MiB\n", batch->ApproximateSize() / double(1_MiB));
+    // MWEB: sync the batch that publishes the new tip before Compact() deletes the old MMR files.
+    m_db->WriteBatch(*batch, /*fSync=*/mweb_cache != nullptr);
     LogDebug(BCLog::COINDB, "Committed %u changed transaction outputs (out of %u) to coin database...", (unsigned int)dirty_count, (unsigned int)count);
+
+    if (mweb_cache) {
+        mweb_cache->Compact();
+    }
+}
+
+bool CCoinsViewDB::GetMWEBCoin(const mw::Hash& output_id, Output& coin) const
+{
+    if (!GetMWEBView()) return false;
+    if (auto pUTXO = GetMWEBView()->GetUTXO(output_id)) {
+        coin = pUTXO->GetOutput();
+        return true;
+    }
+    return false;
 }
 
 size_t CCoinsViewDB::EstimateSize() const

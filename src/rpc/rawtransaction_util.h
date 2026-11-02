@@ -60,6 +60,14 @@ void AddOutputs(CMutableTransaction& rawTx, const UniValue& outputs_in);
 /** Create a transaction from univalue parameters */
 CMutableTransaction ConstructTransaction(const UniValue& inputs_in, const UniValue& outputs_in, const UniValue& locktime, std::optional<bool> rbf, uint32_t version);
 
+/**
+ * Create a transaction from univalue parameters, with MWEB inputs ({"mweb_out": <output id>})
+ * and MWEB addresses placed in the transaction's MWEB part. With MWEB-only inputs,
+ * transparent destinations become kernel peg-outs. Mixed transparent and MWEB inputs
+ * are rejected. When allow_mweb is false, any MWEB input or address is rejected.
+ */
+CMutableTransaction ConstructTransaction(const UniValue& inputs_in, const UniValue& outputs_in, const UniValue& locktime, std::optional<bool> rbf, uint32_t version, bool allow_mweb);
+
 enum class ElisionMode {
     None,        ///< no elision, all top-level fields rendered normally
     WithSummary, ///< first field carries elision_summary as "...", rest skipped

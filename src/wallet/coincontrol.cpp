@@ -14,7 +14,37 @@ CCoinControl::CCoinControl()
 
 bool CCoinControl::HasSelected() const
 {
+    return !m_selected.empty() || !m_mweb_selected.empty();
+}
+
+bool CCoinControl::HasL1Selected() const
+{
     return !m_selected.empty();
+}
+
+bool CCoinControl::HasMWEBSelected() const
+{
+    return !m_mweb_selected.empty();
+}
+
+bool CCoinControl::IsMWEBSelected(const mw::Hash& output_id) const
+{
+    return m_mweb_selected.contains(output_id);
+}
+
+void CCoinControl::SelectMWEB(const mw::Hash& output_id)
+{
+    m_mweb_selected.insert(output_id);
+}
+
+void CCoinControl::UnSelectMWEB(const mw::Hash& output_id)
+{
+    m_mweb_selected.erase(output_id);
+}
+
+std::vector<mw::Hash> CCoinControl::ListMWEBSelected() const
+{
+    return {m_mweb_selected.begin(), m_mweb_selected.end()};
 }
 
 bool CCoinControl::IsSelected(const COutPoint& outpoint) const
@@ -52,6 +82,7 @@ void CCoinControl::UnSelect(const COutPoint& outpoint)
 void CCoinControl::UnSelectAll()
 {
     m_selected.clear();
+    m_mweb_selected.clear();
 }
 
 std::vector<COutPoint> CCoinControl::ListSelected() const

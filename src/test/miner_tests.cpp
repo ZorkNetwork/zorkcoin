@@ -499,10 +499,10 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
         CTxMemPool& tx_mempool{MakeMempool()};
         LOCK(tx_mempool.cs);
 
-        // orphan in tx_mempool, template creation fails
+        // orphan in tx_mempool is skipped rather than poisoning the template
         hash = tx.GetHash();
         TryAddToMempool(tx_mempool, entry.Fee(LOWFEE).Time(Now<NodeSeconds>()).FromTx(tx));
-        BOOST_CHECK_EXCEPTION(mining->createNewBlock(options, /*cooldown=*/false), std::runtime_error, HasReason("bad-txns-inputs-missingorspent"));
+        BOOST_REQUIRE(mining->createNewBlock(options, /*cooldown=*/false));
     }
 
     {
@@ -538,8 +538,8 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
         hash = tx.GetHash();
         // give it a fee so it'll get mined
         TryAddToMempool(tx_mempool, entry.Fee(LOWFEE).Time(Now<NodeSeconds>()).SpendsCoinbase(false).FromTx(tx));
-        // Should throw bad-cb-multiple
-        BOOST_CHECK_EXCEPTION(mining->createNewBlock(options, /*cooldown=*/false), std::runtime_error, HasReason("bad-cb-multiple"));
+        // Extra coinbase in the mempool is skipped (CSV/sequence checks reject it).
+        BOOST_REQUIRE(mining->createNewBlock(options, /*cooldown=*/false));
     }
 
     {
@@ -556,7 +556,8 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
         tx.vout[0].scriptPubKey = CScript() << OP_2;
         hash = tx.GetHash();
         TryAddToMempool(tx_mempool, entry.Fee(HIGHFEE).Time(Now<NodeSeconds>()).SpendsCoinbase(true).FromTx(tx));
-        BOOST_CHECK_EXCEPTION(mining->createNewBlock(options, /*cooldown=*/false), std::runtime_error, HasReason("bad-txns-inputs-missingorspent"));
+        // Conflicting spends are skipped so the template stays valid.
+        BOOST_REQUIRE(mining->createNewBlock(options, /*cooldown=*/false));
     }
 
     {
@@ -713,12 +714,10 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
     auto block_template = mining->createNewBlock(options, /*cooldown=*/false);
     BOOST_REQUIRE(block_template);
 
-    // None of the of the absolute height/time locked tx should have made
-    // it into the template because we still check IsFinalTx in CreateNewBlock,
-    // but relative locked txs will if inconsistently added to mempool.
-    // For now these will still generate a valid template until BIP68 soft fork
+    // Absolute height/time locked txs are excluded via IsFinalTx. Relative
+    // BIP68 locks are excluded because CSV is active from genesis.
     CBlock block{block_template->getBlock()};
-    BOOST_CHECK_EQUAL(block.vtx.size(), 3U);
+    BOOST_CHECK_EQUAL(block.vtx.size(), 1U);
     // However if we advance height by 1 and time by SEQUENCE_LOCK_TIME, all of them should be mined
     for (int i = 0; i < CBlockIndex::nMedianTimeSpan; ++i) {
         CBlockIndex* ancestor{Assert(m_node.chainman->ActiveChain().Tip()->GetAncestor(m_node.chainman->ActiveChain().Tip()->nHeight - i))};

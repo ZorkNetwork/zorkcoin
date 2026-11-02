@@ -3,7 +3,6 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qt/test/addressbooktests.h>
-#include <qt/test/util.h>
 #include <test/util/setup_common.h>
 
 #include <interfaces/chain.h>
@@ -27,8 +26,10 @@
 #include <QApplication>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QTableView>
 #include <QTimer>
+#include <QWidget>
 
 using wallet::AddWallet;
 using wallet::CWallet;
@@ -53,7 +54,18 @@ void EditAddressAndSubmit(
     dialog->findChild<QLineEdit*>("labelEdit")->setText(label);
     dialog->findChild<QValidatedLineEdit*>("addressEdit")->setText(address);
 
-    ConfirmMessage(&warning_text, 5ms);
+    // MWEB: an accepted address shows no message, and the answer must not outlive warning_text to fire in a message box of a later test.
+    QTimer answer;
+    answer.setSingleShot(true);
+    QObject::connect(&answer, &QTimer::timeout, [&warning_text] {
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            if (auto* message_box = qobject_cast<QMessageBox*>(widget)) {
+                warning_text = message_box->text();
+                message_box->defaultButton()->click();
+            }
+        }
+    });
+    answer.start(5ms);
     dialog->accept();
     QCOMPARE(warning_text, expected_msg);
 }

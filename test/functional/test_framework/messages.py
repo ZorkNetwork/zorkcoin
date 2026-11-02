@@ -25,9 +25,14 @@ from io import BytesIO
 import math
 import random
 import socket
+import struct
 import time
 import unittest
 
+try:
+    import blake3 as BLAKE3  # type: ignore[import-not-found]
+except ImportError:
+    from test_framework.crypto import blake3 as BLAKE3
 from test_framework.crypto.siphash import siphash256
 from test_framework.util import (
     assert_equal,
@@ -49,7 +54,7 @@ MAX_BIP125_RBF_SEQUENCE = 0xfffffffd  # Sequence number that is rbf-opt-in (BIP 
 MAX_SEQUENCE_NONFINAL = 0xfffffffe  # Sequence number that is csv-opt-out (BIP 68)
 SEQUENCE_FINAL = 0xffffffff  # Sequence number that disables nLockTime if set for every input of a tx
 
-MAX_PROTOCOL_MESSAGE_LENGTH = 4000000  # Maximum length of incoming protocol messages
+MAX_PROTOCOL_MESSAGE_LENGTH = 32 * 1000 * 1000  # Maximum length of incoming protocol messages (Litecoin/MWEB)
 MAX_HEADERS_RESULTS = 2000  # Number of headers sent in one getheaders result
 MAX_INV_SIZE = 50000  # Maximum number of entries in an 'inv' protocol message
 
@@ -60,6 +65,8 @@ NODE_WITNESS = (1 << 3)
 NODE_COMPACT_FILTERS = (1 << 6)
 NODE_NETWORK_LIMITED = (1 << 10)
 NODE_P2P_V2 = (1 << 11)
+NODE_MWEB_LIGHT_CLIENT = (1 << 23)
+NODE_MWEB = (1 << 24)
 
 MSG_TX = 1
 MSG_BLOCK = 2
@@ -67,8 +74,17 @@ MSG_FILTERED_BLOCK = 3
 MSG_CMPCT_BLOCK = 4
 MSG_WTX = 5
 MSG_WITNESS_FLAG = 1 << 30
-MSG_TYPE_MASK = 0xffffffff >> 2
+MSG_MWEB_FLAG = 1 << 29
+MSG_TYPE_MASK = 0xffffffff >> 3
 MSG_WITNESS_TX = MSG_TX | MSG_WITNESS_FLAG
+MSG_MWEB_BLOCK = MSG_BLOCK | MSG_WITNESS_FLAG | MSG_MWEB_FLAG
+MSG_MWEB_TX = MSG_WITNESS_TX | MSG_MWEB_FLAG
+MSG_MWEB_HEADER = 8 | MSG_MWEB_FLAG
+MSG_MWEB_LEAFSET = 9 | MSG_MWEB_FLAG
+
+MWEB_UTXO_FORMAT_FULL = 0
+MWEB_UTXO_FORMAT_HASH_ONLY = 1
+MWEB_UTXO_FORMAT_COMPACT = 2
 
 FILTER_TYPE_BASIC = 0
 
@@ -178,6 +194,52 @@ def uint256_from_compact(c):
     return v
 
 
+def deser_fixed_bytes(f, size):
+    r = []
+    for i in range(size):
+        r.append(struct.unpack("B", f.read(1))[0])
+    return r
+
+def ser_fixed_bytes(u, size):
+    rs = b""
+    for i in range(size):
+        rs += struct.pack("B", u[i])
+        #rs += struct.pack("B", u & 0xFF)
+        #u >>= 8
+    return rs
+
+
+def deser_pubkey(f):
+    r = 0
+    for i in range(33):
+        t = struct.unpack("B", f.read(1))[0]
+        r += t << (i * 8)
+    return r
+
+def ser_pubkey(u):
+    rs = b""
+    for _ in range(33):
+        rs += struct.pack("B", u & 0xFF)
+        u >>= 8
+    return rs
+
+
+def deser_signature(f):
+    r = 0
+    for i in range(64):
+        t = struct.unpack("B", f.read(1))[0]
+        r += t << (i * 8)
+    return r
+
+def ser_signature(u):
+    rs = b""
+    for _ in range(64):
+        rs += struct.pack("B", u & 0xFF)
+        u >>= 8
+    return rs
+
+
+
 # deser_function_name: Allow for an alternate deserialization function on the
 # entries in the vector.
 def deser_vector(f, c, deser_function_name=None):
@@ -251,6 +313,9 @@ def from_hex(obj, hex_string):
     use obj.serialize().hex()"""
     obj.deserialize(BytesIO(bytes.fromhex(hex_string)))
     return obj
+
+
+FromHex = from_hex
 
 
 def tx_from_hex(hex_string):
@@ -430,6 +495,10 @@ class CInv:
         MSG_FILTERED_BLOCK: "filtered Block",
         MSG_CMPCT_BLOCK: "CompactBlock",
         MSG_WTX: "WTX",
+        MSG_TX | MSG_WITNESS_FLAG | MSG_MWEB_FLAG: "MWEB Tx",
+        MSG_BLOCK | MSG_WITNESS_FLAG | MSG_MWEB_FLAG: "MWEB Block",
+        MSG_MWEB_HEADER: "MWEB Header",
+        MSG_MWEB_LEAFSET: "MWEB Leafset",
     }
 
     def __init__(self, t=0, h=0):
@@ -615,7 +684,7 @@ class CTxWitness:
 
 
 class CTransaction:
-    __slots__ = ("nLockTime", "version", "vin", "vout", "wit")
+    __slots__ = ("nLockTime", "version", "vin", "vout", "wit", "mweb_tx", "hogex")
 
     def __init__(self, tx=None):
         if tx is None:
@@ -624,12 +693,16 @@ class CTransaction:
             self.vout = []
             self.wit = CTxWitness()
             self.nLockTime = 0
+            self.mweb_tx = None
+            self.hogex = False
         else:
             self.version = tx.version
             self.vin = copy.deepcopy(tx.vin)
             self.vout = copy.deepcopy(tx.vout)
             self.nLockTime = tx.nLockTime
             self.wit = copy.deepcopy(tx.wit)
+            self.mweb_tx = tx.mweb_tx
+            self.hogex = tx.hogex
 
     def deserialize(self, f):
         self.version = int.from_bytes(f.read(4), "little")
@@ -644,11 +717,20 @@ class CTransaction:
                 self.vout = deser_vector(f, CTxOut)
         else:
             self.vout = deser_vector(f, CTxOut)
-        if flags != 0:
+        if flags & 1:
             self.wit.vtxinwit = [CTxInWitness() for _ in range(len(self.vin))]
             self.wit.deserialize(f)
         else:
             self.wit = CTxWitness()
+
+        if flags & 8:
+            self.mweb_tx = deser_mweb_tx(f)
+            if self.mweb_tx is None:
+                self.hogex = True
+        else:
+            self.mweb_tx = None
+            self.hogex = False
+
         self.nLockTime = int.from_bytes(f.read(4), "little")
 
     def serialize_without_witness(self):
@@ -682,10 +764,50 @@ class CTransaction:
         r += self.nLockTime.to_bytes(4, "little")
         return r
 
-    # Regular serialization is with witness -- must explicitly
-    # call serialize_without_witness to exclude witness data.
+    def serialize_with_mweb(self):
+        flags = 0
+        if not self.wit.is_null():
+            flags |= 1
+        if self.hogex or self.mweb_tx is not None:
+            flags |= 8
+        r = b""
+        r += self.version.to_bytes(4, "little")
+        if flags:
+            dummy = []
+            r += ser_vector(dummy)
+            r += flags.to_bytes(1, "little")
+        r += ser_vector(self.vin)
+        r += ser_vector(self.vout)
+        if flags & 1:
+            if (len(self.wit.vtxinwit) != len(self.vin)):
+                self.wit.vtxinwit = self.wit.vtxinwit[:len(self.vin)]
+                for _ in range(len(self.wit.vtxinwit), len(self.vin)):
+                    self.wit.vtxinwit.append(CTxInWitness())
+            r += self.wit.serialize()
+        if flags & 8:
+            r += ser_mweb_tx(self.mweb_tx)
+        r += self.nLockTime.to_bytes(4, "little")
+        return r
+
+    # Regular serialization is with mweb -- must explicitly
+    # call serialize_with_witness to exclude mweb data or
+    # serialize_without_witness to exclude witness & mweb data.
     def serialize(self):
-        return self.serialize_with_witness()
+        return self.serialize_with_mweb()
+
+    @property
+    def sha256(self):
+        return self.txid_int
+
+    @property
+    def hash(self):
+        return self.txid_hex
+
+    def rehash(self):
+        return self.txid_int
+
+    def calc_sha256(self, with_witness=False):
+        return self.wtxid_int if with_witness else self.txid_int
 
     @property
     def wtxid(self):
@@ -736,6 +858,9 @@ class CTransaction:
     def __repr__(self):
         return "CTransaction(version=%i vin=%s vout=%s wit=%s nLockTime=%i)" \
             % (self.version, repr(self.vin), repr(self.vout), repr(self.wit), self.nLockTime)
+
+    def __eq__(self, other):
+        return isinstance(other, CTransaction) and repr(self) == repr(other)
 
 
 class CBlockHeader:
@@ -792,29 +917,58 @@ class CBlockHeader:
         """Return block header hash as integer."""
         return uint256_from_str(hash256(self._serialize_header()))
 
+    @property
+    def hash(self):
+        return self.hash_hex
+
+    @property
+    def sha256(self):
+        return self.hash_int
+
+    def calc_sha256(self):
+        return self.hash_int
+
+    def rehash(self):
+        return self.hash_int
+
     def __repr__(self):
         return "CBlockHeader(nVersion=%i hashPrevBlock=%064x hashMerkleRoot=%064x nTime=%s nBits=%08x nNonce=%08x)" \
             % (self.nVersion, self.hashPrevBlock, self.hashMerkleRoot,
                time.ctime(self.nTime), self.nBits, self.nNonce)
 
+    def __eq__(self, other):
+        if not isinstance(other, CBlockHeader):
+            return NotImplemented
+        return (self.nVersion, self.hashPrevBlock, self.hashMerkleRoot, self.nTime, self.nBits, self.nNonce) == (
+            other.nVersion, other.hashPrevBlock, other.hashMerkleRoot, other.nTime, other.nBits, other.nNonce)
+
 BLOCK_HEADER_SIZE = len(CBlockHeader().serialize())
 assert_equal(BLOCK_HEADER_SIZE, 80)
 
 class CBlock(CBlockHeader):
-    __slots__ = ("vtx",)
+    __slots__ = ("vtx", "mweb_block")
 
     def __init__(self, header=None):
         super().__init__(header)
         self.vtx = []
+        self.mweb_block = None
 
     def deserialize(self, f):
         super().deserialize(f)
         self.vtx = deser_vector(f, CTransaction)
+        if len(self.vtx) > 0 and self.vtx[-1].hogex:
+            self.mweb_block = deser_mweb_block(f)
 
-    def serialize(self, with_witness=True):
+    def serialize(self, with_witness=True, with_mweb=None):
         r = b""
         r += super().serialize()
-        if with_witness:
+        if with_mweb is None:
+            with_mweb = any(tx.hogex or tx.mweb_tx is not None for tx in self.vtx)
+        if with_mweb and with_witness:
+            r += ser_vector(self.vtx, "serialize_with_mweb")
+            if len(self.vtx) > 0 and self.vtx[-1].hogex:
+                r += ser_mweb_block(self.mweb_block)
+        elif with_witness:
             r += ser_vector(self.vtx, "serialize_with_witness")
         else:
             r += ser_vector(self.vtx, "serialize_without_witness")
@@ -889,20 +1043,25 @@ class PrefilledTransaction:
         self.tx = CTransaction()
         self.tx.deserialize(f)
 
-    def serialize(self, with_witness=True):
+    def serialize(self, with_witness=True, with_mweb=True):
         r = b""
         r += ser_compact_size(self.index)
-        if with_witness:
+        if with_witness and with_mweb:
+            r += self.tx.serialize_with_mweb()
+        elif with_witness:
             r += self.tx.serialize_with_witness()
         else:
             r += self.tx.serialize_without_witness()
         return r
 
     def serialize_without_witness(self):
-        return self.serialize(with_witness=False)
+        return self.serialize(with_witness=False, with_mweb=False)
 
     def serialize_with_witness(self):
-        return self.serialize(with_witness=True)
+        return self.serialize(with_witness=True, with_mweb=False)
+
+    def serialize_with_mweb(self):
+        return self.serialize(with_witness=True, with_mweb=True)
 
     def __repr__(self):
         return "PrefilledTransaction(index=%d, tx=%s)" % (self.index, repr(self.tx))
@@ -911,7 +1070,7 @@ class PrefilledTransaction:
 # This is what we send on the wire, in a cmpctblock message.
 class P2PHeaderAndShortIDs:
     __slots__ = ("header", "nonce", "prefilled_txn", "prefilled_txn_length",
-                 "shortids", "shortids_length")
+                 "shortids", "shortids_length", "mweb_block")
 
     def __init__(self):
         self.header = CBlockHeader()
@@ -920,6 +1079,7 @@ class P2PHeaderAndShortIDs:
         self.shortids = []
         self.prefilled_txn_length = 0
         self.prefilled_txn = []
+        self.mweb_block = None
 
     def deserialize(self, f):
         self.header.deserialize(f)
@@ -932,16 +1092,22 @@ class P2PHeaderAndShortIDs:
         self.prefilled_txn = deser_vector(f, PrefilledTransaction)
         self.prefilled_txn_length = len(self.prefilled_txn)
 
-    # When using version 2 compact blocks, we must serialize with_witness.
-    def serialize(self, with_witness=False):
+        if f.tell() < len(f.getbuffer()):
+            self.mweb_block = deser_mweb_block(f)
+        else:
+            self.mweb_block = None
+
+    def serialize(self, version=1):
         r = b""
         r += self.header.serialize()
         r += self.nonce.to_bytes(8, "little")
         r += ser_compact_size(self.shortids_length)
         for x in self.shortids:
-            # We only want the first 6 bytes
             r += x.to_bytes(8, "little")[0:6]
-        if with_witness:
+        if version >= 3:
+            r += ser_vector(self.prefilled_txn, "serialize_with_mweb")
+            r += ser_mweb_block(self.mweb_block)
+        elif version == 2:
             r += ser_vector(self.prefilled_txn, "serialize_with_witness")
         else:
             r += ser_vector(self.prefilled_txn, "serialize_without_witness")
@@ -956,7 +1122,13 @@ class P2PHeaderAndShortIDs:
 class P2PHeaderAndShortWitnessIDs(P2PHeaderAndShortIDs):
     __slots__ = ()
     def serialize(self):
-        return super().serialize(with_witness=True)
+        return super().serialize(version=2)
+
+
+class P2PHeaderAndShortMWEBIDs(P2PHeaderAndShortIDs):
+    __slots__ = ()
+    def serialize(self):
+        return super().serialize(version=3)
 
 # Calculate the BIP 152-compact blocks shortid for a given transaction hash
 def calculate_shortid(k0, k1, tx_hash):
@@ -968,7 +1140,7 @@ def calculate_shortid(k0, k1, tx_hash):
 # This version gets rid of the array lengths, and reinterprets the differential
 # encoding into indices that can be used for lookup.
 class HeaderAndShortIDs:
-    __slots__ = ("header", "nonce", "prefilled_txn", "shortids", "use_witness")
+    __slots__ = ("header", "nonce", "prefilled_txn", "shortids", "use_witness", "mweb_block")
 
     def __init__(self, p2pheaders_and_shortids = None):
         self.header = CBlockHeader()
@@ -976,6 +1148,7 @@ class HeaderAndShortIDs:
         self.shortids = []
         self.prefilled_txn = []
         self.use_witness = False
+        self.mweb_block = None
 
         if p2pheaders_and_shortids is not None:
             self.header = p2pheaders_and_shortids.header
@@ -986,8 +1159,14 @@ class HeaderAndShortIDs:
                 self.prefilled_txn.append(PrefilledTransaction(x.index + last_index + 1, x.tx))
                 last_index = self.prefilled_txn[-1].index
 
+    # MWEB: when set, compact blocks without an MWEB block are also serialized
+    # as version 3, with an empty MWEB block field, as a node with NODE_MWEB expects.
+    serialize_mweb = False
+
     def to_p2p(self):
-        if self.use_witness:
+        if self.mweb_block is not None or self.serialize_mweb:
+            ret = P2PHeaderAndShortMWEBIDs()
+        elif self.use_witness:
             ret = P2PHeaderAndShortWitnessIDs()
         else:
             ret = P2PHeaderAndShortIDs()
@@ -995,6 +1174,7 @@ class HeaderAndShortIDs:
         ret.nonce = self.nonce
         ret.shortids_length = len(self.shortids)
         ret.shortids = self.shortids
+        ret.mweb_block = self.mweb_block
         ret.prefilled_txn_length = len(self.prefilled_txn)
         ret.prefilled_txn = []
         last_index = -1
@@ -1012,19 +1192,23 @@ class HeaderAndShortIDs:
         return [ key0, key1 ]
 
     # Version 2 compact blocks use wtxid in shortids (rather than txid)
-    def initialize_from_block(self, block, nonce=0, prefill_list=None, use_witness=False):
+    def initialize_from_block(self, block, nonce=0, prefill_list=None, use_witness=False, version=1):
         if prefill_list is None:
             prefill_list = [0]
+            # MWEB: the node prefills the HogEx, which is never in a mempool.
+            if version >= 3 and block.mweb_block is not None and len(block.vtx) >= 2 and block.vtx[-1].hogex:
+                prefill_list.append(len(block.vtx) - 1)
         self.header = CBlockHeader(block)
         self.nonce = nonce
         self.prefilled_txn = [ PrefilledTransaction(i, block.vtx[i]) for i in prefill_list ]
         self.shortids = []
-        self.use_witness = use_witness
+        self.use_witness = use_witness or version >= 2
+        self.mweb_block = block.mweb_block if version >= 3 else None
         [k0, k1] = self.get_siphash_keys()
         for i in range(len(block.vtx)):
             if i not in prefill_list:
                 tx_hash = block.vtx[i].txid_int
-                if use_witness:
+                if self.use_witness:
                     tx_hash = block.vtx[i].wtxid_int
                 self.shortids.append(calculate_shortid(k0, k1, tx_hash))
 
@@ -1084,10 +1268,12 @@ class BlockTransactions:
         self.blockhash = deser_uint256(f)
         self.transactions = deser_vector(f, CTransaction)
 
-    def serialize(self, with_witness=True):
+    def serialize(self, with_witness=True, with_mweb=True):
         r = b""
         r += ser_uint256(self.blockhash)
-        if with_witness:
+        if with_mweb and with_witness:
+            r += ser_vector(self.transactions, "serialize_with_mweb")
+        elif with_witness:
             r += ser_vector(self.transactions, "serialize_with_witness")
         else:
             r += ser_vector(self.transactions, "serialize_without_witness")
@@ -1346,7 +1532,7 @@ class msg_tx:
         self.tx.deserialize(f)
 
     def serialize(self):
-        return self.tx.serialize_with_witness()
+        return self.tx.serialize_with_mweb()
 
     def __repr__(self):
         return "msg_tx(tx=%s)" % (repr(self.tx))
@@ -1373,6 +1559,13 @@ class msg_no_witness_tx(msg_tx):
 
     def serialize(self):
         return self.tx.serialize_without_witness()
+
+
+class msg_no_mweb_tx(msg_tx):
+    __slots__ = ()
+
+    def serialize(self):
+        return self.tx.serialize_with_witness()
 
 
 class msg_block:
@@ -1414,7 +1607,13 @@ class msg_generic:
 class msg_no_witness_block(msg_block):
     __slots__ = ()
     def serialize(self):
-        return self.block.serialize(with_witness=False)
+        return self.block.serialize(with_witness=False, with_mweb=False)
+
+
+class msg_no_mweb_block(msg_block):
+    __slots__ = ()
+    def serialize(self):
+        return self.block.serialize(with_witness=True, with_mweb=False)
 
 
 class msg_getaddr:
@@ -1763,7 +1962,7 @@ class msg_no_witness_blocktxn(msg_blocktxn):
     __slots__ = ()
 
     def serialize(self):
-        return self.block_transactions.serialize(with_witness=False)
+        return self.block_transactions.serialize(with_witness=False, with_mweb=False)
 
 
 class msg_getcfilters:
@@ -1992,3 +2191,640 @@ class TestFrameworkScript(unittest.TestCase):
         check_varint(0x80123456, "86ffc7e756")
         check_varint(0xffffffff, "8efefefe7f")
         check_varint(0xffffffffffffffff, "80fefefefefefefefe7f")
+
+"""------------MWEB------------"""
+
+def hex_reverse(h):
+    return "".join(reversed([h[i:i+2] for i in range(0, len(h), 2)]))
+
+class Hash:
+    __slots__ = ("val")
+
+    def __init__(self, val = 0):
+        self.val = val
+
+    @classmethod
+    def from_hex(cls, hex_str):
+        return cls(int(hex_str, 16))
+
+    @classmethod
+    def from_rev_hex(cls, hex_str):
+        return cls(int(hex_reverse(hex_str), 16))
+
+    @classmethod
+    def from_byte_arr(cls, b):
+        return cls(deser_uint256(BytesIO(b)))
+
+    def to_hex(self):
+        return self.serialize().hex()
+
+    def to_byte_arr(self):
+        return self.serialize()
+
+    @classmethod
+    def deserialize(cls, f):
+        return cls(deser_uint256(f))
+
+    def serialize(self):
+        return ser_uint256(self.val)
+
+    def __hash__(self):
+        return hash(self.val)
+
+    def __str__(self):
+        return repr(self)
+
+    def __repr__(self):
+        return "Hash(val=0x{:x})".format(self.val)
+
+    def __eq__(self, other):
+        return isinstance(other, Hash) and self.val == other.val
+
+
+def blake3(s):
+    return Hash.from_rev_hex(BLAKE3.blake3(s).hexdigest())
+
+def ser_mweb_block(b):
+    if b is None:
+        return struct.pack("B", 0)
+    else:
+        return struct.pack("B", 1) + b.serialize()
+
+def deser_mweb_block(f):
+    has_mweb = struct.unpack("B", f.read(1))[0]
+    if has_mweb == 1:
+        mweb_block = MWEBBlock()
+        mweb_block.deserialize(f)
+        return mweb_block
+    else:
+        return None
+
+def ser_mweb_tx(t):
+    if t is None:
+        return struct.pack("B", 0)
+    else:
+        return struct.pack("B", 1) + t.serialize()
+
+def deser_mweb_tx(f):
+    has_mweb = struct.unpack("B", f.read(1))[0]
+    if has_mweb == 1:
+        mweb_tx = MWEBTransaction()
+        mweb_tx.deserialize(f)
+        return mweb_tx
+    else:
+        return None
+
+
+class MWEBInput:
+    __slots__ = ("features", "output_id", "commitment", "input_pubkey",
+                "output_pubkey", "extradata", "signature", "hash")
+
+    def __init__(self):
+        self.features = 0
+        self.output_id = Hash()
+        self.commitment = None
+        self.input_pubkey = None
+        self.output_pubkey = None
+        self.extradata = None
+        self.signature = None
+        self.hash = None
+
+    def deserialize(self, f):
+        self.features = struct.unpack("B", f.read(1))[0]
+        self.output_id = Hash.deserialize(f)
+        self.commitment = deser_pubkey(f)
+        self.output_pubkey = deser_pubkey(f)
+        if self.features & 1:
+            self.input_pubkey = deser_pubkey(f)
+        self.extradata = None
+        if self.features & 2:
+            self.extradata = deser_fixed_bytes(f, deser_compact_size(f))
+        self.signature = deser_signature(f)
+        self.rehash()
+
+    def serialize(self):
+        r = b""
+        r += struct.pack("B", self.features)
+        r += self.output_id.serialize()
+        r += ser_pubkey(self.commitment)
+        r += ser_pubkey(self.output_pubkey)
+        if self.features & 1:
+            r += ser_pubkey(self.input_pubkey)
+        if self.features & 2:
+            r += ser_compact_size(len(self.extradata))
+            r += ser_fixed_bytes(self.extradata, len(self.extradata))
+        r += ser_signature(self.signature)
+        return r
+
+    def rehash(self):
+        self.hash = blake3(self.serialize())
+        return self.hash.to_hex()
+
+class MWEBOutputMessage:
+    __slots__ = ("features", "key_exchange_pubkey", "view_tag", "masked_value",
+                "masked_nonce", "extradata", "hash")
+
+    def __init__(self):
+        self.features = 0
+        self.key_exchange_pubkey = None
+        self.view_tag = 0
+        self.masked_value = None
+        self.masked_nonce = None
+        self.extradata = None
+        self.hash = None
+
+    def deserialize(self, f):
+        self.features = struct.unpack("B", f.read(1))[0]
+        if self.features & 1:
+            self.key_exchange_pubkey = deser_pubkey(f)
+            self.view_tag = struct.unpack("B", f.read(1))[0]
+            self.masked_value = struct.unpack("<q", f.read(8))[0]
+            self.masked_nonce = deser_fixed_bytes(f, 16)
+        self.extradata = None
+        if self.features & 2:
+            self.extradata = deser_fixed_bytes(f, deser_compact_size(f))
+        self.rehash()
+
+    def serialize(self):
+        r = b""
+        r += struct.pack("B", self.features)
+        if self.features & 1:
+            r += ser_pubkey(self.key_exchange_pubkey)
+            r += struct.pack("B", self.view_tag)
+            r += struct.pack("<q", self.masked_value)
+            r += ser_fixed_bytes(self.masked_nonce, 16)
+        if self.features & 2:
+            r += ser_compact_size(len(self.extradata))
+            r += ser_fixed_bytes(self.extradata, len(self.extradata))
+        return r
+
+    def rehash(self):
+        self.hash = blake3(self.serialize())
+        return self.hash.to_hex()
+
+class MWEBOutput:
+    __slots__ = ("commitment", "sender_pubkey", "receiver_pubkey", "message",
+                "proof", "signature", "hash")
+
+    def __init__(self):
+        self.commitment = None
+        self.sender_pubkey = None
+        self.receiver_pubkey = None
+        self.message = MWEBOutputMessage()
+        self.proof = None
+        self.signature = None
+        self.hash = None
+
+    def deserialize(self, f):
+        self.commitment = deser_pubkey(f)
+        self.sender_pubkey = deser_pubkey(f)
+        self.receiver_pubkey = deser_pubkey(f)
+        self.message.deserialize(f)
+        self.proof = deser_fixed_bytes(f, 675)
+        self.signature = deser_signature(f)
+        self.rehash()
+
+    def serialize(self):
+        r = b""
+        r += ser_pubkey(self.commitment)
+        r += ser_pubkey(self.sender_pubkey)
+        r += ser_pubkey(self.receiver_pubkey)
+        r += self.message.serialize()
+        r += ser_fixed_bytes(self.proof, 675)
+        r += ser_signature(self.signature)
+        return r
+
+    def rehash(self):
+        self.hash = blake3(self.serialize())
+        return self.hash.to_hex()
+
+class MWEBCompactOutput:
+    __slots__ = ("commitment", "sender_pubkey", "receiver_pubkey", "message",
+                "proof_hash", "signature", "hash")
+
+    def __init__(self):
+        self.commitment = None
+        self.sender_pubkey = None
+        self.receiver_pubkey = None
+        self.message = MWEBOutputMessage()
+        self.proof_hash = None
+        self.signature = None
+        self.hash = None
+
+    def deserialize(self, f):
+        self.commitment = deser_pubkey(f)
+        self.sender_pubkey = deser_pubkey(f)
+        self.receiver_pubkey = deser_pubkey(f)
+        self.message.deserialize(f)
+        self.proof_hash = Hash.deserialize(f)
+        self.signature = deser_signature(f)
+        self.rehash()
+
+    def serialize(self):
+        r = b""
+        r += ser_pubkey(self.commitment)
+        r += ser_pubkey(self.sender_pubkey)
+        r += ser_pubkey(self.receiver_pubkey)
+        r += self.message.serialize()
+        r += self.proof_hash.serialize()
+        r += ser_signature(self.signature)
+        return r
+
+    def __repr__(self):
+        return "MWEBCompactOutput(commitment=%s)" % (repr(self.commitment))
+
+class MWEBNetUTXO:
+    __slots__ = ("leaf_index", "output", "output_format")
+
+    def __init__(self, output_format=MWEB_UTXO_FORMAT_HASH_ONLY):
+        self.leaf_index = 0
+        self.output = None
+        self.output_format = output_format
+
+    def deserialize(self, f):
+        self.leaf_index = deser_compact_size(f)
+        if self.output_format == MWEB_UTXO_FORMAT_FULL:
+            self.output = MWEBOutput()
+            self.output.deserialize(f)
+        elif self.output_format == MWEB_UTXO_FORMAT_HASH_ONLY:
+            self.output = Hash.deserialize(f)
+        elif self.output_format == MWEB_UTXO_FORMAT_COMPACT:
+            self.output = MWEBCompactOutput()
+            self.output.deserialize(f)
+        else:
+            raise ValueError("Unsupported MWEB UTXO serialization format %d" % self.output_format)
+
+    def serialize(self):
+        r = ser_compact_size(self.leaf_index)
+        r += self.output.serialize()
+        return r
+
+    def __repr__(self):
+        return "MWEBNetUTXO(leaf_index=%d, output=%s)" % (self.leaf_index, repr(self.output))
+
+
+class MWEBKernel:
+    __slots__ = ("features", "fee", "pegin", "pegouts", "lock_height",
+                "stealth_excess", "extradata", "excess", "signature", "hash")
+
+    def __init__(self):
+        self.features = 0
+        self.fee = None
+        self.pegin = None
+        self.pegouts = None
+        self.lock_height = None
+        self.stealth_excess = None
+        self.extradata = None
+        self.excess = None
+        self.signature = None
+        self.hash = None
+
+    def deserialize(self, f):
+        self.features = struct.unpack("B", f.read(1))[0]
+        self.fee = None
+        if self.features & 1:
+            self.fee = deser_varint(f)
+        self.pegin = None
+        if self.features & 2:
+            self.pegin = deser_varint(f)
+        self.pegouts = None
+        if self.features & 4:
+            self.pegouts = deser_vector(f, MWEBPegOut)
+        self.lock_height = None
+        if self.features & 8:
+            self.lock_height = deser_varint(f)
+        self.stealth_excess = None
+        if self.features & 16:
+            self.stealth_excess = deser_pubkey(f)
+        self.extradata = None
+        if self.features & 32:
+            self.extradata = deser_fixed_bytes(f, deser_compact_size(f))
+        self.excess = deser_pubkey(f)
+        self.signature = deser_signature(f)
+        self.rehash()
+
+    def serialize(self):
+        r = b""
+        r += struct.pack("B", self.features)
+        if self.features & 1:
+            r += ser_varint(self.fee)
+        if self.features & 2:
+            r += ser_varint(self.pegin)
+        if self.features & 4:
+            r += ser_vector(self.pegouts)
+        if self.features & 8:
+            r += ser_varint(self.lock_height)
+        if self.features & 16:
+            r += ser_pubkey(self.stealth_excess)
+        if self.features & 32:
+            r += ser_compact_size(len(self.extradata))
+            r += ser_fixed_bytes(self.extradata, len(self.extradata))
+        r += ser_pubkey(self.excess)
+        r += ser_signature(self.signature)
+        return r
+
+    def rehash(self):
+        self.hash = blake3(self.serialize())
+        return self.hash.to_hex()
+
+    def __repr__(self):
+        return "MWEBKernel(features=%d, excess=%s)" % (self.features, repr(self.excess))
+
+
+class MWEBPegOut:
+    __slots__ = ("amount", "script_pubkey")
+
+    def __init__(self):
+        self.amount = 0
+        self.script_pubkey = b""
+
+    def deserialize(self, f):
+        self.amount = deser_varint(f)
+        self.script_pubkey = deser_string(f)
+
+    def serialize(self):
+        r = b""
+        r += ser_varint(self.amount)
+        r += ser_string(self.script_pubkey)
+        return r
+
+    def __repr__(self):
+        return "MWEBPegOut(amount=%d, script_pubkey=%s)" % (self.amount, repr(self.script_pubkey))
+
+class MWEBTxBody:
+    __slots__ = ("inputs", "outputs", "kernels")
+
+    def __init__(self):
+        self.inputs = []
+        self.outputs = []
+        self.kernels = []
+
+    def deserialize(self, f):
+        self.inputs = deser_vector(f, MWEBInput)
+        self.outputs = deser_vector(f, MWEBOutput)
+        self.kernels = deser_vector(f, MWEBKernel)
+
+    def serialize(self):
+        r = b""
+        r += ser_vector(self.inputs)
+        r += ser_vector(self.outputs)
+        r += ser_vector(self.kernels)
+        return r
+
+    def __repr__(self):
+        return "MWEBTxBody(inputs=%s, outputs=%s, kernels=%s)" % (repr(self.inputs), repr(self.outputs), repr(self.kernels))
+
+
+class MWEBTransaction:
+    __slots__ = ("kernel_offset", "stealth_offset", "body", "hash")
+
+    def __init__(self):
+        self.kernel_offset = Hash()
+        self.stealth_offset = Hash()
+        self.body = MWEBTxBody()
+        self.hash = None
+
+    def deserialize(self, f):
+        self.kernel_offset = Hash.deserialize(f)
+        self.stealth_offset = Hash.deserialize(f)
+        self.body.deserialize(f)
+        self.rehash()
+
+    def serialize(self):
+        r = b""
+        r += self.kernel_offset.serialize()
+        r += self.stealth_offset.serialize()
+        r += self.body.serialize()
+        return r
+
+    def rehash(self):
+        self.hash = blake3(self.serialize())
+        return self.hash.to_hex()
+
+    def __repr__(self):
+        return "MWEBTransaction(kernel_offset=%s, stealth_offset=%s, body=%s, hash=%s)" % (repr(self.kernel_offset), repr(self.stealth_offset), repr(self.body), repr(self.hash))
+
+class MWEBHeader:
+    __slots__ = ("height", "output_root", "kernel_root", "leafset_root",
+                "kernel_offset", "stealth_offset", "num_txos", "num_kernels", "hash")
+
+    def __init__(self):
+        self.height = 0
+        self.output_root = Hash()
+        self.kernel_root = Hash()
+        self.leafset_root = Hash()
+        self.kernel_offset = Hash()
+        self.stealth_offset = Hash()
+        self.num_txos = 0
+        self.num_kernels = 0
+        self.hash = None
+
+    def from_json(self, mweb_json):
+        self.height = mweb_json['height']
+        self.output_root = Hash.from_rev_hex(mweb_json['output_root'])
+        self.kernel_root = Hash.from_rev_hex(mweb_json['kernel_root'])
+        self.leafset_root = Hash.from_rev_hex(mweb_json['leaf_root'])
+        self.kernel_offset = Hash.from_rev_hex(mweb_json['kernel_offset'])
+        self.stealth_offset = Hash.from_rev_hex(mweb_json['stealth_offset'])
+        self.num_txos = mweb_json['num_txos']
+        self.num_kernels = mweb_json['num_kernels']
+        self.rehash()
+
+    def deserialize(self, f):
+        self.height = deser_varint(f)
+        self.output_root = Hash.deserialize(f)
+        self.kernel_root = Hash.deserialize(f)
+        self.leafset_root = Hash.deserialize(f)
+        self.kernel_offset = Hash.deserialize(f)
+        self.stealth_offset = Hash.deserialize(f)
+        self.num_txos = deser_varint(f)
+        self.num_kernels = deser_varint(f)
+        self.rehash()
+
+    def serialize(self):
+        r = b""
+        r += ser_varint(self.height)
+        r += self.output_root.serialize()
+        r += self.kernel_root.serialize()
+        r += self.leafset_root.serialize()
+        r += self.kernel_offset.serialize()
+        r += self.stealth_offset.serialize()
+        r += ser_varint(self.num_txos)
+        r += ser_varint(self.num_kernels)
+        return r
+
+    def rehash(self):
+        self.hash = blake3(self.serialize())
+        return self.hash.to_hex()
+
+    def __repr__(self):
+        return ("MWEBHeader(height=%d, output_root=%s, kernel_root=%s, leafset_root=%s, kernel_offset=%s, stealth_offset=%s, num_txos=%d, num_kernels=%d, hash=%s)" %
+            (self.height, repr(self.output_root), repr(self.kernel_root), repr(self.leafset_root), repr(self.kernel_offset), repr(self.stealth_offset), self.num_txos, self.num_kernels, repr(self.hash)))
+
+    def __eq__(self, other):
+        return isinstance(other, MWEBHeader) and self.hash == other.hash
+
+class MWEBBlock:
+    __slots__ = ("header", "body")
+
+    def __init__(self, header=None):
+        if header is None:
+            header = MWEBHeader()
+        self.header = copy.deepcopy(header)
+        self.body = MWEBTxBody()
+
+    def deserialize(self, f):
+        self.header.deserialize(f)
+        self.body.deserialize(f)
+        self.rehash()
+
+    def serialize(self):
+        r = b""
+        r += self.header.serialize()
+        r += self.body.serialize()
+        return r
+
+    def rehash(self):
+        return self.header.rehash()
+
+    def __repr__(self):
+        return "MWEBBlock(header=%s, body=%s)" % (repr(self.header), repr(self.body))
+
+
+class CMerkleBlockWithMWEB:
+    __slots__ = ("merkle", "hogex", "mweb_header")
+
+    def __init__(self):
+        self.merkle = CMerkleBlock()
+        self.hogex = CTransaction()
+        self.mweb_header = MWEBHeader()
+
+    def deserialize(self, f):
+        self.merkle.deserialize(f)
+        self.hogex.deserialize(f)
+        self.mweb_header.deserialize(f)
+
+    def serialize(self):
+        r = b""
+        r += self.merkle.serialize()
+        r += self.hogex.serialize_with_mweb()
+        r += self.mweb_header.serialize()
+        return r
+
+    def __repr__(self):
+        return "CMerkleBlockWithMWEB(merkle=%s, hogex=%s, mweb_header=%s)" % (repr(self.merkle), repr(self.hogex), repr(self.mweb_header))
+
+
+class msg_mwebheader:
+    __slots__ = ("merkleblockwithmweb",)
+    msgtype = b"mwebheader"
+
+    def __init__(self, merkleblockwithmweb=None):
+        if merkleblockwithmweb is None:
+            merkleblockwithmweb = CMerkleBlockWithMWEB()
+        self.merkleblockwithmweb = merkleblockwithmweb
+
+    def deserialize(self, f):
+        self.merkleblockwithmweb.deserialize(f)
+
+    def serialize(self):
+        return self.merkleblockwithmweb.serialize()
+
+    def header_hash(self):
+        self.merkleblockwithmweb.merkle.header.rehash()
+        return self.merkleblockwithmweb.merkle.header.hash
+
+    def __repr__(self):
+        return "msg_mwebheader(merkleblockwithmweb=%s)" % (repr(self.merkleblockwithmweb))
+
+class msg_mwebleafset:
+    __slots__ = ("block_hash", "leafset")
+    msgtype = b"mwebleafset"
+
+    def __init__(self, block_hash=None, leafset=None):
+        self.block_hash = block_hash
+        self.leafset = leafset
+
+    def deserialize(self, f):
+        self.block_hash = Hash.deserialize(f)
+        self.leafset = deser_fixed_bytes(f, deser_compact_size(f))
+
+    def serialize(self):
+        r = b""
+        r += self.block_hash.serialize()
+        r += ser_compact_size(len(self.leafset))
+        r += ser_fixed_bytes(self.leafset, len(self.leafset))
+        return r
+
+    def __repr__(self):
+        leafset_hex = ser_fixed_bytes(self.leafset, len(self.leafset)).hex() #encode(self.leafset, 'hex_codec').decode('ascii')
+        return "msg_mwebleafset(block_hash=%s, leafset=%s%s)" % (repr(self.block_hash), repr(leafset_hex)[:50], "..." if len(leafset_hex) > 50 else "")
+
+class msg_getmwebutxos:
+    __slots__ = ("block_hash", "start_index", "num_requested", "output_format")
+    msgtype = b"getmwebutxos"
+
+    def __init__(self, block_hash=None, start_index=0, num_requested=0, output_format=0):
+        self.block_hash = block_hash
+        self.start_index = start_index
+        self.num_requested = num_requested
+        self.output_format = output_format
+
+    def deserialize(self, f):
+        self.block_hash = Hash.deserialize(f)
+        self.start_index = deser_compact_size(f)
+        self.num_requested = struct.unpack("<H", f.read(2))[0]
+        self.output_format = struct.unpack("B", f.read(1))[0]
+
+    def serialize(self):
+        r = b""
+        r += self.block_hash.serialize()
+        r += ser_compact_size(self.start_index)
+        r += struct.pack("<H", self.num_requested)
+        r += struct.pack("B", self.output_format)
+        return r
+
+    def __repr__(self):
+        return ("msg_getmwebutxos(block_hash=%s, start_index=%d, num_requested=%d, output_format=%d)" %
+            (repr(self.block_hash), self.start_index, self.num_requested, self.output_format))
+
+
+class msg_mwebutxos:
+    __slots__ = ("block_hash", "start_index", "output_format", "utxos", "proof_hashes")
+    msgtype = b"mwebutxos"
+
+    def __init__(self, block_hash=None, start_index=0, output_format=0, utxos=None, proof_hashes=None):
+        self.block_hash = block_hash
+        self.start_index = start_index
+        self.output_format = output_format
+        self.utxos = utxos
+        self.proof_hashes = proof_hashes
+
+    def deserialize(self, f):
+        self.block_hash = Hash.deserialize(f)
+        self.start_index = deser_compact_size(f)
+        self.output_format = struct.unpack("B", f.read(1))[0]
+
+        utxos_len = deser_compact_size(f)
+        self.utxos = []
+        for _ in range(utxos_len):
+            utxo = MWEBNetUTXO(self.output_format)
+            utxo.deserialize(f)
+            self.utxos.append(utxo)
+
+        # Hash.deserialize constructs a new Hash rather than mutating an
+        # instance, so the generic in-place vector decoder discards its value.
+        self.proof_hashes = [Hash.deserialize(f) for _ in range(deser_compact_size(f))]
+
+    def serialize(self):
+        r = b""
+        r += self.block_hash.serialize()
+        r += ser_compact_size(self.start_index)
+        r += struct.pack("B", self.output_format)
+        r += ser_vector(self.utxos)
+        r += ser_vector(self.proof_hashes)
+        return r
+
+    def __repr__(self):
+        return ("msg_mwebutxos(block_hash=%s, start_index=%d, output_format=%d, utxos=%s, proof_hashes=%s)" %
+            (repr(self.block_hash), self.start_index, self.output_format, repr(self.utxos), repr(self.proof_hashes)))

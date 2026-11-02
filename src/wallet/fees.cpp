@@ -13,9 +13,9 @@
 #include <optional>
 
 namespace wallet {
-CAmount GetRequiredFee(const CWallet& wallet, unsigned int nTxBytes)
+CAmount GetRequiredFee(const CWallet& wallet, unsigned int nTxBytes, uint64_t mweb_weight)
 {
-    return GetRequiredFeeRate(wallet).GetFee(static_cast<int32_t>(nTxBytes));
+    return GetRequiredFeeRate(wallet).GetTotalFee(static_cast<int32_t>(nTxBytes), mweb_weight);
 }
 
 

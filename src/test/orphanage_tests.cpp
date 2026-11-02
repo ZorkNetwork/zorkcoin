@@ -4,6 +4,7 @@
 
 #include <arith_uint256.h>
 #include <consensus/validation.h>
+#include <core_memusage.h>
 #include <node/txorphanage.h>
 #include <policy/policy.h>
 #include <primitives/transaction.h>
@@ -15,6 +16,7 @@
 #include <test/util/setup_common.h>
 #include <test/util/time.h>
 #include <test/util/transaction_utils.h>
+
 
 #include <array>
 #include <cstdint>
@@ -90,6 +92,7 @@ BOOST_AUTO_TEST_CASE(peer_dos_limits)
         auto ptx = MakeTransactionSpending({}, det_rand);
         txns.emplace_back(ptx);
         BOOST_CHECK_EQUAL(TX_SIZE, GetTransactionWeight(*ptx));
+        BOOST_CHECK_EQUAL(TX_SIZE, node::OrphanageTxUsage(*ptx));
     }
 
     // Single peer: eviction is triggered if either limit is hit
@@ -680,6 +683,8 @@ BOOST_AUTO_TEST_CASE(too_large_orphan_tx)
     BOOST_CHECK_EQUAL(GetTransactionWeight(CTransaction(tx)), MAX_STANDARD_TX_WEIGHT);
     BOOST_CHECK(orphanage->AddTx(MakeTransactionRef(tx), 0));
 }
+
+
 
 BOOST_AUTO_TEST_CASE(process_block)
 {

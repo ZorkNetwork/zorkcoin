@@ -1467,7 +1467,7 @@ BOOST_AUTO_TEST_CASE(v2transport_test)
         BOOST_CHECK(std::ranges::equal((*ret)[1]->m_recv, MakeByteSpan(msg_data_2)));
 
         // Then send a too-large message.
-        auto msg_data_3 = m_rng.randbytes<uint8_t>(4005000);
+        auto msg_data_3 = m_rng.randbytes<uint8_t>(MAX_PROTOCOL_MESSAGE_LENGTH + 5000);
         tester.SendMessage(uint8_t(11), msg_data_3); // getdata short id
         ret = tester.Interact();
         BOOST_CHECK(!ret);
@@ -1517,7 +1517,7 @@ BOOST_AUTO_TEST_CASE(v2transport_test)
             auto decoy_data = m_rng.randbytes<uint8_t>(m_rng.randrange(1000));
             tester.SendPacket(/*content=*/decoy_data, /*aad=*/{}, /*ignore=*/true);
         }
-        auto msg_data_1 = m_rng.randbytes<uint8_t>(m_rng.randrange(4000000));
+        auto msg_data_1 = m_rng.randbytes<uint8_t>(m_rng.randrange(4000000)); // keep random stress well under the message limit
         tester.SendMessage(uint8_t(28), msg_data_1);
         for (unsigned d = 0; d < num_decoys_2; ++d) {
             auto decoy_data = m_rng.randbytes<uint8_t>(m_rng.randrange(1000));
@@ -1602,8 +1602,12 @@ BOOST_AUTO_TEST_CASE(v2transport_test)
         tester.ReceiveGarbage();
         tester.ReceiveVersion();
         tester.CompareSessionIDs();
-        auto msg_data_1 = m_rng.randbytes<uint8_t>(4000000); // test that receiving 4M payload works
-        auto msg_data_2 = m_rng.randbytes<uint8_t>(4000000); // test that sending 4M payload works
+        // Max v2-safe payload: BIP324's 3-byte length field caps contents at
+        // 2^24-1, so the application payload must leave room for type encoding.
+        static constexpr size_t MAX_V2_PAYLOAD =
+            ((size_t{1} << 24) - 1) - (1 + CMessageHeader::MESSAGE_TYPE_SIZE);
+        auto msg_data_1 = m_rng.randbytes<uint8_t>(MAX_V2_PAYLOAD); // max payload receive
+        auto msg_data_2 = m_rng.randbytes<uint8_t>(MAX_V2_PAYLOAD); // max payload send
         tester.SendMessage(uint8_t(m_rng.randrange(256 - BIP324_SHORTIDS_IMPLEMENTED) + BIP324_SHORTIDS_IMPLEMENTED), {}); // unknown short id
         tester.SendMessage(uint8_t(2), msg_data_1); // "block" short id
         tester.AddMessage("blocktxn", msg_data_2); // schedule blocktxn to be sent to us

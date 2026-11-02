@@ -19,6 +19,8 @@
 #include <util/fs.h>
 #include <util/time.h>
 #include <util/translation.h>
+#include <mw/models/wallet/coin.h> // MWEB hooks
+#include <mweb/mweb_wallet.h> // MWEB hooks
 #include <wallet/migrate.h>
 #include <wallet/sqlite.h>
 #include <wallet/wallet.h>
@@ -61,6 +63,13 @@ const std::string WALLETDESCRIPTORCKEY{"walletdescriptorckey"};
 const std::string WALLETDESCRIPTORKEY{"walletdescriptorkey"};
 const std::string WATCHMETA{"watchmeta"};
 const std::string WATCHS{"watchs"};
+const std::string MWEB_COIN{"mweb_coin"}; // MWEB hooks
+const std::string MWEB_SENDER_KEY_INDEX{"mweb_sender_key_index"}; // MWEB hooks
+const std::string MWEBINTERNALDESC{"mwebinternaldesc"}; // MWEB hooks
+const std::string MWEBSCANK{"mwebscank"}; // MWEB hooks
+const std::string MWEBINTERNALPROT{"mwebinternalprot"}; // MWEB hooks
+const std::string MWEBLIMITEDACCOUNT{"mweblimitedaccount"}; // MWEB hooks
+const std::string LOCKED_MWEB_UTXO{"lockedmwebutxo"}; // MWEB hooks
 const std::unordered_set<std::string> LEGACY_TYPES{CRYPTED_KEY, CSCRIPT, DEFAULTKEY, HDCHAIN, KEYMETA, KEY, OLD_KEY, POOL, WATCHMETA, WATCHS};
 } // namespace DBKeys
 
@@ -96,14 +105,25 @@ bool WalletBatch::ErasePurpose(const std::string& strAddress)
     return EraseIC(std::make_pair(DBKeys::PURPOSE, strAddress));
 }
 
-bool WalletBatch::WriteFullTx(const CWalletTx& wtx)
+bool WalletBatch::WriteFullTx(const CWalletTx& wtx, std::optional<Txid> previous_key)
 {
     const Txid txid = wtx.GetHash();
-    // Persist all witness variants. Including the canonical one
-    for (const auto& [wtxid, tx] : wtx.GetTxs()) {
-        if (!WriteWtxVariant(txid, tx)) return false;
+    if (previous_key && *previous_key != txid) {
+        if (!EraseTx(*previous_key)) return false;
+    }
+    // Persist all witness variants. Including the canonical one.
+    // MWEB placeholders are keyed by an MWEB hash rather than an L1 txid, so they have no variants.
+    if (!wtx.IsMWEBPlaceholder()) {
+        for (const auto& [wtxid, tx] : wtx.GetTxs()) {
+            if (!WriteWtxVariant(txid, tx)) return false;
+        }
     }
     return WriteIC(std::make_pair(DBKeys::TX, txid), wtx);
+}
+
+bool WalletBatch::WriteTxWithKey(const Txid& key, const CWalletTx& wtx)
+{
+    return WriteIC(std::make_pair(DBKeys::TX, key), wtx);
 }
 
 bool WalletBatch::EraseTx(Txid hash)
@@ -118,8 +138,9 @@ bool WalletBatch::WriteWtxVariant(const Txid& txid, const CTransactionRef& tx)
     return WriteIC(std::make_pair(DBKeys::WTX_VARIANT, std::make_pair(txid, tx->GetWitnessHash())), TX_WITH_WITNESS(tx));
 }
 
-bool WalletBatch::WriteTxMetadata(const CWalletTx& wtx)
+bool WalletBatch::WriteTxMetadata(const CWalletTx& wtx, std::optional<Txid> previous_key)
 {
+    if (previous_key && *previous_key != wtx.GetHash()) return WriteFullTx(wtx, previous_key);
     return WriteIC(std::make_pair(DBKeys::TX, wtx.GetHash()), wtx);
 }
 
@@ -182,6 +203,62 @@ bool WalletBatch::WriteWatchOnly(const CScript &dest, const CKeyMetadata& keyMet
         return false;
     }
     return WriteIC(std::make_pair(DBKeys::WATCHS, dest), uint8_t{'1'});
+}
+
+// MWEB hooks
+bool WalletBatch::WriteMWEBCoin(const mw::Coin& coin)
+{
+    return WriteIC(std::make_pair(DBKeys::MWEB_COIN, coin.output_id), coin.SanitizeForDisk(), true);
+}
+
+bool WalletBatch::WriteMWEBNextSenderKeyIndex(const CKeyID& master_scan_keyid, uint64_t next_index)
+{
+    return WriteIC(std::make_pair(DBKeys::MWEB_SENDER_KEY_INDEX, master_scan_keyid), next_index);
+}
+
+bool WalletBatch::WriteMWEBInternalDescriptor(const uint256& account_id, uint32_t index, const WalletDescriptor& descriptor)
+{
+    return WriteIC(std::make_pair(DBKeys::MWEBINTERNALDESC, std::make_pair(account_id, index)), descriptor);
+}
+
+bool WalletBatch::EraseMWEBInternalDescriptor(const uint256& account_id, uint32_t index)
+{
+    return EraseIC(std::make_pair(DBKeys::MWEBINTERNALDESC, std::make_pair(account_id, index)));
+}
+
+bool WalletBatch::WriteMWEBScanKey(const uint256& account_id, const SecretKey& scan_key)
+{
+    return WriteIC(std::make_pair(DBKeys::MWEBSCANK, account_id), scan_key);
+}
+
+bool WalletBatch::EraseMWEBScanKey(const uint256& account_id)
+{
+    return EraseIC(std::make_pair(DBKeys::MWEBSCANK, account_id));
+}
+
+bool WalletBatch::WriteMWEBInternalProtect(const uint256& account_id, uint32_t index, uint8_t protect)
+{
+    return WriteIC(std::make_pair(DBKeys::MWEBINTERNALPROT, std::make_pair(account_id, index)), protect);
+}
+
+bool WalletBatch::EraseMWEBInternalProtect(const uint256& account_id, uint32_t index)
+{
+    return EraseIC(std::make_pair(DBKeys::MWEBINTERNALPROT, std::make_pair(account_id, index)));
+}
+
+bool WalletBatch::WriteMWEBLimitedAccount(const uint256& account_id)
+{
+    return WriteIC(std::make_pair(DBKeys::MWEBLIMITEDACCOUNT, account_id), uint8_t{1});
+}
+
+bool WalletBatch::EraseMWEBLimitedAccount(const uint256& account_id)
+{
+    return EraseIC(std::make_pair(DBKeys::MWEBLIMITEDACCOUNT, account_id));
+}
+
+bool WalletBatch::WriteHDChain(const CHDChain& chain)
+{
+    return WriteIC(DBKeys::HDCHAIN, chain);
 }
 
 bool WalletBatch::WriteBestBlock(const CBlockLocator& locator)
@@ -297,6 +374,16 @@ bool WalletBatch::WriteLockedUTXO(const COutPoint& output)
 bool WalletBatch::EraseLockedUTXO(const COutPoint& output)
 {
     return EraseIC(std::make_pair(DBKeys::LOCKED_UTXO, std::make_pair(output.hash, output.n)));
+}
+
+bool WalletBatch::WriteLockedUTXO(const mw::Hash& output_id)
+{
+    return WriteIC(std::make_pair(DBKeys::LOCKED_MWEB_UTXO, output_id), uint8_t{'1'});
+}
+
+bool WalletBatch::EraseLockedUTXO(const mw::Hash& output_id)
+{
+    return EraseIC(std::make_pair(DBKeys::LOCKED_MWEB_UTXO, output_id));
 }
 
 bool LoadKey(CWallet* pwallet, DataStream& ssKey, DataStream& ssValue, std::string& strErr)
@@ -541,6 +628,134 @@ bool HasLegacyRecords(CWallet& wallet, DatabaseBatch& batch)
     return false;
 }
 
+// MWEB hooks
+static DBErrors LoadMWEBCoinRecords(CWallet* pwallet, DatabaseBatch& batch) EXCLUSIVE_LOCKS_REQUIRED(pwallet->cs_wallet)
+{
+    LoadResult coin_res = LoadRecords(pwallet, batch, DBKeys::MWEB_COIN,
+        [](CWallet* pwallet, DataStream& key, DataStream& value, std::string& err) {
+            mw::Hash output_id;
+            key >> output_id;
+            mw::Coin coin;
+            value >> coin;
+            if (coin.output_id != output_id || !key.empty() || !value.empty()) {
+                err = "MWEB coin record has an inconsistent ID or trailing data";
+                return DBErrors::CORRUPT;
+            }
+            pwallet->GetMWWallet()->LoadToWallet(coin);
+            return DBErrors::LOAD_OK;
+        });
+    return coin_res.m_result;
+}
+
+static DBErrors LoadMWEBSenderKeyIndexRecords(CWallet* pwallet, DatabaseBatch& batch) EXCLUSIVE_LOCKS_REQUIRED(pwallet->cs_wallet)
+{
+    LoadResult index_res = LoadRecords(pwallet, batch, DBKeys::MWEB_SENDER_KEY_INDEX,
+        [](CWallet* pwallet, DataStream& key, DataStream& value, std::string& err) EXCLUSIVE_LOCKS_REQUIRED(pwallet->cs_wallet) {
+            CKeyID master_scan_keyid;
+            key >> master_scan_keyid;
+            uint64_t next_index;
+            value >> next_index;
+            pwallet->GetMWWallet()->LoadNextSenderKeyIndex(master_scan_keyid, next_index);
+            return DBErrors::LOAD_OK;
+        });
+    return index_res.m_result;
+}
+
+static DBErrors LoadMWEBInternalProtectRecords(CWallet* pwallet, DatabaseBatch& batch) EXCLUSIVE_LOCKS_REQUIRED(pwallet->cs_wallet)
+{
+    LoadResult protect_res = LoadRecords(pwallet, batch, DBKeys::MWEBINTERNALPROT,
+        [](CWallet* pwallet, DataStream& key, DataStream& value, std::string& err) {
+            uint256 account_id;
+            uint32_t index;
+            key >> account_id;
+            key >> index;
+            uint8_t protect;
+            value >> protect;
+            auto* spk_man = dynamic_cast<DescriptorScriptPubKeyMan*>(pwallet->GetScriptPubKeyMan(account_id));
+            if (!spk_man) {
+                err = strprintf("MWEB internal protect for unknown account %s", account_id.ToString());
+                return DBErrors::CORRUPT;
+            }
+            LOCK(spk_man->cs_desc_man);
+            if (protect == static_cast<uint8_t>(DescriptorScriptPubKeyMan::MWEBInternalProtect::KEEP)) {
+                spk_man->SetMWEBInternalProtectMemory(index, DescriptorScriptPubKeyMan::MWEBInternalProtect::KEEP);
+            } else if (protect == static_cast<uint8_t>(DescriptorScriptPubKeyMan::MWEBInternalProtect::MANUAL)) {
+                spk_man->SetMWEBInternalProtectMemory(index, DescriptorScriptPubKeyMan::MWEBInternalProtect::MANUAL);
+            }
+            return DBErrors::LOAD_OK;
+        });
+    return protect_res.m_result;
+}
+
+static DBErrors LoadMWEBLimitedAccountRecords(CWallet* pwallet, DatabaseBatch& batch) EXCLUSIVE_LOCKS_REQUIRED(pwallet->cs_wallet)
+{
+    return LoadRecords(pwallet, batch, DBKeys::MWEBLIMITEDACCOUNT,
+        [](CWallet* pwallet, DataStream& key, DataStream& value, std::string& err) {
+            uint256 account_id;
+            uint8_t limited;
+            key >> account_id;
+            value >> limited;
+            auto* spk_man = dynamic_cast<DescriptorScriptPubKeyMan*>(pwallet->GetScriptPubKeyMan(account_id));
+            if (!spk_man) {
+                err = strprintf("MWEB limited discovery for unknown account %s", account_id.ToString());
+                return DBErrors::CORRUPT;
+            }
+            LOCK(spk_man->cs_desc_man);
+            if (limited != 1 || !spk_man->IsMWEBAccountDescriptor()) {
+                err = "Invalid MWEB limited account record";
+                return DBErrors::CORRUPT;
+            }
+            spk_man->LoadMWEBLimitedAccountRecord();
+            return DBErrors::LOAD_OK;
+        }).m_result;
+}
+
+static DBErrors LoadMWEBScanKeyRecords(CWallet* pwallet, DatabaseBatch& batch) EXCLUSIVE_LOCKS_REQUIRED(pwallet->cs_wallet)
+{
+    LoadResult scan_res = LoadRecords(pwallet, batch, DBKeys::MWEBSCANK,
+        [](CWallet* pwallet, DataStream& key, DataStream& value, std::string& err) {
+            uint256 account_id;
+            key >> account_id;
+            SecretKey scan_key;
+            value >> scan_key;
+            auto* spk_man = dynamic_cast<DescriptorScriptPubKeyMan*>(pwallet->GetScriptPubKeyMan(account_id));
+            if (!spk_man) {
+                err = strprintf("MWEB scan key for unknown account %s", account_id.ToString());
+                return DBErrors::CORRUPT;
+            }
+            LOCK(spk_man->cs_desc_man);
+            spk_man->LoadMWEBScanSecretRecord(scan_key);
+            return DBErrors::LOAD_OK;
+        });
+    return scan_res.m_result;
+}
+
+static DBErrors LoadMWEBInternalDescriptorRecords(CWallet* pwallet, DatabaseBatch& batch) EXCLUSIVE_LOCKS_REQUIRED(pwallet->cs_wallet)
+{
+    LoadResult internal_res = LoadRecords(pwallet, batch, DBKeys::MWEBINTERNALDESC,
+        [](CWallet* pwallet, DataStream& key, DataStream& value, std::string& err) {
+            uint256 account_id;
+            uint32_t index;
+            key >> account_id;
+            key >> index;
+            WalletDescriptor desc;
+            value >> desc;
+            auto* spk_man = dynamic_cast<DescriptorScriptPubKeyMan*>(pwallet->GetScriptPubKeyMan(account_id));
+            if (!spk_man) {
+                err = strprintf("MWEB internal descriptor for unknown account %s", account_id.ToString());
+                return DBErrors::CORRUPT;
+            }
+            LOCK(spk_man->cs_desc_man);
+            if (auto loaded = spk_man->LoadMWEBInternalDescriptorRecord(desc); !loaded) {
+                err = strprintf("Failed to load MWEB internal descriptor at index %u: %s",
+                                index, util::ErrorString(loaded).original);
+                return DBErrors::CORRUPT;
+            }
+            return DBErrors::LOAD_OK;
+        });
+    return internal_res.m_result;
+}
+
 static DBErrors LoadLegacyWalletRecords(CWallet* pwallet, DatabaseBatch& batch, int last_client) EXCLUSIVE_LOCKS_REQUIRED(pwallet->cs_wallet)
 {
     AssertLockHeld(pwallet->cs_wallet);
@@ -655,6 +870,11 @@ static DBErrors LoadLegacyWalletRecords(CWallet* pwallet, DatabaseBatch& batch, 
                 // For new chains, we want to default to VERSION_HD_BASE until we see an internal
                 chain.nVersion = CHDChain::VERSION_HD_BASE;
                 chain.seed_id = keyMeta.hd_seed_id;
+            }
+            // MWEB hooks
+            if (keyMeta.mweb_index) {
+                chain.nVersion = std::max(chain.nVersion, CHDChain::VERSION_HD_MWEB_WATCH);
+                chain.nMWEBIndexCounter = std::max(chain.nMWEBIndexCounter, *keyMeta.mweb_index);
             }
             if (internal) {
                 chain.nVersion = CHDChain::VERSION_HD_CHAIN_SPLIT;
@@ -1016,26 +1236,45 @@ static std::map<Wtxid, CTransactionRef> ReadWtxVariants(DatabaseBatch& batch, co
     return variants;
 }
 
-static DBErrors LoadTxRecords(CWallet* pwallet, DatabaseBatch& batch, bool& any_unordered) EXCLUSIVE_LOCKS_REQUIRED(pwallet->cs_wallet)
+static DBErrors LoadTxRecords(CWallet* pwallet, WalletBatch& wbatch, DatabaseBatch& batch, bool& any_unordered) EXCLUSIVE_LOCKS_REQUIRED(pwallet->cs_wallet)
 {
     AssertLockHeld(pwallet->cs_wallet);
     DBErrors result = DBErrors::LOAD_OK;
 
     // Load tx record
     any_unordered = false;
+    std::vector<Txid> stale_keys;
+    std::vector<Txid> relocated_keys;
+    const Txid empty_tx_hash{MakeTransactionRef(CMutableTransaction{})->GetHash()};
     LoadResult tx_res = LoadRecords(pwallet, batch, DBKeys::TX,
-        [&any_unordered, &batch] (CWallet* pwallet, DataStream& key, DataStream& value, std::string& err) EXCLUSIVE_LOCKS_REQUIRED(pwallet->cs_wallet) {
+        [&] (CWallet* pwallet, DataStream& key, DataStream& value, std::string& err) EXCLUSIVE_LOCKS_REQUIRED(pwallet->cs_wallet) {
         DBErrors result = DBErrors::LOAD_OK;
-        Txid hash;
-        key >> hash;
+        Txid db_key;
+        key >> db_key;
         try {
-            CWalletTx wtx{deserialize, value, ReadWtxVariants(batch, hash)};
-            if (wtx.GetHash() != hash) {
-                result = std::max(result, DBErrors::NEED_RESCAN);
-            }
-
+            CWalletTx wtx{deserialize, value, ReadWtxVariants(batch, db_key)};
             if (wtx.nOrderPos == -1) {
                 any_unordered = true;
+            }
+
+            // MWEB: a wallet tx's hash can change (placeholder replaced by full tx), which may
+            // leave rows keyed by a stale hash. Relocate them to the computed hash.
+            const Txid computed = wtx.GetHash();
+            if (computed != db_key) {
+                pwallet->WalletLogPrintf("TX record key %s does not match computed hash %s\n",
+                                         db_key.ToString(), computed.ToString());
+                stale_keys.push_back(db_key);
+                if (computed == empty_tx_hash && !wtx.mweb_wtx_info) {
+                    err = "Error: TX record key does not match computed hash and transaction data is unusable.";
+                    return DBErrors::NEED_RESCAN;
+                }
+                if (pwallet->mapWallet.contains(computed)) {
+                    return DBErrors::LOAD_OK;
+                }
+                relocated_keys.push_back(computed);
+            } else if (pwallet->mapWallet.contains(computed)) {
+                // Already loaded from a relocated row.
+                return DBErrors::LOAD_OK;
             }
 
             if (!pwallet->LoadToWallet(std::move(wtx))) {
@@ -1050,6 +1289,23 @@ static DBErrors LoadTxRecords(CWallet* pwallet, DatabaseBatch& batch, bool& any_
     });
     result = std::max(result, tx_res.m_result);
 
+    // Rewrite relocated rows and drop stale keys after the cursor is closed.
+    bool relocation_failed{false};
+    for (const Txid& hash : relocated_keys) {
+        auto it = pwallet->mapWallet.find(hash);
+        if (it == pwallet->mapWallet.end()) continue;
+        if (!wbatch.WriteFullTx(it->second)) {
+            result = std::max(result, DBErrors::LOAD_FAIL);
+            relocation_failed = true;
+        }
+    }
+    // MWEB: retain source rows for a later load if any replacement failed.
+    if (!relocation_failed) {
+        for (const Txid& stale : stale_keys) {
+            wbatch.EraseTx(stale);
+        }
+    }
+
     // Load locked utxo record
     LoadResult locked_utxo_res = LoadRecords(pwallet, batch, DBKeys::LOCKED_UTXO,
         [] (CWallet* pwallet, DataStream& key, DataStream& value, std::string& err) EXCLUSIVE_LOCKS_REQUIRED(pwallet->cs_wallet) {
@@ -1061,6 +1317,15 @@ static DBErrors LoadTxRecords(CWallet* pwallet, DatabaseBatch& batch, bool& any_
         return DBErrors::LOAD_OK;
     });
     result = std::max(result, locked_utxo_res.m_result);
+
+    LoadResult locked_mweb_utxo_res = LoadRecords(pwallet, batch, DBKeys::LOCKED_MWEB_UTXO,
+        [] (CWallet* pwallet, DataStream& key, DataStream& value, std::string& err) EXCLUSIVE_LOCKS_REQUIRED(pwallet->cs_wallet) {
+        mw::Hash output_id;
+        key >> output_id;
+        pwallet->LoadLockedCoin(output_id, /*persistent=*/true);
+        return DBErrors::LOAD_OK;
+    });
+    result = std::max(result, locked_mweb_utxo_res.m_result);
 
     // Load orderposnext record
     // Note: There should only be one ORDERPOSNEXT record with nothing trailing the type
@@ -1171,11 +1436,21 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
         // Load SPKMs
         result = std::max(LoadActiveSPKMs(pwallet, *m_batch), result);
 
+        // MWEB per-index scan descriptors (after account SPKMs exist)
+        result = std::max(LoadMWEBLimitedAccountRecords(pwallet, *m_batch), result);
+        result = std::max(LoadMWEBScanKeyRecords(pwallet, *m_batch), result);
+        result = std::max(LoadMWEBInternalDescriptorRecords(pwallet, *m_batch), result);
+        result = std::max(LoadMWEBInternalProtectRecords(pwallet, *m_batch), result);
+
         // Load decryption keys
         result = std::max(LoadDecryptionKeys(pwallet, *m_batch), result);
 
         // Load tx records
-        result = std::max(LoadTxRecords(pwallet, *m_batch, any_unordered), result);
+        result = std::max(LoadTxRecords(pwallet, *this, *m_batch, any_unordered), result);
+
+        // MWEB hooks
+        result = std::max(LoadMWEBCoinRecords(pwallet, *m_batch), result);
+        result = std::max(LoadMWEBSenderKeyIndexRecords(pwallet, *m_batch), result);
     } catch (std::runtime_error& e) {
         // Exceptions that can be ignored or treated as non-critical are handled by the individual loading functions.
         // Any uncaught exceptions will be caught here and treated as critical.
@@ -1185,6 +1460,12 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
         result = DBErrors::CORRUPT;
     } catch (...) {
         // All other exceptions are still problematic, but we can't log them
+        result = DBErrors::CORRUPT;
+    }
+
+    // MWEB: keys that contradict the wallet's records are corruption too.
+    if ((result == DBErrors::LOAD_OK || result == DBErrors::NEED_RESCAN || result == DBErrors::NONCRITICAL_ERROR) &&
+        pwallet->LoadMWEBKeychains()) {
         result = DBErrors::CORRUPT;
     }
 
@@ -1219,7 +1500,22 @@ DBErrors WalletBatch::LoadWallet(CWallet* pwallet)
                 return DBErrors::CORRUPT;
             }
         }
-        pwallet->mapMasterKeys.clear();
+        pwallet->        mapMasterKeys.clear();
+    }
+
+    // Migrate legacy plaintext spend material off disk before populating memory.
+    try {
+        if (pwallet->GetMWWallet()->SanitizeLegacyCoinsOnDisk()) {
+            pwallet->GetDatabase().Rewrite();
+        }
+    } catch (const std::runtime_error& e) {
+        pwallet->WalletLogPrintf("MWEB coin sanitization failed: %s\n", e.what());
+        return DBErrors::LOAD_FAIL;
+    }
+    if (pwallet->IsLocked()) {
+        pwallet->GetMWWallet()->LockSpendMaterial();
+    } else {
+        pwallet->GetMWWallet()->UpgradeCoins();
     }
 
     return result;

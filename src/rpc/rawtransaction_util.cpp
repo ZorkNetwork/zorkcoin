@@ -10,6 +10,9 @@
 #include <core_io.h>
 #include <crypto/hex_base.h>
 #include <key_io.h>
+#include <mw/models/crypto/hash.h>
+#include <mw/models/tx/mutable_tx.h>
+#include <mw/models/wallet/stealth_address.h>
 #include <policy/feerate.h>
 #include <policy/policy.h>
 #include <primitives/transaction.h>
@@ -20,13 +23,16 @@
 #include <script/script.h>
 #include <script/sign.h>
 #include <script/signingprovider.h>
+#include <serialize.h>
 #include <tinyformat.h>
 #include <univalue.h>
 #include <util/check.h>
 #include <util/rbf.h>
+#include <util/strencodings.h>
 #include <util/translation.h>
 #include <util/vector.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <set>
 #include <span>
@@ -156,6 +162,93 @@ void AddOutputs(CMutableTransaction& rawTx, const UniValue& outputs_in)
         CTxOut out(nAmount, scriptPubKey);
         rawTx.vout.push_back(out);
     }
+}
+
+CMutableTransaction ConstructTransaction(const UniValue& inputs_in, const UniValue& outputs_in, const UniValue& locktime, std::optional<bool> rbf, const uint32_t version, const bool allow_mweb)
+{
+    CMutableTransaction rawTx;
+
+    if (!locktime.isNull()) {
+        int64_t nLockTime = locktime.getInt<int64_t>();
+        if (nLockTime < 0 || nLockTime > LOCKTIME_MAX)
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, locktime out of range");
+        rawTx.nLockTime = nLockTime;
+    }
+
+    if (version < TX_MIN_STANDARD_VERSION || version > TX_MAX_STANDARD_VERSION) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid parameter, version out of range(%d~%d)", TX_MIN_STANDARD_VERSION, TX_MAX_STANDARD_VERSION));
+    }
+    rawTx.version = version;
+
+    // MWEB inputs are referenced by output ID; the rest go through the canonical parser.
+    UniValue l1_inputs(UniValue::VARR);
+    if (!inputs_in.isNull()) {
+        for (const UniValue& input : inputs_in.get_array().getValues()) {
+            const UniValue& o = input.get_obj();
+            if (!o.exists("mweb_out")) {
+                l1_inputs.push_back(input);
+                continue;
+            }
+            if (!allow_mweb) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "MWEB inputs cannot be represented in raw transaction hex; use createpsbt or walletcreatefundedpsbt");
+            }
+            if (o.exists("txid") || o.exists("vout")) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, specify either mweb_out or txid and vout");
+            }
+            if (o.exists("sequence") || o.exists("weight")) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, sequence and weight do not apply to MWEB inputs");
+            }
+            const UniValue& output_id = o.find_value("mweb_out");
+            if (!output_id.isStr() || output_id.get_str().size() != 64 || !IsHex(output_id.get_str())) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, mweb_out must be a 64-character hexadecimal string");
+            }
+            const mw::Hash id = mw::Hash::FromHex(output_id.get_str());
+            if (std::any_of(rawTx.mweb_tx.inputs.begin(), rawTx.mweb_tx.inputs.end(), [&](const mw::MutableInput& in) { return in.output_id == id; })) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Invalid parameter, duplicated mweb_out: %s", output_id.get_str()));
+            }
+            rawTx.mweb_tx.inputs.emplace_back(id);
+        }
+    }
+    AddInputs(rawTx, l1_inputs, rbf);
+
+    if (!rawTx.vin.empty() && !rawTx.mweb_tx.inputs.empty()) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Mixed transparent and MWEB inputs require explicit peg-in or pegout metadata; use walletcreatefundedpsbt");
+    }
+
+    const UniValue outputs = NormalizeOutputs(outputs_in);
+    for (const auto& [destination, amount] : ParseOutputs(outputs)) {
+        if (const StealthAddress* address = std::get_if<StealthAddress>(&destination)) {
+            if (!allow_mweb) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "MWEB outputs cannot be represented in raw transaction hex; use createpsbt or walletcreatefundedpsbt for MWEB transaction drafts");
+            }
+            mw::MutableOutput mweb_output;
+            mweb_output.address = *address;
+            mweb_output.amount = amount;
+            rawTx.mweb_tx.outputs.push_back(std::move(mweb_output));
+        } else {
+            rawTx.vout.emplace_back(amount, GetScriptForDestination(destination));
+        }
+    }
+
+    // With MWEB-only inputs, transparent destinations can only be peg-outs.
+    if (!rawTx.mweb_tx.inputs.empty()) {
+        for (const CTxOut& output : rawTx.vout) {
+            if (output.scriptPubKey.IsUnspendable()) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, data outputs cannot be pegged out from MWEB inputs");
+            }
+            rawTx.mweb_tx.AddPegout(output.scriptPubKey, output.nValue, /*subtract_fee_from_amount=*/false);
+        }
+        rawTx.vout.clear();
+        if (rawTx.mweb_tx.kernels.empty()) {
+            rawTx.mweb_tx.kernels.emplace_back();
+        }
+    }
+
+    if (rbf.has_value() && rbf.value() && rawTx.vin.size() > 0 && !SignalsOptInRBF(CTransaction(rawTx))) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter combination: Sequence number(s) contradict replaceable option");
+    }
+
+    return rawTx;
 }
 
 CMutableTransaction ConstructTransaction(const UniValue& inputs_in, const UniValue& outputs_in, const UniValue& locktime, std::optional<bool> rbf, const uint32_t version)
@@ -372,10 +465,12 @@ std::vector<RPCResult> TxDoc(const TxDocOptions& opts)
     const std::string vin_item_doc{opts.vin_item_doc.value_or("utxo being spent")};
 
     auto vin_inner = std::vector<RPCResult>{
+        {RPCResult::Type::BOOL, "ismweb", "Whether this input spends an MWEB output"},
+        {RPCResult::Type::STR_HEX, "output_id", /*optional=*/true, "Spent MWEB output id (only if ismweb)"},
         {RPCResult::Type::STR_HEX, "coinbase", /*optional=*/true, "The coinbase value (only if coinbase transaction)"},
-        {RPCResult::Type::STR_HEX, "txid", /*optional=*/true, "The transaction id (if not coinbase transaction)"},
-        {RPCResult::Type::NUM, "vout", /*optional=*/true, "The output number (if not coinbase transaction)"},
-        {RPCResult::Type::OBJ, "scriptSig", /*optional=*/true, "The script (if not coinbase transaction)",
+        {RPCResult::Type::STR_HEX, "txid", /*optional=*/true, "The transaction id (if not coinbase transaction and not ismweb)"},
+        {RPCResult::Type::NUM, "vout", /*optional=*/true, "The output number (if not coinbase transaction and not ismweb)"},
+        {RPCResult::Type::OBJ, "scriptSig", /*optional=*/true, "The script (if not coinbase transaction and not ismweb)",
         {
             {RPCResult::Type::STR, "asm", "Disassembly of the signature script"},
             {RPCResult::Type::STR_HEX, "hex", "The raw signature script bytes, hex-encoded"},
@@ -396,7 +491,7 @@ std::vector<RPCResult> TxDoc(const TxDocOptions& opts)
             }
         );
     }
-    vin_inner.emplace_back(RPCResult::Type::NUM, "sequence", "The script sequence number");
+    vin_inner.emplace_back(RPCResult::Type::NUM, "sequence", /*optional=*/true, "The script sequence number (L1 inputs only)");
 
     if (opts.vin_inner_elision) {
         vin_inner = ElideGroup(std::move(vin_inner), *opts.vin_inner_elision);
@@ -423,6 +518,7 @@ std::vector<RPCResult> TxDoc(const TxDocOptions& opts)
         {RPCResult::Type::NUM, "size", "The serialized transaction size"},
         {RPCResult::Type::NUM, "vsize", "The virtual transaction size (differs from size for witness transactions)"},
         {RPCResult::Type::NUM, "weight", "The transaction's weight (between vsize*4-3 and vsize*4)"},
+        {RPCResult::Type::NUM, "mweb_weight", /*optional=*/true, "The MWEB weight of the transaction's MWEB body (only present when the transaction has an MWEB body)"},
         {RPCResult::Type::NUM, "version", "The version"},
         {RPCResult::Type::NUM_TIME, "locktime", "The lock time"},
         {RPCResult::Type::ARR, "vin", "",
@@ -433,14 +529,33 @@ std::vector<RPCResult> TxDoc(const TxDocOptions& opts)
         {
             {RPCResult::Type::OBJ, "", "", Cat(
                 {
-                    {RPCResult::Type::STR_AMOUNT, "value", "The value in " + CURRENCY_UNIT},
-                    {RPCResult::Type::NUM, "n", "index"},
-                    {RPCResult::Type::OBJ, "scriptPubKey", "", ScriptPubKeyDoc()},
+                    {RPCResult::Type::BOOL, "ismweb", "Whether this output is an MWEB output"},
+                    {RPCResult::Type::STR_HEX, "output_id", /*optional=*/true, "Created MWEB output id (only if ismweb)"},
+                    {RPCResult::Type::STR_AMOUNT, "value", /*optional=*/true, "The value in " + CURRENCY_UNIT + " (L1 outputs only)"},
+                    {RPCResult::Type::NUM, "n", /*optional=*/true, "index (L1 outputs only)"},
+                    {RPCResult::Type::OBJ, "scriptPubKey", /*optional=*/true, "L1 scriptPubKey (only if not ismweb)", ScriptPubKeyDoc()},
                 },
                 opts.wallet ?
                     std::vector<RPCResult>{{RPCResult::Type::BOOL, "ischange", /*optional=*/true, "Output script is change (only present if true)"}} :
                     std::vector<RPCResult>{}
             )},
+        }},
+        {RPCResult::Type::ARR, "vkern", /*optional=*/true, "MWEB kernels (only present when the transaction has an MWEB body)",
+        {
+            {RPCResult::Type::OBJ, "", "",
+            {
+                {RPCResult::Type::STR_HEX, "kernel_id", "Kernel id"},
+                {RPCResult::Type::STR_AMOUNT, "fee", "Kernel fee in " + CURRENCY_UNIT},
+                {RPCResult::Type::STR_AMOUNT, "pegin", "Peg-in amount in " + CURRENCY_UNIT},
+                {RPCResult::Type::ARR, "pegout", "Peg-out outputs from this kernel",
+                {
+                    {RPCResult::Type::OBJ, "", "",
+                    {
+                        {RPCResult::Type::STR_AMOUNT, "value", "Peg-out value in " + CURRENCY_UNIT},
+                        {RPCResult::Type::OBJ, "scriptPubKey", "", ScriptPubKeyDoc()},
+                    }},
+                }},
+            }},
         }},
     };
 

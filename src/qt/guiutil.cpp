@@ -210,7 +210,9 @@ bool parseBitcoinURI(QString uri, SendCoinsRecipient *out)
 
 QString formatBitcoinURI(const SendCoinsRecipient &info)
 {
-    bool bech_32 = info.address.startsWith(QString::fromStdString(Params().Bech32HRP() + "1"));
+    const QString mweb_hrp = QString::fromStdString(Params().MWEB_HRP() + "1");
+    bool bech_32 = info.address.startsWith(QString::fromStdString(Params().Bech32HRP() + "1"))
+        || info.address.startsWith(mweb_hrp);
 
     QString ret = QString("bitcoin:%1").arg(bech_32 ? info.address.toUpper() : info.address);
     int paramCount = 0;
@@ -244,6 +246,15 @@ bool isDust(interfaces::Node& node, const QString& address, const CAmount& amoun
     CScript script = GetScriptForDestination(dest);
     CTxOut txOut(amount, script);
     return IsDust(txOut, node.getDustRelayFee());
+}
+
+bool isMWEBAddressBeforeActivated(interfaces::Node& node, const QString& address)
+{
+    const CTxDestination dest = DecodeDestination(address.toStdString());
+    if (!std::holds_alternative<StealthAddress>(dest)) {
+        return false;
+    }
+    return !node.isMWEBActive();
 }
 
 QString HtmlEscape(const QString& str, bool fMultiLine)

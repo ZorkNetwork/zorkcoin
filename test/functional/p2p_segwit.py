@@ -54,6 +54,7 @@ from test_framework.script import (
     OP_0,
     OP_1,
     OP_2,
+    OP_9,
     OP_16,
     OP_2DROP,
     OP_CHECKMULTISIG,
@@ -1327,7 +1328,7 @@ class SegWitTest(BitcoinTestFramework):
         Sending to future segwit versions is always allowed.
         Can run this before and after segwit activation."""
 
-        NUM_SEGWIT_VERSIONS = 17  # will test OP_0, OP1, ..., OP_16
+        NUM_SEGWIT_VERSIONS = 18  # will test OP_0, OP1, ..., OP_16 plus 32-byte v9
         if len(self.utxo) < NUM_SEGWIT_VERSIONS:
             tx = CTransaction()
             tx.vin.append(CTxIn(COutPoint(self.utxo[0].sha256, self.utxo[0].n), b""))
@@ -1351,6 +1352,10 @@ class SegWitTest(BitcoinTestFramework):
             # First try to spend to a future version segwit script_pubkey.
             if version == OP_1:
                 # Don't use 32-byte v1 witness (used by Taproot; see BIP 341)
+                script_pubkey = CScript([CScriptOp(version), witness_hash + b'\x00'])
+            elif version == OP_9:
+                # Don't use 32-byte v9 witness (MWEB peg-in; kernel ID program).
+                # IsMWEBPegin + always-on CheckTransaction rejects orphan peg-ins.
                 script_pubkey = CScript([CScriptOp(version), witness_hash + b'\x00'])
             else:
                 script_pubkey = CScript([CScriptOp(version), witness_hash])
@@ -1407,6 +1412,42 @@ class SegWitTest(BitcoinTestFramework):
 
         # Add utxo to our list
         self.utxo.append(UTXO(tx3.txid_int, 0, tx3.vout[0].nValue))
+
+        # Test 32-byte v9 witness output (MWEB peg-in scriptPubKey) while MWEB is not active.
+        # Policy: Mempool rejects orphan peg-ins regardless of activation (pegin-count-mismatch).
+        # Consensus: In blocks, 32-byte v9 is valid when MWEB is inactive, and spendable as anyone-can-spend.
+        pegin_spk = CScript([CScriptOp(OP_9), witness_hash])
+        tx_pegin = CTransaction()
+        tx_pegin.vin = [CTxIn(COutPoint(self.utxo[0].sha256, self.utxo[0].n), b"")]
+        tx_pegin.vout = [CTxOut(self.utxo[0].nValue - 1000, pegin_spk)]
+        test_transaction_acceptance(self.nodes[1], self.std_node, tx_pegin, with_witness=True, accepted=False)
+        test_transaction_acceptance(self.nodes[0], self.test_node, tx_pegin, with_witness=True, accepted=False, reason="pegin-count-mismatch")
+        self.utxo.pop(0)
+
+        # Block containing the 32-byte v9 output must be accepted while MWEB is inactive.
+        block = self.build_next_block()
+        self.update_witness_block_with_transactions(block, [tx_pegin])
+        test_witness_block(self.nodes[0], self.test_node, block, accepted=True)
+        self.sync_blocks()
+
+        # Spend the 32-byte v9 output in a block.
+        # Ensure non-witness size is at least MIN_STANDARD_TX_NONWITNESS_SIZE (65 bytes)
+        # so policy reaches script verification rather than rejecting with tx-size-small.
+        spend_pegin = CTransaction()
+        spend_pegin.vin = [CTxIn(COutPoint(tx_pegin.txid_int, 0), b"")]
+        spend_pegin.wit.vtxinwit.append(CTxInWitness())
+        spend_pegin.wit.vtxinwit[0].scriptWitness.stack = [witness_script]
+        spend_pegin.vout = [CTxOut(tx_pegin.vout[0].nValue - 1000, CScript([b'x' * 10, OP_DROP, OP_TRUE]))]
+
+        test_transaction_acceptance(self.nodes[1], self.std_node, spend_pegin, with_witness=True, accepted=False)
+        test_transaction_acceptance(self.nodes[0], self.test_node, spend_pegin, with_witness=True, accepted=False, reason="reserved for soft-fork upgrades")
+
+        block = self.build_next_block()
+        self.update_witness_block_with_transactions(block, [spend_pegin])
+        test_witness_block(self.nodes[0], self.test_node, block, accepted=True)
+        self.sync_blocks()
+
+        self.utxo.append(UTXO(spend_pegin.txid_int, 0, spend_pegin.vout[0].nValue))
 
     @subtest
     def test_premature_coinbase_witness_spend(self):

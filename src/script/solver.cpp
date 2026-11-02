@@ -28,6 +28,8 @@ std::string GetTxnOutputType(TxoutType t)
     case TxoutType::WITNESS_V0_KEYHASH: return "witness_v0_keyhash";
     case TxoutType::WITNESS_V0_SCRIPTHASH: return "witness_v0_scripthash";
     case TxoutType::WITNESS_V1_TAPROOT: return "witness_v1_taproot";
+    case TxoutType::WITNESS_MWEB_PEGIN: return "witness_mweb_pegin"; // MWEB
+    case TxoutType::WITNESS_MWEB_HOGADDR: return "witness_mweb_hogaddr"; // MWEB
     case TxoutType::WITNESS_UNKNOWN: return "witness_unknown";
     } // no default case, so the compiler can warn about missing cases
     assert(false);
@@ -165,6 +167,14 @@ TxoutType Solver(const CScript& scriptPubKey, std::vector<std::vector<unsigned c
         if (witnessversion == 1 && witnessprogram.size() == WITNESS_V1_TAPROOT_SIZE) {
             vSolutionsRet.push_back(std::move(witnessprogram));
             return TxoutType::WITNESS_V1_TAPROOT;
+        }
+        if (witnessversion == MWEB_PEGIN_WITNESS_VERSION && witnessprogram.size() == WITNESS_MWEB_PEGIN_SIZE) { // MWEB
+            vSolutionsRet.push_back(std::move(witnessprogram));
+            return TxoutType::WITNESS_MWEB_PEGIN;
+        }
+        if (witnessversion == MWEB_HOG_ADDR_WITNESS_VERSION && witnessprogram.size() == WITNESS_MWEB_HEADERHASH_SIZE) { // MWEB
+            vSolutionsRet.push_back(std::move(witnessprogram));
+            return TxoutType::WITNESS_MWEB_HOGADDR;
         }
         if (scriptPubKey.IsPayToAnchor()) {
             return TxoutType::ANCHOR;

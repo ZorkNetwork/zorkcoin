@@ -15,6 +15,7 @@
 #include <qt/transactiontablemodel.h>
 
 #include <common/args.h>
+#include <addresstype.h>
 #include <interfaces/handler.h>
 #include <interfaces/node.h>
 #include <key_io.h>
@@ -26,6 +27,7 @@
 #include <wallet/types.h>
 #include <wallet/wallet.h>
 
+#include <algorithm> // MWEB
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -165,13 +167,15 @@ WalletModel::SendCoinsReturn WalletModel::prepareTransaction(WalletModelTransact
     QSet<QString> setAddress; // Used to detect duplicates
     int nAddresses = 0;
 
+    CCoinControl coin_control_copy = coinControl;
+
     // Pre-check input data for validity
     for (const SendCoinsRecipient &rcp : recipients)
     {
         if (rcp.fSubtractFeeFromAmount)
             fSubtractFeeFromAmount = true;
         {   // User-entered bitcoin address / amount:
-            if(!validateAddress(rcp.address))
+            if (rcp.payment_kind != SendCoinsRecipient::PaymentKind::PEGIN && !validateAddress(rcp.address))
             {
                 return InvalidAddress;
             }
@@ -182,7 +186,44 @@ WalletModel::SendCoinsReturn WalletModel::prepareTransaction(WalletModelTransact
             setAddress.insert(rcp.address);
             ++nAddresses;
 
-            vecSend.emplace_back(CRecipient{DecodeDestination(rcp.address.toStdString()), rcp.amount, rcp.fSubtractFeeFromAmount});
+            CTxDestination receiver;
+            switch (rcp.payment_kind) {
+            case SendCoinsRecipient::PaymentKind::PEGIN: {
+                coin_control_copy.m_mweb_peg_in = true;
+                StealthAddress pegin_address;
+                if (!m_wallet->getPeginAddress(pegin_address)) {
+                    return TransactionCreationFailed;
+                }
+                receiver = pegin_address;
+                break;
+            }
+            case SendCoinsRecipient::PaymentKind::PEGOUT: {
+                coin_control_copy.m_mweb_peg_out = true;
+                if (!validateAddress(rcp.address)) {
+                    return InvalidAddress;
+                }
+                receiver = DecodeDestination(rcp.address.toStdString());
+                if (std::holds_alternative<StealthAddress>(receiver)) {
+                    return InvalidAddress;
+                }
+                break;
+            }
+            case SendCoinsRecipient::PaymentKind::REGULAR: {
+                receiver = DecodeDestination(rcp.address.toStdString());
+                // Infer peg-out when only MWEB coins are selected and paying to an L1 address.
+                if (IsValidDestination(receiver) && !std::holds_alternative<StealthAddress>(receiver) &&
+                    !coin_control_copy.m_mweb_selected.empty() && !coin_control_copy.HasL1Selected()) {
+                    coin_control_copy.m_mweb_peg_out = true;
+                }
+                // MWEB→MWEB: CreateTransaction funds from MWEB; include that balance
+                // so the pre-check matches RPC (do not treat stealth-only as L1-only).
+                if (std::holds_alternative<StealthAddress>(receiver)) {
+                    coin_control_copy.m_include_mweb = true;
+                }
+                break;
+            }
+            }
+            vecSend.emplace_back(CRecipient{receiver, rcp.amount, rcp.fSubtractFeeFromAmount});
 
             total += rcp.amount;
         }
@@ -192,9 +233,21 @@ WalletModel::SendCoinsReturn WalletModel::prepareTransaction(WalletModelTransact
         return DuplicateAddress;
     }
 
+    // MWEB: every recipient of a peg-out is paid by a peg-out, so none may be an MWEB address.
+    if (coin_control_copy.m_mweb_peg_out && std::any_of(vecSend.cbegin(), vecSend.cend(), [](const CRecipient& r) { return r.IsMWEB(); })) {
+        Q_EMIT message(tr("Send Coins"), tr("A peg-out can only pay transparent addresses. Send to MWEB addresses in a separate transaction."),
+                       CClientUIInterface::MSG_ERROR);
+        return TransactionCreationFailed;
+    }
+
+    // Peg-out spends MWEB; include it for the affordability pre-check.
+    if (coin_control_copy.m_mweb_peg_out) {
+        coin_control_copy.m_include_mweb = true;
+    }
+
     // If no coin was manually selected, use the cached balance
     // Future: can merge this call with 'createTransaction'.
-    CAmount nBalance = getAvailableBalance(&coinControl);
+    CAmount nBalance = getAvailableBalance(&coin_control_copy);
 
     if(total > nBalance)
     {
@@ -203,7 +256,7 @@ WalletModel::SendCoinsReturn WalletModel::prepareTransaction(WalletModelTransact
 
     try {
         auto& newTx = transaction.getWtx();
-        const auto& res = m_wallet->createTransaction(vecSend, coinControl, /*sign=*/!wallet().privateKeysDisabled(), /*change_pos=*/std::nullopt);
+        const auto& res = m_wallet->createTransaction(vecSend, coin_control_copy, /*sign=*/!wallet().privateKeysDisabled(), /*change_pos=*/std::nullopt);
         if (!res) {
             Q_EMIT message(tr("Send Coins"), QString::fromStdString(util::ErrorString(res).translated),
                            CClientUIInterface::MSG_ERROR);
@@ -211,10 +264,15 @@ WalletModel::SendCoinsReturn WalletModel::prepareTransaction(WalletModelTransact
         }
 
         newTx = res->tx;
+        transaction.setMWEBDraft(res->mweb_tx); // MWEB
         CAmount nFeeRequired = res->fee;
         transaction.setTransactionFee(nFeeRequired);
         if (fSubtractFeeFromAmount && newTx) {
-            transaction.reassignAmounts(static_cast<int>(res->change_pos.value_or(-1)));
+            if (res->mweb_tx.kernels.empty()) {
+                transaction.reassignAmounts(static_cast<int>(res->change_pos.value_or(-1)));
+            } else {
+                transaction.reassignMWEBAmounts(res->mweb_tx, res->mweb_change_index, static_cast<int>(res->change_pos.value_or(-1)));
+            }
         }
 
         // Reject absurdly high fee. (This can never happen because the
@@ -258,6 +316,8 @@ void WalletModel::sendCoins(WalletModelTransaction& transaction)
     // and emit coinsSent signal for each recipient
     for (const SendCoinsRecipient &rcp : transaction.getRecipients())
     {
+        // MWEB: a peg-in pays the wallet's own peg-in address, which is not a sending address.
+        if (rcp.payment_kind != SendCoinsRecipient::PaymentKind::PEGIN)
         {
             std::string strAddress = rcp.address.toStdString();
             CTxDestination dest = DecodeDestination(strAddress);
@@ -596,11 +656,11 @@ uint256 WalletModel::getLastBlockProcessed() const
 
 CAmount WalletModel::getAvailableBalance(const CCoinControl* control)
 {
-    // No selected coins, return the cached balance
-    if (!control || !control->HasSelected()) {
-        const interfaces::WalletBalances& balances = getCachedBalance();
-        return balances.balance;
+    // Ask the wallet when coin control restricts the funding source: selected
+    // coins, a peg-in (L1 only), or a send that may fund from MWEB.
+    if (control && (control->HasSelected() || control->m_mweb_peg_in || control->m_mweb_peg_out || control->m_include_mweb)) {
+        return wallet().getAvailableBalance(*control);
     }
-    // Fetch balance from the wallet, taking into account the selected coins
-    return wallet().getAvailableBalance(*control);
+    // No selection: cached balance (includes MWEB via getBalances).
+    return getCachedBalance().balance;
 }

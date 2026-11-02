@@ -50,7 +50,7 @@ public:
 
     uint256 GetBestBlock() const override { return hashBestBlock_; }
 
-    void BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block_hash) override
+    void BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block_hash, const mw::CoinsViewCache::Ptr& mweb_cache = nullptr) override
     {
         for (auto it{cursor.Begin()}; it != cursor.End(); it = cursor.NextAndMaybeErase(*it)){
             if (it->second.IsDirty()) {
@@ -293,6 +293,8 @@ BOOST_FIXTURE_TEST_CASE(coins_cache_dbbase_simulation_test, CacheTest)
 {
     CCoinsViewDB db_base{{.path = "test", .cache_bytes = 8_MiB, .memory_only = true}, {}};
     SimulationTest(&db_base, true);
+
+
 }
 
 BOOST_AUTO_TEST_SUITE_END()
@@ -549,6 +551,29 @@ BOOST_AUTO_TEST_CASE(ccoins_serialization)
     tmp << VARINT(x);
     BOOST_CHECK_EQUAL(HexStr(tmp), "8a95c0bb00");
     BOOST_CHECK_EXCEPTION(SpanReader{"00008a95c0bb00"_hex} >> Coin{}, std::ios_base::failure, HasReason{"end of data"});
+}
+
+BOOST_AUTO_TEST_CASE(txinundo_serialization)
+{
+    CTxUndo undo;
+    undo.vprevout.emplace_back(CTxOut(1, CScript()), 100, false, true);
+    undo.vprevout.emplace_back(CTxOut(2, CScript()), 101, true, false);
+
+    DataStream stream{};
+    stream << undo;
+
+    CTxUndo deserialized;
+    stream >> deserialized;
+
+    BOOST_REQUIRE_EQUAL(deserialized.vprevout.size(), 2U);
+    BOOST_CHECK_EQUAL(deserialized.vprevout[0].nHeight, 100U);
+    BOOST_CHECK(!deserialized.vprevout[0].fCoinBase);
+    BOOST_CHECK(deserialized.vprevout[0].fPegout);
+    BOOST_CHECK_EQUAL(deserialized.vprevout[0].out.nValue, 1);
+    BOOST_CHECK_EQUAL(deserialized.vprevout[1].nHeight, 101U);
+    BOOST_CHECK(deserialized.vprevout[1].fCoinBase);
+    BOOST_CHECK(!deserialized.vprevout[1].fPegout);
+    BOOST_CHECK_EQUAL(deserialized.vprevout[1].out.nValue, 2);
 }
 
 const static COutPoint OUTPOINT;
@@ -1044,6 +1069,8 @@ BOOST_FIXTURE_TEST_CASE(ccoins_flush_behavior, FlushTest)
     }
 }
 
+
+
 BOOST_FIXTURE_TEST_CASE(coins_db_leveldb_layout, FlushTest)
 {
     auto level2_files{[](CCoinsViewDB& base) {
@@ -1200,3 +1227,30 @@ BOOST_AUTO_TEST_CASE(ccoins_peekcoin)
 }
 
 BOOST_AUTO_TEST_SUITE_END()
+
+// Keep the shared Bitcoin simulation/flush fixtures in one translation unit.
+// Extension-specific cases supply their own base-view setup and layer checks.
+namespace test {
+void RunCoinsCacheSimulation(const CoinsViewInitializer& initialize)
+{
+    CacheTest fixture;
+    CCoinsViewDB base{{.path = "test_extension", .cache_bytes = 8_MiB, .memory_only = true}, {}};
+    initialize(base, fixture.m_args.GetDataDirBase());
+    fixture.SimulationTest(&base, true);
+}
+
+void RunCoinsCacheFlush(const CoinsViewInitializer& initialize, const CoinsCacheCheck& check)
+{
+    coins_tests::FlushTest fixture;
+    CCoinsViewDB base{{.path = "test_extension", .cache_bytes = 8_MiB, .memory_only = true}, {}};
+    initialize(base, fixture.m_args.GetDataDirBase());
+    std::vector<std::unique_ptr<CCoinsViewCacheTest>> caches;
+    caches.push_back(std::make_unique<CCoinsViewCacheTest>(&base));
+    caches.push_back(std::make_unique<CCoinsViewCacheTest>(caches.back().get()));
+    for (const auto& view : caches) check(*view);
+    for (const auto& view : caches) {
+        fixture.TestFlushBehavior(view.get(), base, caches, false);
+        fixture.TestFlushBehavior(view.get(), base, caches, true);
+    }
+}
+} // namespace test

@@ -26,8 +26,15 @@ PSBT_GLOBAL_FALLBACK_LOCKTIME = 0x03
 PSBT_GLOBAL_INPUT_COUNT = 0x04
 PSBT_GLOBAL_OUTPUT_COUNT = 0x05
 PSBT_GLOBAL_TX_MODIFIABLE = 0x06
+PSBT_GLOBAL_MWEB_KERNEL_COUNT = 0x92
 PSBT_GLOBAL_VERSION = 0xfb
 PSBT_GLOBAL_PROPRIETARY = 0xfc
+
+# MWEB kernel types
+PSBT_KERN_FEE = 0x02
+PSBT_KERN_PEGIN_AMOUNT = 0x03
+PSBT_KERN_PEGOUT = 0x04
+PSBT_KERN_FEATURES = 0x06
 
 # per-input types
 PSBT_IN_NON_WITNESS_UTXO = 0x00
@@ -108,10 +115,11 @@ class PSBTMap:
 class PSBT:
     """Class for serializing and deserializing PSBTs"""
 
-    def __init__(self, *, g=None, i=None, o=None):
+    def __init__(self, *, g=None, i=None, o=None, k=None):
         self.g = g if g is not None else PSBTMap()
         self.i = i if i is not None else []
         self.o = o if o is not None else []
+        self.k = k if k is not None else []  # MWEB kernel maps (PSBTv2 only)
         self.version = None
 
     def deserialize(self, f):
@@ -133,8 +141,13 @@ class PSBT:
             in_count = len(tx.vin)
             out_count = len(tx.vout)
 
+        kernel_count = 0
+        if self.version == 2 and PSBT_GLOBAL_MWEB_KERNEL_COUNT in self.g.map:
+            kernel_count = deser_compact_size(BytesIO(self.g.map[PSBT_GLOBAL_MWEB_KERNEL_COUNT]))
+
         self.i = [from_binary(PSBTMap, f) for _ in range(in_count)]
         self.o = [from_binary(PSBTMap, f) for _ in range(out_count)]
+        self.k = [from_binary(PSBTMap, f) for _ in range(kernel_count)]
         return self
 
     def serialize(self):
@@ -144,13 +157,15 @@ class PSBT:
         if self.version is not None and self.version == 2:
             self.g.map[PSBT_GLOBAL_INPUT_COUNT] = ser_compact_size(len(self.i))
             self.g.map[PSBT_GLOBAL_OUTPUT_COUNT] = ser_compact_size(len(self.o))
+            if self.k:
+                self.g.map[PSBT_GLOBAL_MWEB_KERNEL_COUNT] = ser_compact_size(len(self.k))
         if self.version is None or (self.version is not None and self.version == 0):
             assert PSBT_GLOBAL_UNSIGNED_TX in self.g.map
             tx = from_binary(CTransaction, self.g.map[PSBT_GLOBAL_UNSIGNED_TX])
             assert_equal(len(tx.vin), len(self.i))
             assert_equal(len(tx.vout), len(self.o))
 
-        psbt = [x.serialize() for x in [self.g] + self.i + self.o]
+        psbt = [x.serialize() for x in [self.g] + self.i + self.o + self.k]
         return b"psbt\xff" + b"".join(psbt)
 
     def make_blank(self):

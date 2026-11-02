@@ -167,7 +167,7 @@ public:
         return std::nullopt;
     }
 
-    void BatchWrite(CoinsViewCacheCursor& cursor, const uint256&) final
+    void BatchWrite(CoinsViewCacheCursor& cursor, const uint256&, const mw::CoinsViewCache::Ptr& mweb_cache = nullptr) final
     {
         for (auto it{cursor.Begin()}; it != cursor.End(); it = cursor.NextAndMaybeErase(*it)) {
             if (it->second.IsDirty()) {

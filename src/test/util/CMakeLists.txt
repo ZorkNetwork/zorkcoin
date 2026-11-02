@@ -9,6 +9,7 @@ add_library(test_util STATIC EXCLUDE_FROM_ALL
   json.cpp
   logging.cpp
   mining.cpp
+  mweb_setup.cpp
   net.cpp
   random.cpp
   script.cpp
@@ -18,6 +19,7 @@ add_library(test_util STATIC EXCLUDE_FROM_ALL
   txmempool.cpp
   validation.cpp
   $<$<BOOL:${ENABLE_WALLET}>:${PROJECT_SOURCE_DIR}/src/wallet/test/util.cpp>
+  $<$<BOOL:${ENABLE_WALLET}>:${PROJECT_SOURCE_DIR}/src/wallet/test/mweb_util.cpp>
 )
 
 target_link_libraries(test_util

@@ -38,4 +38,7 @@ inline constexpr int WTXID_RELAY_VERSION = 70016;
 //! "feature" message type for feature negotiation starts with this version
 inline constexpr int FEATURE_VERSION = 70017;
 
+//! "mwebheader" command for light client MWEB support starts with this version
+static const int MWEB_SYNC_VERSION = 70017; // MWEB
+
 #endif // BITCOIN_NODE_PROTOCOL_VERSION_H

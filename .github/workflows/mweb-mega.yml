@@ -1,0 +1,132 @@
+name: MWEB Mega CI
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      scale:
+        description: 'Mega scale (quick|full|extended)'
+        required: false
+        default: 'quick'
+  pull_request:
+    paths:
+      - 'src/node/mweb_*.cpp'
+      - 'src/node/mweb_*.h'
+      - 'src/net_processing.cpp'
+      - 'src/validation.cpp'
+      - 'src/libmw/**'
+      - 'src/test/mweb_serve_tests.cpp'
+      - 'test/functional/mweb_p2p*.py'
+      - 'ci/scripts/mweb_*.sh'
+      - '.github/workflows/mweb-mega.yml'
+
+jobs:
+  mweb-gates:
+    name: mweb grep + unit + assumeutxo
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install deps
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake python3-zmq libevent-dev libboost-dev lcov
+      - name: Grep gate
+        run: ci/scripts/mweb_grep_gate.sh
+      - name: Build
+        run: |
+          cmake -B build -DBUILD_TESTS=ON
+          cmake --build build -j$(nproc)
+      - name: Unit mweb serve tests
+        run: ./build/bin/test_bitcoin --run_test=mweb_serve_tests,mweb_serve_tests_chain
+      - name: AssumeUTXO serve (M3 / T-05)
+        run: test/functional/mweb_p2p_assumeutxo_serve.py
+
+  mweb-mega-quick:
+    name: mweb mega quick
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    needs: mweb-gates
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install deps
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake python3-zmq libevent-dev libboost-dev
+      - name: Build
+        run: |
+          cmake -B build -DBUILD_TESTS=ON
+          cmake --build build -j$(nproc)
+      - name: Functional quick suite
+        run: |
+          test/functional/mweb_p2p.py
+          test/functional/mweb_p2p_rate_limit.py
+          test/functional/mweb_p2p_serve_regression.py --post-mweb-blocks=50
+          test/functional/mweb_p2p_stress_mega.py --mweb-mega-scale=quick
+          test/functional/mweb_p2p_rate_limit_mega.py --mweb-mega-scale=quick
+
+  mweb-mega-full:
+    if: github.event_name == 'schedule' || github.event.inputs.scale == 'full' || github.event.inputs.scale == 'extended'
+    name: mweb mega full
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    needs: mweb-gates
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install deps
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake python3-zmq libevent-dev libboost-dev
+      - name: Build
+        run: |
+          cmake -B build -DBUILD_TESTS=ON
+          cmake --build build -j$(nproc)
+      - name: Mega stress full scale
+        run: test/functional/mweb_p2p_stress_mega.py --mweb-mega-scale=full
+      - name: Rate limit mega full
+        run: test/functional/mweb_p2p_rate_limit_mega.py --mweb-mega-scale=full
+
+  mweb-mega-extended:
+    if: github.event_name == 'schedule' || github.event.inputs.scale == 'extended'
+    name: mweb mega extended
+    runs-on: ubuntu-latest
+    timeout-minutes: 480
+    needs: mweb-gates
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install deps
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake python3-zmq libevent-dev libboost-dev
+      - name: Build
+        run: |
+          cmake -B build -DBUILD_TESTS=ON
+          cmake --build build -j$(nproc)
+      - name: Mega stress extended scale
+        run: test/functional/mweb_p2p_stress_mega.py --mweb-mega-scale=extended
+      - name: Rate limit mega extended
+        run: test/functional/mweb_p2p_rate_limit_mega.py --mweb-mega-scale=extended
+
+  mweb-coverage:
+    name: mweb serve coverage gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    needs: mweb-gates
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install deps
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake python3-zmq libevent-dev libboost-dev lcov
+      - name: Coverage gate (separate build dir)
+        env:
+          BUILD_DIR: ${{ github.workspace }}/build-coverage
+        run: ci/scripts/mweb_serve_coverage.sh
+
+  mweb-soak:
+    if: github.event_name == 'schedule'
+    name: mweb soak S-01
+    runs-on: ubuntu-latest
+    timeout-minutes: 480
+    needs: mweb-gates
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install deps
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake python3-zmq libevent-dev libboost-dev
+      - name: Build
+        run: |
+          cmake -B build -DBUILD_TESTS=ON
+          cmake --build build -j$(nproc)
+      - name: Rate limit mega soak (quick chain, long abuse)
+        run: test/functional/mweb_p2p_rate_limit_mega.py --mweb-mega-scale=quick

@@ -24,4 +24,22 @@ void FindCoins(const NodeContext& node, std::map<COutPoint, Coin>& coins)
         }
     }
 }
+
+void FindCoins(const NodeContext& node, std::map<mw::Hash, std::optional<Output>>& coins)
+{
+    assert(node.mempool);
+    assert(node.chainman);
+    LOCK2(cs_main, node.mempool->cs);
+    CCoinsViewCache& chain_view = node.chainman->ActiveChainstate().CoinsTip();
+    CCoinsViewMemPool mempool_view(&chain_view, *node.mempool);
+    const CCoinsView& view{mempool_view};
+    for (auto& [output_id, coin] : coins) {
+        Output output;
+        if (view.GetMWEBCoin(output_id, output)) {
+            coin = std::move(output);
+        } else {
+            coin.reset();
+        }
+    }
+}
 } // namespace node

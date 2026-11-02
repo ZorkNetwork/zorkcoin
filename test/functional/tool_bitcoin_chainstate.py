@@ -13,14 +13,18 @@ snapshot and extend the snapshot chain with new blocks.
 
 import subprocess
 
+from test_framework.assumeutxo_util import (
+    ASSUMEUTXO_BASE_BLOCK_HASH,
+    ASSUMEUTXO_BASE_HEIGHT,
+    build_assumeutxo_base_chain,
+)
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal
-from test_framework.wallet import MiniWallet
 
 START_HEIGHT = 199
 # Hardcoded in regtest chainparams
-SNAPSHOT_BASE_BLOCK_HEIGHT = 299
-SNAPSHOT_BASE_BLOCK_HASH = "0c552ced4721c249a389eb9b08cb8da261cd46f0e7b5f9d064d48f3113406853"
+SNAPSHOT_BASE_BLOCK_HEIGHT = ASSUMEUTXO_BASE_HEIGHT
+SNAPSHOT_BASE_BLOCK_HASH = ASSUMEUTXO_BASE_BLOCK_HASH
 
 
 class BitcoinChainstateTest(BitcoinTestFramework):
@@ -29,26 +33,23 @@ class BitcoinChainstateTest(BitcoinTestFramework):
 
     def set_test_params(self):
         """Use the pregenerated, deterministic chain up to height 199."""
+        self.setup_clean_chain = False
         self.num_nodes = 2
+        self.extra_args = [
+            ["-vbparams=mweb:-2:0"],
+            ["-vbparams=mweb:-2:0"],
+        ]
 
     def setup_network(self):
         """Start with the nodes disconnected so that one can generate a snapshot
         including blocks the other hasn't yet seen."""
-        self.add_nodes(2)
+        self.add_nodes(2, self.extra_args)
         self.start_nodes()
 
     def generate_snapshot_chain(self):
         self.log.info(f"Generate deterministic chain up to block {SNAPSHOT_BASE_BLOCK_HEIGHT} for node0 while node1 disconnected")
         n0 = self.nodes[0]
-        assert_equal(n0.getblockcount(), START_HEIGHT)
-        n0.setmocktime(n0.getblockheader(n0.getbestblockhash())['time'])
-        mini_wallet = MiniWallet(n0)
-        for i in range(SNAPSHOT_BASE_BLOCK_HEIGHT - n0.getblockchaininfo()["blocks"]):
-            if i % 3 == 0:
-                mini_wallet.send_self_transfer(from_node=n0)
-            self.generate(n0, nblocks=1, sync_fun=self.no_op)
-        assert_equal(n0.getblockcount(), SNAPSHOT_BASE_BLOCK_HEIGHT)
-        assert_equal(n0.getbestblockhash(), SNAPSHOT_BASE_BLOCK_HASH)
+        build_assumeutxo_base_chain(self, n0, sync_fun=self.no_op)
         return n0.dumptxoutset('utxos.dat', "latest")
 
     def add_block(self, datadir, input, *, expected_stderr=None, expected_stdout=None):

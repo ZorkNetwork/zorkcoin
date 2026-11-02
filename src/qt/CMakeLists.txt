@@ -205,6 +205,8 @@ if(ENABLE_WALLET)
       transactionoverviewwidget.h
       transactionrecord.cpp
       transactionrecord.h
+      mweb_transactionrecord.cpp
+      mweb_transactionrecord.h
       transactiontablemodel.cpp
       transactiontablemodel.h
       transactionview.cpp

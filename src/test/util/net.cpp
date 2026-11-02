@@ -80,6 +80,14 @@ void ConnmanTestMsg::ResetMaxOutboundCycle()
     nMaxOutboundTotalBytesSentInCycle = 0;
 }
 
+void ConnmanTestMsg::SetOutboundTargetForTest(uint64_t limit, uint64_t bytes_sent_in_cycle)
+{
+    LOCK(m_total_bytes_sent_mutex);
+    nMaxOutboundLimit = limit;
+    nMaxOutboundTotalBytesSentInCycle = bytes_sent_in_cycle;
+    nMaxOutboundCycleStartTime = GetTime<std::chrono::seconds>();
+}
+
 void ConnmanTestMsg::Reset()
 {
     ResetAddrCache();

@@ -7,6 +7,12 @@
 #include <qt/guiutil.h>
 #include <qt/walletmodel.h>
 
+#include <test/util/setup_common.h>
+#include <util/chaintype.h>
+#include <key_io.h>
+#include <kernel/chainparams.h>
+
+
 #include <QUrl>
 
 void URITests::uriTests()

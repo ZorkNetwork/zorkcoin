@@ -28,9 +28,17 @@ target_link_libraries(test_bitcoin-qt
 import_plugins(test_bitcoin-qt)
 
 if(ENABLE_WALLET)
+  if(ENABLE_MWEB_UNCOMMON_SENDS)
+    target_compile_definitions(test_bitcoin-qt PRIVATE ENABLE_MWEB_UNCOMMON_SENDS=1)
+  else()
+    target_compile_definitions(test_bitcoin-qt PRIVATE ENABLE_MWEB_UNCOMMON_SENDS=0)
+  endif()
   target_sources(test_bitcoin-qt
     PRIVATE
       addressbooktests.cpp
+      mwebtests.cpp
+      mweb_uri_tests.cpp
+      mweb_wallet_tests.cpp
       wallettests.cpp
       ../../wallet/test/wallet_test_fixture.cpp
   )

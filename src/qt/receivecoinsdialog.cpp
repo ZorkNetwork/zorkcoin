@@ -4,6 +4,9 @@
 
 #include <wallet/wallet.h>
 
+#include <kernel/chainparams.h>
+#include <key_io.h>
+
 #include <qt/receivecoinsdialog.h>
 #include <qt/forms/ui_receivecoinsdialog.h>
 
@@ -99,15 +102,34 @@ void ReceiveCoinsDialog::setModel(WalletModel *_model)
         if (model->wallet().taprootEnabled()) {
             add_address_type(OutputType::BECH32M, tr("Bech32m (Taproot)"), tr("Bech32m (BIP-350) is an upgrade to Bech32, wallet support is still limited."));
         }
+        if (model->wallet().mwebEnabled()) {
+            add_address_type(OutputType::MWEB,
+                tr("Bech32 (MWEB)"),
+                tr("Generates a confidential MWEB stealth address (%1, ~130 characters). "
+                   "Use for receiving funds on the MWEB extension block.")
+                    .arg(QString::fromStdString(Params().MWEB_HRP())));
+        }
 
-        // Set the button to be enabled or disabled based on whether the wallet can give out new addresses.
-        ui->receiveButton->setEnabled(model->wallet().canGetAddresses());
+        connect(ui->addressType, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int) {
+            updateReceiveButtonEnabled();
+        });
 
-        // Enable/disable the receive button if the wallet is now able/unable to give out new addresses.
-        connect(model, &WalletModel::canGetAddressesChanged, [this] {
-            ui->receiveButton->setEnabled(model->wallet().canGetAddresses());
+        updateReceiveButtonEnabled();
+
+        connect(model, &WalletModel::canGetAddressesChanged, this, [this] {
+            updateReceiveButtonEnabled();
         });
     }
+}
+
+void ReceiveCoinsDialog::updateReceiveButtonEnabled()
+{
+    if (!model) return;
+    const auto type = static_cast<OutputType>(ui->addressType->currentData().toInt());
+    const bool enabled = type == OutputType::MWEB
+        ? model->wallet().canGetMWEBAddresses()
+        : model->wallet().canGetAddresses();
+    ui->receiveButton->setEnabled(enabled);
 }
 
 ReceiveCoinsDialog::~ReceiveCoinsDialog()
@@ -176,9 +198,15 @@ void ReceiveCoinsDialog::on_receiveButton_clicked()
             QMessageBox::Ok, QMessageBox::Ok);
         break;
     case AddressTableModel::EditStatus::KEY_GENERATION_FAILURE:
-        QMessageBox::critical(this, windowTitle(),
-            tr("Could not generate new %1 address").arg(QString::fromStdString(FormatOutputType(address_type))),
-            QMessageBox::Ok, QMessageBox::Ok);
+        if (address_type == OutputType::MWEB) {
+            QMessageBox::critical(this, windowTitle(),
+                tr("Could not generate a new MWEB address. Ensure the wallet's MWEB descriptor is imported and the keypool is ready."),
+                QMessageBox::Ok, QMessageBox::Ok);
+        } else {
+            QMessageBox::critical(this, windowTitle(),
+                tr("Could not generate new %1 address").arg(QString::fromStdString(FormatOutputType(address_type))),
+                QMessageBox::Ok, QMessageBox::Ok);
+        }
         break;
     // These aren't valid return values for our action
     case AddressTableModel::EditStatus::INVALID_ADDRESS:

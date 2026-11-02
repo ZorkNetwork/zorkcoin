@@ -6,6 +6,7 @@
 
 #include <qt/bitcoinunits.h>
 #include <qt/guiutil.h>
+#include <qt/mweb_transactionrecord.h>
 #include <qt/paymentserver.h>
 #include <qt/transactionrecord.h>
 
@@ -14,6 +15,7 @@
 #include <interfaces/node.h>
 #include <interfaces/wallet.h>
 #include <key_io.h>
+#include <mw/models/tx/peg_out_coin.h>
 #include <policy/policy.h>
 #include <util/log.h>
 #include <validation.h>
@@ -192,11 +194,20 @@ QString TransactionDesc::toHTML(interfaces::Node& node, interfaces::Wallet& wall
         // Credit
         //
         strHTML += "<b>" + tr("Credit") + ":</b> " + BitcoinUnits::formatHtmlWithUnit(unit, nNet) + "<br>";
+        // MWEB: per-out extension credits (stealth addresses)
+        strHTML += mweb_gui::FormatMWEBOutsHtml(wtx, unit, /*all_from_me=*/false);
     }
     else
     {
         bool all_from_me = std::all_of(wtx.txin_is_mine.begin(), wtx.txin_is_mine.end(), [](bool mine) { return mine; });
+        bool any_from_me = false;
+        for (const bool mine : wtx.txin_is_mine) {
+            if (mine) any_from_me = true;
+        }
         bool all_to_me = std::all_of(wtx.txout_is_mine.begin(), wtx.txout_is_mine.end(), [](bool mine) { return mine; });
+        // MWEB
+        mweb_gui::IncludeMWEBInputsInFromMe(wtx, all_from_me, any_from_me);
+        mweb_gui::IncludeMWEBOutputsInToMe(wtx, all_to_me);
 
         if (all_from_me)
         {
@@ -232,6 +243,35 @@ QString TransactionDesc::toHTML(interfaces::Node& node, interfaces::Wallet& wall
                     strHTML += "<b>" + tr("Credit") + ":</b> " + BitcoinUnits::formatHtmlWithUnit(unit, txout.nValue) + "<br>";
             }
 
+            // MWEB: peg-out outputs
+            auto pegout_mine = wtx.pegout_is_mine.begin();
+            for (const PegOutCoin& pegout : wtx.pegouts) {
+                bool toSelf = pegout_mine != wtx.pegout_is_mine.end() ? *(pegout_mine++) : false;
+                if (toSelf && all_from_me)
+                    continue;
+
+                CTxDestination dest;
+                if (ExtractDestination(pegout.GetScriptPubKey(), dest)) {
+                    if (!wtx.comment_to || wtx.comment_to->empty()) {
+                        strHTML += "<b>" + tr("To") + ":</b> ";
+                        std::string name;
+                        if (wallet.getAddress(dest, &name, /*purpose=*/nullptr) && !name.empty())
+                            strHTML += GUIUtil::HtmlEscape(name) + " ";
+                        strHTML += GUIUtil::HtmlEscape(EncodeDestination(dest));
+                        if (toSelf)
+                            strHTML += " (" + tr("own address") + ")";
+                        strHTML += "<br>";
+                    }
+                }
+
+                strHTML += "<b>" + tr("Debit") + ":</b> " + BitcoinUnits::formatHtmlWithUnit(unit, -pegout.GetAmount()) + "<br>";
+                if (toSelf)
+                    strHTML += "<b>" + tr("Credit") + ":</b> " + BitcoinUnits::formatHtmlWithUnit(unit, pegout.GetAmount()) + "<br>";
+            }
+
+            // MWEB: extension outputs
+            strHTML += mweb_gui::FormatMWEBOutsHtml(wtx, unit, all_from_me);
+
             if (all_to_me)
             {
                 // Payment to self
@@ -241,7 +281,8 @@ QString TransactionDesc::toHTML(interfaces::Node& node, interfaces::Wallet& wall
                 strHTML += "<b>" + tr("Total credit") + ":</b> " + BitcoinUnits::formatHtmlWithUnit(unit, nValue) + "<br>";
             }
 
-            CAmount nTxFee = nDebit - wtx.tx->GetValueOut();
+            // MWEB: wallet residual fee (includes kernel fee)
+            CAmount nTxFee = mweb_gui::DisplayFee(wtx);
             if (nTxFee > 0)
                 strHTML += "<b>" + tr("Transaction fee") + ":</b> " + BitcoinUnits::formatHtmlWithUnit(unit, -nTxFee) + "<br>";
         }
@@ -262,6 +303,13 @@ QString TransactionDesc::toHTML(interfaces::Node& node, interfaces::Wallet& wall
                     strHTML += "<b>" + tr("Credit") + ":</b> " + BitcoinUnits::formatHtmlWithUnit(unit, wallet.getCredit(txout)) + "<br>";
                 }
             }
+            for (size_t p = 0; p < wtx.pegouts.size(); ++p) {
+                if (p < wtx.pegout_is_mine.size() && wtx.pegout_is_mine[p]) {
+                    strHTML += "<b>" + tr("Credit") + ":</b> " + BitcoinUnits::formatHtmlWithUnit(unit, wtx.pegouts[p].GetAmount()) + "<br>";
+                }
+            }
+            // MWEB: mine extension outs on mixed path
+            strHTML += mweb_gui::FormatMWEBOutsHtml(wtx, unit, /*all_from_me=*/false);
         }
     }
 
@@ -280,6 +328,10 @@ QString TransactionDesc::toHTML(interfaces::Node& node, interfaces::Wallet& wall
     strHTML += "<b>" + tr("Transaction ID") + ":</b> " + rec->getTxHash() + "<br>";
     strHTML += "<b>" + tr("Transaction total size") + ":</b> " + QString::number(wtx.tx->ComputeTotalSize()) + " bytes<br>";
     strHTML += "<b>" + tr("Transaction virtual size") + ":</b> " + QString::number(GetVirtualTransactionSize(*wtx.tx)) + " bytes<br>";
+    // MWEB
+    if (wtx.mweb_weight > 0) {
+        strHTML += "<b>" + tr("Transaction MWEB weight") + ":</b> " + QString::number(wtx.mweb_weight) + "<br>";
+    }
     strHTML += "<b>" + tr("Output index") + ":</b> " + QString::number(rec->getOutputIndex()) + "<br>";
 
     // Message from normal bitcoin:URI (bitcoin:123...?message=example)
@@ -324,9 +376,14 @@ QString TransactionDesc::toHTML(interfaces::Node& node, interfaces::Wallet& wall
         strHTML += "<br><b>" + tr("Inputs") + ":</b>";
         strHTML += "<ul>";
 
-        for (const CTxIn& txin : wtx.tx->vin)
+        for (const CTxInput& txin : wtx.tx->GetInputs())
         {
-            COutPoint prevout = txin.prevout;
+            if (txin.IsMWEB()) {
+                strHTML += "<li>MWEB " + QString::fromStdString(txin.ToMWEB().ToHex()) + "</li>";
+                continue;
+            }
+            const CTxIn& l1_in = txin.GetTxIn();
+            COutPoint prevout = l1_in.prevout;
 
             if (auto prev{node.getUnspentOutput(prevout)}) {
                 {

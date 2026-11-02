@@ -8,6 +8,7 @@
     "locktime": 0,
     "vin": [
         {
+            "ismweb": false,
             "txid": "5897de6bd6027a475eadd57019d4e6872c396d0716c4875a5f1a6fcfdf385c1f",
             "vout": 0,
             "scriptSig": {
@@ -17,6 +18,7 @@
             "sequence": 4294967295
         },
         {
+            "ismweb": false,
             "txid": "bf829c6bcf84579331337659d31f89dfd138f7f7785802d5501c92333145ca7c",
             "vout": 18,
             "scriptSig": {
@@ -26,6 +28,7 @@
             "sequence": 4294967295
         },
         {
+            "ismweb": false,
             "txid": "22a6f904655d53ae2ff70e701a0bbd90aa3975c0f40bfc6cc996a9049e31cdfc",
             "vout": 1,
             "scriptSig": {
@@ -37,6 +40,7 @@
     ],
     "vout": [
         {
+            "ismweb": false,
             "value": 0.18000000,
             "n": 0,
             "scriptPubKey": {
@@ -48,6 +52,7 @@
             }
         },
         {
+            "ismweb": false,
             "value": 4.00000000,
             "n": 1,
             "scriptPubKey": {

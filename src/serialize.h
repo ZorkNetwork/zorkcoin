@@ -21,6 +21,7 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <optional> // MWEB hooks: std::optional serialization
 #include <set>
 #include <span>
 #include <string>
@@ -755,6 +756,12 @@ template<typename Stream, typename T> void Unserialize(Stream& os, std::shared_p
 template<typename Stream, typename T> void Serialize(Stream& os, const std::unique_ptr<const T>& p);
 template<typename Stream, typename T> void Unserialize(Stream& os, std::unique_ptr<const T>& p);
 
+/**
+ * optional (MWEB hooks)
+ */
+template<typename Stream, typename T> void Serialize(Stream& os, const std::optional<T>& p);
+template<typename Stream, typename T> void Unserialize(Stream& is, std::optional<T>& p);
+
 
 /**
  * If none of the specialized versions above matched, default to calling member function.
@@ -1037,6 +1044,36 @@ template<typename Stream, typename T>
 void Unserialize(Stream& is, std::shared_ptr<const T>& p)
 {
     p = std::make_shared<const T>(deserialize, is);
+}
+
+/**
+ * optional (MWEB hooks): a flag byte, 1 when set, then the value. Any other flag reads as unset.
+ */
+template <typename Stream, typename T>
+void Serialize(Stream& os, const std::optional<T>& p)
+{
+    uint8_t is_set = p ? 1 : 0;
+    Serialize(os, is_set);
+
+    if (is_set == 1) {
+        Serialize(os, *p);
+    }
+}
+
+template <typename Stream, typename T>
+void Unserialize(Stream& is, std::optional<T>& p)
+{
+    uint8_t is_set = 0;
+    Unserialize(is, is_set);
+
+    if (is_set == 1) {
+        T val;
+        Unserialize(is, val);
+
+        p = std::make_optional(std::move(val));
+    } else {
+        p = std::nullopt;
+    }
 }
 
 /**

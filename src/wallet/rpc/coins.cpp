@@ -16,6 +16,8 @@
 
 #include <univalue.h>
 
+#include <algorithm>
+
 
 namespace wallet {
 static CAmount GetReceived(const CWallet& wallet, const UniValue& params, bool by_label) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet)
@@ -36,14 +38,19 @@ static CAmount GetReceived(const CWallet& wallet, const UniValue& params, bool b
 
     // Filter by own scripts only
     std::set<CScript> output_scripts;
+    std::vector<StealthAddress> mweb_addresses; // MWEB: own MWEB addresses, as Litecoin accepts them
     for (const auto& address : addresses) {
+        if (const StealthAddress* mweb_address = std::get_if<StealthAddress>(&address)) {
+            if (wallet.IsMine(address)) mweb_addresses.push_back(*mweb_address);
+            continue;
+        }
         auto output_script{GetScriptForDestination(address)};
         if (wallet.IsMine(output_script)) {
             output_scripts.insert(output_script);
         }
     }
 
-    if (output_scripts.empty()) {
+    if (output_scripts.empty() && mweb_addresses.empty()) {
         throw JSONRPCError(RPC_WALLET_ERROR, "Address not found in wallet");
     }
 
@@ -61,7 +68,8 @@ static CAmount GetReceived(const CWallet& wallet, const UniValue& params, bool b
         if (depth < min_depth
             // Coinbase with less than 1 confirmation is no longer in the main chain
             || (wtx.IsCoinBase() && (depth < 1))
-            || (wallet.IsTxImmatureCoinBase(wtx) && !include_immature_coinbase))
+            // MWEB: Litecoin counts HogEx outputs before they mature, so only coinbase is filtered.
+            || (wtx.IsCoinBase() && wallet.IsTxImmatureCoinBase(wtx) && !include_immature_coinbase))
         {
             continue;
         }
@@ -69,6 +77,11 @@ static CAmount GetReceived(const CWallet& wallet, const UniValue& params, bool b
         for (const CTxOut& txout : wtx.GetTx()->vout) {
             if (output_scripts.contains(txout.scriptPubKey)) {
                 amount += txout.nValue;
+            }
+        }
+        for (const auto& [address, coin] : WalletTxMWEBReceived(wallet, wtx)) {
+            if (std::ranges::find(mweb_addresses, address) != mweb_addresses.end()) {
+                amount += coin.amount;
             }
         }
     }
@@ -205,7 +218,7 @@ RPCMethod getbalance()
 
     bool avoid_reuse = GetAvoidReuseFlag(*pwallet, request.params[3]);
 
-    const auto bal = GetBalance(*pwallet, min_depth, avoid_reuse);
+    const auto bal = GetBalance(*pwallet, min_depth, avoid_reuse, /*include_nonmempool=*/false, /*include_mweb=*/true);
 
     return ValueFromAmount(bal.m_mine_trusted);
 },
@@ -227,12 +240,13 @@ RPCMethod lockunspent()
                 "Also see the listunspent call\n",
                 {
                     {"unlock", RPCArg::Type::BOOL, RPCArg::Optional::NO, "Whether to unlock (true) or lock (false) the specified transactions"},
-                    {"transactions", RPCArg::Type::ARR, RPCArg::Default{UniValue::VARR}, "The transaction outputs and within each, the txid (string) vout (numeric).",
+                    {"transactions", RPCArg::Type::ARR, RPCArg::Default{UniValue::VARR}, "The transaction outputs. Each object must contain either txid and vout, or mweb_out.",
                         {
                             {"", RPCArg::Type::OBJ, RPCArg::Optional::OMITTED, "",
                                 {
-                                    {"txid", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The transaction id"},
-                                    {"vout", RPCArg::Type::NUM, RPCArg::Optional::NO, "The output number"},
+                                    {"txid", RPCArg::Type::STR_HEX, RPCArg::Optional::OMITTED, "The transaction id for a transparent output"},
+                                    {"vout", RPCArg::Type::NUM, RPCArg::Optional::OMITTED, "The output number for a transparent output"},
+                                    {"mweb_out", RPCArg::Type::STR_HEX, RPCArg::Optional::OMITTED, "The MWEB output id"},
                                 },
                             },
                         },
@@ -285,9 +299,33 @@ RPCMethod lockunspent()
 
     std::vector<COutPoint> outputs;
     outputs.reserve(output_params.size());
+    std::vector<mw::Hash> mweb_outputs;
 
     for (unsigned int idx = 0; idx < output_params.size(); idx++) {
         const UniValue& o = output_params[idx].get_obj();
+
+        if (o.exists("mweb_out")) {
+            if (o.exists("txid") || o.exists("vout")) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, specify either mweb_out or txid and vout");
+            }
+            const mw::Hash output_id = ParseMWEBOutputID(o.find_value("mweb_out"));
+            mw::Coin coin;
+            if (!pwallet->GetCoin(output_id, coin) || !coin.IsMine()) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, unknown MWEB output");
+            }
+            if (pwallet->IsSpentMWEBInChainOrMempool(output_id)) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, expected unspent output");
+            }
+            const bool is_locked = pwallet->IsLockedCoin(output_id);
+            if (fUnlock && !is_locked) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, expected locked output");
+            }
+            if (!fUnlock && is_locked && !persistent) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, output already locked");
+            }
+            mweb_outputs.push_back(output_id);
+            continue;
+        }
 
         RPCTypeCheckObj(o,
             {
@@ -339,6 +377,13 @@ RPCMethod lockunspent()
             if (!pwallet->LockCoin(outpt, persistent)) throw JSONRPCError(RPC_WALLET_ERROR, "Locking coin failed");
         }
     }
+    for (const mw::Hash& output_id : mweb_outputs) {
+        if (fUnlock) {
+            if (!pwallet->UnlockCoin(output_id)) throw JSONRPCError(RPC_WALLET_ERROR, "Unlocking coin failed");
+        } else {
+            if (!pwallet->LockCoin(output_id, persistent)) throw JSONRPCError(RPC_WALLET_ERROR, "Locking coin failed");
+        }
+    }
 
     return true;
 },
@@ -357,8 +402,9 @@ RPCMethod listlockunspent()
                     {
                         {RPCResult::Type::OBJ, "", "",
                         {
-                            {RPCResult::Type::STR_HEX, "txid", "The transaction id locked"},
-                            {RPCResult::Type::NUM, "vout", "The vout value"},
+                            {RPCResult::Type::STR_HEX, "txid", /*optional=*/true, "The transaction id of a locked transparent output"},
+                            {RPCResult::Type::NUM, "vout", /*optional=*/true, "The vout value of a locked transparent output"},
+                            {RPCResult::Type::STR_HEX, "mweb_out", /*optional=*/true, "The MWEB output id of a locked MWEB output"},
                         }},
                     }
                 },
@@ -391,6 +437,14 @@ RPCMethod listlockunspent()
 
         o.pushKV("txid", outpt.hash.GetHex());
         o.pushKV("vout", outpt.n);
+        ret.push_back(std::move(o));
+    }
+
+    std::vector<mw::Hash> mweb_outputs;
+    pwallet->ListLockedCoins(mweb_outputs);
+    for (const mw::Hash& output_id : mweb_outputs) {
+        UniValue o(UniValue::VOBJ);
+        o.pushKV("mweb_out", output_id.ToHex());
         ret.push_back(std::move(o));
     }
 
@@ -434,7 +488,7 @@ RPCMethod getbalances()
 
     LOCK(wallet.cs_wallet);
 
-    const auto bal = GetBalance(wallet, /*min_depth=*/0, /*avoid_reuse=*/true, /*include_nonmempool=*/true);
+    const auto bal = GetBalance(wallet, /*min_depth=*/0, /*avoid_reuse=*/true, /*include_nonmempool=*/true, /*include_mweb=*/true);
 
     UniValue balances{UniValue::VOBJ};
     {
@@ -487,10 +541,11 @@ RPCMethod listunspent()
                         {RPCResult::Type::OBJ, "", "",
                         {
                             {RPCResult::Type::STR_HEX, "txid", "the transaction id"},
-                            {RPCResult::Type::NUM, "vout", "the vout value"},
+                            {RPCResult::Type::NUM, "vout", /*optional=*/true, "the vout value (L1 outputs only; omitted for MWEB coins, matching Litecoin Core)"},
+                            {RPCResult::Type::STR_HEX, "output_id", /*optional=*/true, "MWEB output id (MWEB coins only; use with send options.inputs)"},
                             {RPCResult::Type::STR, "address", /*optional=*/true, "the bitcoin address"},
                             {RPCResult::Type::STR, "label", /*optional=*/true, "The associated label, or \"\" for the default label"},
-                            {RPCResult::Type::STR_HEX, "scriptPubKey", "the output script"},
+                            {RPCResult::Type::STR_HEX, "scriptPubKey", /*optional=*/true, "the output script (L1 outputs only)"},
                             {RPCResult::Type::STR_AMOUNT, "amount", "the transaction output amount in " + CURRENCY_UNIT},
                             {RPCResult::Type::NUM, "confirmations", "The number of confirmations"},
                             {RPCResult::Type::NUM, "ancestorcount", /*optional=*/true, "The number of in-mempool ancestor transactions, including this one (if transaction is in the mempool)"},
@@ -498,16 +553,16 @@ RPCMethod listunspent()
                             {RPCResult::Type::NUM, "ancestorfees", /*optional=*/true, "The total fees of in-mempool ancestors (including this one) with fee deltas used for mining priority in " + CURRENCY_ATOM + " (if transaction is in the mempool)"},
                             {RPCResult::Type::STR_HEX, "redeemScript", /*optional=*/true, "The redeem script if the output script is P2SH"},
                             {RPCResult::Type::STR, "witnessScript", /*optional=*/true, "witness script if the output script is P2WSH or P2SH-P2WSH"},
-                            {RPCResult::Type::BOOL, "spendable", "(DEPRECATED) Always true"},
-                            {RPCResult::Type::BOOL, "solvable", "Whether we know how to spend this output, ignoring the lack of keys"},
+                            {RPCResult::Type::BOOL, "spendable", "(DEPRECATED) Always true for L1 coins; for MWEB coins, whether the wallet holds the spend key"},
+                            {RPCResult::Type::BOOL, "solvable", /*optional=*/true, "Whether we know how to spend this output, ignoring the lack of keys (L1 outputs only)"},
                             {RPCResult::Type::BOOL, "reused", /*optional=*/true, "(only present if avoid_reuse is set) Whether this output is reused/dirty (sent to an address that was previously spent from)"},
                             {RPCResult::Type::STR, "desc", /*optional=*/true, "(only when solvable) A descriptor for spending this output"},
-                            {RPCResult::Type::ARR, "parent_descs", /*optional=*/false, "List of parent descriptors for the output script of this coin.", {
+                            {RPCResult::Type::ARR, "parent_descs", /*optional=*/true, "List of parent descriptors for the output script of this coin (L1 outputs only).", {
                                 {RPCResult::Type::STR, "desc", "The descriptor string."},
                             }},
-                            {RPCResult::Type::BOOL, "safe", "Whether this output is considered safe to spend. Unconfirmed transactions\n"
+                            {RPCResult::Type::BOOL, "safe", /*optional=*/true, "Whether this output is considered safe to spend. Unconfirmed transactions\n"
                                                             "from outside keys and unconfirmed replacement transactions are considered unsafe\n"
-                                                            "and are not eligible for spending by fundrawtransaction and sendtoaddress."},
+                                                            "and are not eligible for spending by fundrawtransaction and sendtoaddress. L1 outputs only."},
                         }},
                     }
                 },
@@ -685,6 +740,50 @@ RPCMethod listunspent()
         PushParentDescriptors(*pwallet, scriptPubKey, entry);
         if (avoid_reuse) entry.pushKV("reused", reused);
         entry.pushKV("safe", out.safe);
+        results.push_back(std::move(entry));
+    }
+
+    // MWEB: maximumCount and minimumSumAmount also cover MWEB coins, as in Litecoin.
+    uint64_t listed_count{vecOutputs.size()};
+    CAmount listed_amount{0};
+    for (const COutput& out : vecOutputs) listed_amount += out.txout.nValue;
+    const auto limit_reached{[&] {
+        return (filter_coins.max_count > 0 && listed_count >= filter_coins.max_count) ||
+               (filter_coins.min_sum_amount != MAX_MONEY && listed_amount >= filter_coins.min_sum_amount);
+    }};
+    const std::set<CTxDestination>* filter_ptr = destinations.empty() ? nullptr : &destinations;
+    for (const CWallet::MWEBUnspentEntry& mweb_out : pwallet->ListMWEBUnspent(
+             nMinDepth, nMaxDepth, include_unsafe, filter_ptr,
+             filter_coins.min_amount, filter_coins.max_amount)) {
+        if (pwallet->IsLockedCoin(mweb_out.output_id)) {
+            continue;
+        }
+        if (limit_reached()) break;
+        ++listed_count;
+        listed_amount += mweb_out.amount;
+        bool spendable{false}; // MWEB: false for watch-only accounts, as in Litecoin
+        mw::Coin coin;
+        if (pwallet->GetCoin(mweb_out.output_id, coin)) {
+            if (DescriptorScriptPubKeyMan* account = pwallet->GetMWEBAccountForCoin(coin)) {
+                LOCK(account->cs_desc_man);
+                const mw::Keychain::Ptr& keychain = account->GetMWEBKeychain();
+                spendable = keychain && keychain->HasSpendSecret();
+            }
+        }
+        UniValue entry(UniValue::VOBJ);
+        // Litecoin Core listunspent MWEB shape: txid, amount, confirmations,
+        // spendable, address, optional label — plus output_id for send input
+        // selection. Do not emit synthetic L1 fields (especially vout:0).
+        entry.pushKV("txid", mweb_out.txid.GetHex());
+        entry.pushKV("output_id", mweb_out.output_id.ToHex());
+        entry.pushKV("amount", ValueFromAmount(mweb_out.amount));
+        entry.pushKV("confirmations", mweb_out.depth);
+        entry.pushKV("spendable", spendable);
+        entry.pushKV("address", EncodeDestination(mweb_out.address));
+        const auto* address_book_entry = pwallet->FindAddressBookEntry(mweb_out.address);
+        if (address_book_entry) {
+            entry.pushKV("label", address_book_entry->GetLabel());
+        }
         results.push_back(std::move(entry));
     }
 

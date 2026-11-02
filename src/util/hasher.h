@@ -7,7 +7,9 @@
 
 #include <crypto/common.h>
 #include <crypto/siphash.h>
+#include <mw/models/crypto/hash.h>
 #include <primitives/transaction.h>
+#include <serialize.h>
 #include <uint256.h>
 
 #include <cstdint>
@@ -72,6 +74,20 @@ public:
     size_t operator()(const COutPoint& id) const noexcept
     {
         return m_hasher(id.hash.ToUint256(), id.n);
+    }
+};
+
+// MWEB
+class SaltedMWHashHasher
+{
+    const PresaltedSipHasher m_hasher;
+
+public:
+    SaltedMWHashHasher();
+
+    size_t operator()(const mw::Hash& hash) const
+    {
+        return m_hasher(uint256(hash.vec()));
     }
 };
 

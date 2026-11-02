@@ -12,6 +12,7 @@
 #include <vector>
 
 class PartiallySignedTransaction;
+class PSBTInput;
 
 //! Enables interaction with an external signing device or service, such as
 //! a hardware wallet. See doc/external-signer.md
@@ -51,6 +52,16 @@ public:
     //! @param[in] descriptor Descriptor specifying which address to display.
     //!            Must include a public key or xpub, as well as key origin.
     UniValue DisplayAddress(const std::string& descriptor) const;
+
+    //! Display an MWEB address on the device. Passes the `displayaddress --desc <descriptor>`
+    //! command via stdin, because MWEB descriptors carry the scan secret.
+    UniValue DisplayMWEBAddress(const std::string& descriptor) const; // MWEB
+
+    //! Whether an MWEB address descriptor has a key origin with this signer's fingerprint.
+    bool MatchesMWEBAddressDescriptor(const std::string& descriptor) const; // MWEB
+
+    //! Whether an MWEB input's address descriptor has a key origin with this signer's fingerprint.
+    bool MatchesMWEBInput(const PSBTInput& input) const; // MWEB
 
     //! Get receive and change Descriptor(s) from device for a given account.
     //! Calls `<command> --fingerprint <fingerprint> --chain <chain> getdescriptors

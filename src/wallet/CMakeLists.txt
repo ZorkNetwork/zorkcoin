@@ -4,6 +4,14 @@
 
 # Wallet functionality used by bitcoind and bitcoin-wallet executables.
 add_library(bitcoin_wallet STATIC EXCLUDE_FROM_ALL
+  ../mweb/mweb_output_match.cpp
+  ../mweb/mweb_wallet.cpp
+  ../mweb/mweb_wallet_scan.cpp
+  ../mweb/mweb_transact.cpp
+  ../mweb/mweb_spend.cpp
+  mweb_keychain_util.cpp
+  mweb_psbt.cpp
+  ../libmw/src/wallet/keychain.cpp
   coincontrol.cpp
   coinselection.cpp
   context.cpp
@@ -39,8 +47,14 @@ target_link_libraries(bitcoin_wallet
   PRIVATE
     core_interface
     bitcoin_common
+    libmw
     SQLite3::SQLite3
     univalue
     Boost::headers
     $<TARGET_NAME_IF_EXISTS:USDT::headers>
 )
+if(ENABLE_MWEB_UNCOMMON_SENDS)
+  target_compile_definitions(bitcoin_wallet PUBLIC ENABLE_MWEB_UNCOMMON_SENDS=1)
+else()
+  target_compile_definitions(bitcoin_wallet PUBLIC ENABLE_MWEB_UNCOMMON_SENDS=0)
+endif()

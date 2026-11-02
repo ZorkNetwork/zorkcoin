@@ -31,6 +31,8 @@ enum class TxoutType {
     WITNESS_V0_SCRIPTHASH,
     WITNESS_V0_KEYHASH,
     WITNESS_V1_TAPROOT,
+    WITNESS_MWEB_PEGIN, //!< MWEB: Hash of the peg-in kernel
+    WITNESS_MWEB_HOGADDR, //!< MWEB: HogAddr (first output of HogEx)
     WITNESS_UNKNOWN, //!< Only for Witness versions not already defined above
 };
 

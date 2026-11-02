@@ -19,6 +19,7 @@
 #include <util/moneystr.h>
 #include <util/translation.h>
 #include <wallet/coincontrol.h>
+#include <wallet/scriptpubkeyman.h>
 #include <wallet/wallet.h>
 #include <walletinitinterface.h>
 
@@ -58,6 +59,10 @@ void WalletInit::AddWalletOptions(ArgsManager& argsman) const
     argsman.AddArg("-fallbackfee=<amt>", strprintf("A fee rate (in %s/kvB) that will be used when fee estimation has insufficient data. 0 to entirely disable the fallbackfee feature. (default: %s)",
                                                                CURRENCY_UNIT, FormatMoney(DEFAULT_FALLBACK_FEE)), ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
     argsman.AddArg("-keypool=<n>", strprintf("Set key pool size to <n> (default: %u). Warning: Smaller sizes may increase the risk of losing funds when restoring from an old backup, if none of the addresses in the original keypool have been used.", DEFAULT_KEYPOOL_SIZE), ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
+    argsman.AddArg("-mwebkeypool=<n>", "Set the number of unused MWEB addresses to watch past the last used one, per MWEB account (default: the -keypool value). Warning: Smaller sizes may increase the risk of missing MWEB payments when restoring from an old backup or running the same keys in another wallet.", ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
+    argsman.AddArg("-mwebdeterministicsenders", strprintf("Derive MWEB output sender keys deterministically from the account scan secret (Litecoin Core 24.x receipt-keeping mode) so sent outputs can be rewound on rescan, instead of using random ephemeral sender keys (Litecoin Core 0.21 privacy mode) where scan-key holders cannot reconstruct send history without exported payment proofs (default: %u)", DEFAULT_MWEB_DETERMINISTIC_SENDERS), ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
+    argsman.AddArg("-mwebdescriptorthreshold=<n>", strprintf("Maximum number of stored MWEB internal descriptors before pruning may occur (default: %u)", wallet::DEFAULT_KEYPOOL_SIZE), ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
+    argsman.AddArg("-mwebdescriptorinactivity=<n>", "Seconds without MWEB index activity before a descriptor becomes eligible for pruning (default: 7776000, 90 days)", ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
     argsman.AddArg("-maxapsfee=<n>", strprintf("Spend up to this amount in additional (absolute) fees (in %s) if it allows the use of partial spend avoidance (default: %s)", CURRENCY_UNIT, FormatMoney(DEFAULT_MAX_AVOIDPARTIALSPEND_FEE)), ArgsManager::ALLOW_ANY, OptionsCategory::WALLET);
     argsman.AddArg("-maxtxfee=<amt>", strprintf("Maximum total fees (in %s) to use in a single wallet transaction; setting this too low may abort large transactions (default: %s)",
         CURRENCY_UNIT, FormatMoney(DEFAULT_TRANSACTION_MAXFEE)), ArgsManager::ALLOW_ANY, OptionsCategory::DEBUG_TEST);

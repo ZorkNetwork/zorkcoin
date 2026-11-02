@@ -7,6 +7,7 @@
 #include <common/messages.h>
 #include <common/system.h>
 #include <consensus/amount.h>
+#include <consensus/consensus.h>
 #include <consensus/validation.h>
 #include <interfaces/chain.h>
 #include <node/types.h>
@@ -16,6 +17,7 @@
 #include <primitives/transaction.h>
 #include <primitives/transaction_identifier.h>
 #include <script/script.h>
+#include <script/standard.h>
 #include <script/signingprovider.h>
 #include <script/solver.h>
 #include <util/check.h>
@@ -26,6 +28,9 @@
 #include <wallet/coincontrol.h>
 #include <wallet/fees.h>
 #include <wallet/receive.h>
+#include <mw/consensus/params.h> // MWEB hooks
+#include <mweb/mweb_spend.h> // MWEB hooks
+#include <mweb/mweb_transact.h> // MWEB hooks
 #include <wallet/spend.h>
 #include <wallet/transaction.h>
 #include <wallet/wallet.h>
@@ -426,6 +431,11 @@ CoinsResult AvailableCoins(const CWallet& wallet,
 
         if (output.nValue < params.min_amount || output.nValue > params.max_amount)
             continue;
+
+        // MWEB: HogEx peg-out outputs are immature until PEGOUT_MATURITY confirmations, as in Litecoin.
+        if (wtx.GetTx()->IsHogEx() && outpoint.n > 0 && nDepth < PEGOUT_MATURITY) {
+            continue;
+        }
 
         // Skip manually selected coins (the caller can fetch them directly)
         if (coinControl && coinControl->HasSelected() && coinControl->IsSelected(outpoint))
@@ -994,8 +1004,8 @@ static bool IsCurrentForAntiFeeSniping(interfaces::Chain& chain, const uint256& 
 void DiscourageFeeSniping(CMutableTransaction& tx, FastRandomContext& rng_fast,
                                  interfaces::Chain& chain, const uint256& block_hash, int block_height)
 {
-    // All inputs must be added by now
-    assert(!tx.vin.empty());
+    // Litecoin parity: MWEB-only txs have empty L1 vin but still set nLockTime.
+    // Sequence checks below no-op when vin is empty.
     // Discourage fee sniping.
     //
     // For a large miner the value of the transactions in the best block and
@@ -1049,11 +1059,17 @@ void DiscourageFeeSniping(CMutableTransaction& tx, FastRandomContext& rng_fast,
 
 uint64_t GetSerializeSizeForRecipient(const CRecipient& recipient)
 {
+    if (recipient.IsMWEB()) {
+        return ::GetSerializeSize(CTxOut(recipient.nAmount, GetScriptForPegin(mw::Hash())));
+    }
     return ::GetSerializeSize(CTxOut(recipient.nAmount, GetScriptForDestination(recipient.dest)));
 }
 
 bool IsDust(const CRecipient& recipient, const CFeeRate& dustRelayFee)
 {
+    if (recipient.IsMWEB()) {
+        return false;
+    }
     return ::IsDust(CTxOut(recipient.nAmount, GetScriptForDestination(recipient.dest)), dustRelayFee);
 }
 
@@ -1065,6 +1081,11 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
         bool sign) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet)
 {
     AssertLockHeld(wallet.cs_wallet);
+
+    // MWEB: CreateTransactionInternal recipient gates (keychain + signed-only)
+    if (auto pre = MWEB::CheckRecipientPreconditions(wallet, vecSend, sign); !pre) {
+        return util::Error{util::ErrorString(pre)};
+    }
 
     FastRandomContext rng_fast;
     CMutableTransaction txNew; // The resulting transaction that we make
@@ -1169,10 +1190,6 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
         }
         return util::Error{msg};
     }
-    if (min_fee_rate.fee_reason == FeeReason::FALLBACK && !wallet.m_allow_fallback_fee) {
-        // eventually allow a fallback fee
-        return util::Error{strprintf(_("Fee estimation failed. Fallbackfee is disabled. Wait a few blocks or enable %s."), "-fallbackfee")};
-    }
 
     // Calculate the cost of change
     // Cost of change is the cost of creating the change output + cost of spending the change output in the future.
@@ -1194,6 +1211,49 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
     // Include the fees for things that aren't inputs, excluding the change output
     const CAmount not_input_fees = coin_selection_params.m_effective_feerate.GetFee(coin_selection_params.m_subtract_fee_outputs ? 0 : coin_selection_params.tx_noinputs_size);
     CAmount selection_target = recipients_sum + not_input_fees;
+
+    // MWEB: early funding (coin-control / MWEB_TO_MWEB) and peg-in L1 target bump
+    const bool sending_to_mweb = std::any_of(vecSend.cbegin(), vecSend.cend(), [](const CRecipient& r) { return r.IsMWEB(); });
+    MWEB::FundingState mweb_funding;
+    if (auto early = MWEB::TryEarlyFunding(
+            wallet, vecSend, coin_control, coin_selection_params.m_effective_feerate,
+            coin_selection_params.m_subtract_fee_outputs, recipients_sum, sending_to_mweb, mweb_funding,
+            /*require_spend_material=*/sign);
+        !early) {
+        return util::Error{util::ErrorString(early)};
+    }
+    // MWEB: An MWEB-to-MWEB send pays a fixed fee per MWEB weight unit and needs no fee estimate,
+    // unless its change is pegged out, which pays for L1 bytes at the fee rate.
+    const bool mweb_to_mweb{mweb_funding.funded_with_mweb && !coin_control.HasL1Selected()
+        && std::all_of(vecSend.cbegin(), vecSend.cend(), [](const CRecipient& r) { return r.IsMWEB(); })
+        && MWEB::GetPegoutChangeScript(coin_control.destChange).empty()};
+    if (min_fee_rate.fee_reason == FeeReason::FALLBACK && !wallet.m_allow_fallback_fee && !mweb_to_mweb) {
+        // eventually allow a fallback fee
+        return util::Error{strprintf(_("Fee estimation failed. Fallbackfee is disabled. Wait a few blocks or enable %s."), "-fallbackfee")};
+    }
+    if (mweb_funding.mixed_pegin) {
+        // Uncommon privacy-compromising path: L1 target is the peg-in remainder only.
+        selection_target = mweb_funding.l1_pegin_target;
+    } else if (!coin_selection_params.m_subtract_fee_outputs) {
+        // A peg-in's transparent change is an L1 output, not a peg-out (MWEB::IsChangeOnMWEB).
+        selection_target += MWEB::PegInTargetBump(
+            mweb_funding.funded_with_mweb, sending_to_mweb,
+            coin_selection_params.m_effective_feerate, vecSend);
+    }
+
+    std::set<CInputCoin>& mweb_selected = mweb_funding.mweb_selected;
+    bool& funded_with_mweb = mweb_funding.funded_with_mweb;
+    const bool mixed_pegin = mweb_funding.mixed_pegin;
+
+    // send RPC: never silently peg-in L1 coins when the user asked for an MWEB dest
+    // without selecting L1 inputs (would privacy-link a presumed confidential send).
+    if (coin_control.m_no_auto_pegin && sending_to_mweb && !coin_control.HasL1Selected()
+        && !funded_with_mweb && !mixed_pegin) {
+        return util::Error{_("Insufficient MWEB funds for a confidential send. Peg-in first, or specify L1 inputs for an explicit peg-in.")};
+    }
+    CAmount& mweb_fee_budget = mweb_funding.mweb_fee_budget;
+    bool& mweb_changeless = mweb_funding.mweb_changeless;
+    const bool allow_mweb_changeless = mweb_funding.allow_mweb_changeless;
 
     // This can only happen if feerate is 0, and requested destinations are value of 0 (e.g. OP_RETURN)
     // and no pre-selected inputs. This will result in 0-input transaction, which is consensus-invalid anyways
@@ -1217,46 +1277,131 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
     }
 
     // Choose coins to use
-    auto select_coins_res = SelectCoins(wallet, available_coins, preset_inputs, /*nTargetValue=*/selection_target, coin_control, coin_selection_params);
-    if (!select_coins_res) {
-        // 'SelectCoins' either returns a specific error message or, if empty, means a general "Insufficient funds".
-        const bilingual_str& err = util::ErrorString(select_coins_res);
-        if (!err.empty()) return util::Error{err};
+    SelectionResult manual_mweb_result(0, SelectionAlgorithm::MANUAL);
+    std::optional<SelectionResult> btc_selection;
+    if (!funded_with_mweb) {
+        auto select_coins_res = SelectCoins(wallet, available_coins, preset_inputs, /*nTargetValue=*/selection_target, coin_control, coin_selection_params);
+        if (!select_coins_res) {
+            // 'SelectCoins' either returns a specific error message or, if empty, means a general "Insufficient funds".
+            const bilingual_str& err = util::ErrorString(select_coins_res);
+            if (!err.empty()) return util::Error{err};
 
-        // Check if we have enough balance but cannot cover the fees
-        CAmount available_balance = preset_inputs.GetTotalAmount() + available_coins.GetTotalAmount();
-        // Note: if SelectCoins() fails when SFFO is enabled (recipients_sum = selection_target with SFFO),
-        // then recipients_sum > available_balance and we wouldn't enter into the if condition below.
-        if (available_balance >= recipients_sum) {
-            // If we have coins with balance, they should have effective values since we constructed them with valid feerate.
-            assert(!preset_inputs.Size() || preset_inputs.GetEffectiveTotalAmount().has_value());
-            assert(!available_coins.Size() || available_coins.GetEffectiveTotalAmount().has_value());
-            CAmount available_effective_balance = preset_inputs.GetEffectiveTotalAmount().value_or(0) + available_coins.GetEffectiveTotalAmount().value_or(0);
-            if (available_effective_balance < selection_target) {
-                Assume(!coin_selection_params.m_subtract_fee_outputs);
-                return util::Error{strprintf(_("The total exceeds your balance when the %s transaction fee is included."), FormatMoney(selection_target - recipients_sum))};
+            // Check if we have enough balance but cannot cover the fees
+            CAmount available_balance = preset_inputs.GetTotalAmount() + available_coins.GetTotalAmount();
+            // Note: if SelectCoins() fails when SFFO is enabled (recipients_sum = selection_target with SFFO),
+            // then recipients_sum > available_balance and we wouldn't enter into the if condition below.
+            if (available_balance >= recipients_sum) {
+                // If we have coins with balance, they should have effective values since we constructed them with valid feerate.
+                assert(!preset_inputs.Size() || preset_inputs.GetEffectiveTotalAmount().has_value());
+                assert(!available_coins.Size() || available_coins.GetEffectiveTotalAmount().has_value());
+                CAmount available_effective_balance = preset_inputs.GetEffectiveTotalAmount().value_or(0) + available_coins.GetEffectiveTotalAmount().value_or(0);
+                if (available_effective_balance < selection_target) {
+                    Assume(!coin_selection_params.m_subtract_fee_outputs);
+                    return util::Error{strprintf(_("The total exceeds your balance when the %s transaction fee is included."), FormatMoney(selection_target - recipients_sum))};
+                }
+            }
+
+            // MWEB: if L1 coin selection failed, try peg-out / mixed funding
+            if (auto fallback = MWEB::TryPegoutFallback(
+                    wallet, vecSend, coin_control, coin_selection_params.m_effective_feerate,
+                    coin_selection_params.m_subtract_fee_outputs, recipients_sum, sending_to_mweb,
+                    allow_mweb_changeless, /*require_spend_material=*/sign);
+                fallback.kind == MWEB::PegoutFallback::Kind::FullMWEB) {
+                mweb_selected = std::move(fallback.mweb_selected);
+                mweb_changeless = fallback.mweb_changeless;
+                funded_with_mweb = true;
+            } else if (fallback.kind == MWEB::PegoutFallback::Kind::PartialForMixed) {
+                if (auto l1_res = SelectCoins(wallet, available_coins, preset_inputs, fallback.l1_target, coin_control, coin_selection_params)) {
+                    mweb_selected = std::move(fallback.mweb_selected);
+                    btc_selection = std::move(*l1_res);
+                }
+            }
+
+            if (!funded_with_mweb && !btc_selection.has_value()) {
+                // MWEB: diagnose locked / watch-only shortfall vs generic insufficient funds
+                auto diag = MWEB::DiagnoseFundingShortfall(
+                    wallet, coin_control, recipients_sum,
+                    preset_inputs.GetTotalAmount() + available_coins.GetTotalAmount(),
+                    /*require_spend_material=*/sign);
+                return util::Error{util::ErrorString(diag)};
+            }
+        } else {
+            btc_selection = std::move(*select_coins_res);
+        }
+    }
+
+    const SelectionResult& result = funded_with_mweb ? manual_mweb_result : *btc_selection;
+    std::vector<std::shared_ptr<COutput>> selected_coins;
+    // Preserve MWEB-only coins before L1 outpoints are merged into mweb_selected.
+    const std::set<CInputCoin> mweb_only_coins = mweb_selected;
+    if (!funded_with_mweb) {
+        TRACEPOINT(coin_selection, selected_coins,
+               wallet.GetName().c_str(),
+               GetAlgorithmName(result.GetAlgo()).c_str(),
+               result.GetTarget(),
+               result.GetWaste(),
+               result.GetSelectedValue());
+
+        selected_coins = result.GetShuffledInputVector();
+        for (const auto& coin : selected_coins) {
+            if (const CWalletTx* wtx = wallet.GetWalletTx(coin->outpoint.hash)) {
+                mweb_selected.emplace(wtx->GetTx(), coin->outpoint.n);
             }
         }
-
-        // General failure description
-        return util::Error{_("Insufficient funds")};
     }
-    const SelectionResult& result = *select_coins_res;
-    TRACEPOINT(coin_selection, selected_coins,
-           wallet.GetName().c_str(),
-           GetAlgorithmName(result.GetAlgo()).c_str(),
-           result.GetTarget(),
-           result.GetWaste(),
-           result.GetSelectedValue());
+
+    CAmount selected_input_value;
+    if (funded_with_mweb) {
+        selected_input_value = std::accumulate(mweb_selected.begin(), mweb_selected.end(), CAmount{0},
+            [](CAmount sum, const CInputCoin& coin) { return sum + coin.GetAmount(); });
+    } else {
+        // MWEB coins spent with the L1 selection (a mixed peg-in, or a peg-out
+        // topped up with L1 coins) are inputs too.
+        const CAmount mweb_total = std::accumulate(mweb_only_coins.begin(), mweb_only_coins.end(), CAmount{0},
+            [](CAmount sum, const CInputCoin& coin) { return sum + (coin.IsMWEB() ? coin.GetAmount() : 0); });
+        selected_input_value = result.GetSelectedValue() + mweb_total;
+    }
+
+    const MWEB::TxType mweb_type = MWEB::GetTxType(vecSend, mweb_selected);
+    if (mweb_type == MWEB::TxType::BTC_TO_BTC && std::holds_alternative<StealthAddress>(coin_control.destChange)) {
+        return util::Error{_("MWEB change is incompatible with this transaction type")};
+    }
+    bool change_on_mweb = MWEB::IsChangeOnMWEB(wallet, mweb_type, vecSend, coin_control.destChange) && !mweb_changeless;
+    if (mweb_type == MWEB::TxType::PEGIN && !change_on_mweb && !mweb_changeless) {
+        // MWEB coins that already pay the MWEB recipients, or could once the fee is
+        // subtracted from them, leave their surplus on MWEB, pegged out to a
+        // transparent change address.
+        const CAmount mweb_in = std::accumulate(mweb_only_coins.begin(), mweb_only_coins.end(), CAmount{0},
+            [](CAmount sum, const CInputCoin& coin) { return sum + (coin.IsMWEB() ? coin.GetAmount() : 0); });
+        const CAmount mweb_out = std::accumulate(vecSend.begin(), vecSend.end(), CAmount{0},
+            [](CAmount sum, const CRecipient& r) { return sum + (r.IsMWEB() ? r.nAmount : 0); });
+        const bool mweb_pays_fee = std::any_of(vecSend.begin(), vecSend.end(),
+            [](const CRecipient& r) { return r.IsMWEB() && r.fSubtractFeeFromAmount; });
+        change_on_mweb = mweb_in > 0 && (mweb_in >= mweb_out || mweb_pays_fee);
+    }
+    const CScript pegout_change_script = MWEB::GetPegoutChangeScript(coin_control.destChange);
+    uint64_t mweb_weight = MWEB::CalcMWEBWeight(mweb_type, change_on_mweb, vecSend, pegout_change_script);
 
     // vouts to the payees
-    txNew.vout.reserve(vecSend.size() + 1); // + 1 because of possible later insert
-    for (const auto& recipient : vecSend)
-    {
+    txNew.vout.reserve(vecSend.size() + 2); // + pegin and/or change
+    for (const auto& recipient : vecSend) {
+        if (recipient.IsMWEB()) {
+            continue; // Peg-in kernel is added after MWEB tx is built
+        }
         txNew.vout.emplace_back(recipient.nAmount, GetScriptForDestination(recipient.dest));
     }
+    if (mweb_type == MWEB::TxType::PEGOUT) {
+        txNew.vout.clear();
+    }
+
+    // MWEB hooks: reserve space for peg-in output (updated in AddMWEBTx)
+    if (MWEB::ContainsPegIn(mweb_type, mweb_selected)) {
+        const size_t pegin_pos = rng_fast.randrange(txNew.vout.size() + 1);
+        txNew.vout.insert(txNew.vout.begin() + pegin_pos, CTxOut(0, GetScriptForPegin(mw::Hash())));
+    }
+
     const CAmount change_amount = result.GetChange(coin_selection_params.min_viable_change, coin_selection_params.m_change_fee);
-    if (change_amount > 0) {
+    if (change_amount > 0 && !change_on_mweb) {
         CTxOut newTxOut(change_amount, scriptChange);
         if (!change_pos) {
             // Insert change txn at random position:
@@ -1268,9 +1413,6 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
     } else {
         change_pos = std::nullopt;
     }
-
-    // Shuffle selected coins and fill in final vin
-    std::vector<std::shared_ptr<COutput>> selected_coins = result.GetShuffledInputVector();
 
     if (coin_control.HasSelected() && coin_control.HasSelectedOrder()) {
         // When there are preselected inputs, we need to move them to be the first UTXOs
@@ -1327,16 +1469,74 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
         DiscourageFeeSniping(txNew, rng_fast, wallet.chain(), wallet.GetLastBlockHash(), wallet.GetLastBlockHeight());
     }
 
-    // Calculate the transaction fee
+    // Calculate the transaction fee using MWEB-aware L1 size (0 for MWEB-only paths).
     TxSize tx_sizes = CalculateMaximumSignedTxSize(CTransaction(txNew), &wallet, &coin_control);
     int nBytes = tx_sizes.vsize;
-    if (nBytes == -1) {
+    if (nBytes == -1 && mweb_type != MWEB::TxType::MWEB_TO_MWEB) {
         return util::Error{_("Missing solving data for estimating transaction size")};
     }
-    CAmount fee_needed = coin_selection_params.m_effective_feerate.GetFee(nBytes) + result.GetTotalBumpFees();
+    if (nBytes < 0) nBytes = 0;
+
+    std::set<CInputCoin> all_selected = mweb_selected;
+    for (const auto& coin : selected_coins) {
+        if (const CWalletTx* wtx = wallet.GetWalletTx(coin->outpoint.hash)) {
+            all_selected.emplace(wtx->GetTx(), coin->outpoint.n);
+        }
+    }
+
+    const int32_t mweb_l1_vsize = MWEB::EstimateMWEBTxSize(mweb_type, nBytes, all_selected, vecSend,
+        change_on_mweb ? pegout_change_script : CScript{});
+    if (mweb_l1_vsize < 0) {
+        return util::Error{_("Missing solving data for estimating transaction size")};
+    }
+    CAmount fee_needed = MWEB::ComputeFeeNeeded(
+        coin_selection_params.m_effective_feerate, mweb_l1_vsize, mweb_weight, result.GetTotalBumpFees(),
+        wallet.chain().mempoolMWEBMinFee());
+
+    // MWEB: build extension block transaction with fee convergence
+    if (mweb_type != MWEB::TxType::BTC_TO_BTC) {
+        MWEB::FeeConvergenceInput converge_in;
+        converge_in.tx_before_mweb = txNew;
+        converge_in.recipients = vecSend;
+        converge_in.coin_control = coin_control;
+        converge_in.effective_feerate = coin_selection_params.m_effective_feerate;
+        converge_in.signed_l1_vsize = nBytes;
+        converge_in.recipients_sum = recipients_sum;
+        converge_in.bump_fees = result.GetTotalBumpFees();
+        converge_in.sign = sign;
+        converge_in.funded_with_mweb = funded_with_mweb;
+        converge_in.mweb_type = mweb_type;
+        converge_in.change_on_mweb = change_on_mweb;
+        converge_in.pegout_change_script = pegout_change_script;
+        converge_in.min_pegout_change = coin_selection_params.min_viable_change;
+        converge_in.mweb_changeless = mweb_changeless;
+        converge_in.mweb_fee_budget = mweb_fee_budget;
+        converge_in.mweb_weight = mweb_weight;
+        converge_in.fee_needed = fee_needed;
+        converge_in.selected_input_value = selected_input_value;
+        converge_in.mweb_selected = mweb_selected;
+        converge_in.all_selected = std::move(all_selected);
+        converge_in.change_position = change_pos.value_or(-1);
+
+        auto converged = MWEB::ConvergeAndBuild(wallet, std::move(converge_in));
+        if (!converged) {
+            return util::Error{util::ErrorString(converged)};
+        }
+        txNew = std::move(converged->tx);
+        fee_needed = converged->fee_needed;
+        mweb_selected = std::move(converged->mweb_selected);
+        selected_input_value = converged->selected_input_value;
+        change_on_mweb = converged->change_on_mweb;
+        mweb_changeless = converged->mweb_changeless;
+        mweb_fee_budget = converged->mweb_fee_budget;
+        mweb_weight = converged->mweb_weight;
+    }
+
     const CAmount output_value = CalculateOutputValue(txNew);
-    Assume(recipients_sum + change_amount == output_value);
-    CAmount current_fee = result.GetSelectedValue() - output_value;
+    if (mweb_type == MWEB::TxType::BTC_TO_BTC) {
+        Assume(recipients_sum + change_amount == output_value);
+    }
+    CAmount current_fee = selected_input_value - output_value;
 
     // Sanity check that the fee cannot be negative as that means we have more output value than input value
     if (current_fee < 0) {
@@ -1344,17 +1544,19 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
     }
 
     // If there is a change output and we overpay the fees then increase the change to match the fee needed
-    if (change_pos && fee_needed < current_fee) {
+    // MWEB transactions set their L1 change in AddMWEBTx.
+    if (change_pos && fee_needed < current_fee && mweb_type == MWEB::TxType::BTC_TO_BTC) {
         auto& change = txNew.vout.at(*change_pos);
         change.nValue += current_fee - fee_needed;
-        current_fee = result.GetSelectedValue() - CalculateOutputValue(txNew);
+        current_fee = selected_input_value - CalculateOutputValue(txNew);
         if (fee_needed != current_fee) {
             return util::Error{Untranslated(STR_INTERNAL_BUG("Change adjustment: Fee needed != fee paid"))};
         }
     }
 
-    // Reduce output values for subtractFeeFromAmount
-    if (coin_selection_params.m_subtract_fee_outputs) {
+    // Reduce output values for subtractFeeFromAmount.
+    // MWEB transactions deduct fees in AddMWEBTx; adjusting L1 vouts here would corrupt peg-in outputs.
+    if (coin_selection_params.m_subtract_fee_outputs && mweb_type == MWEB::TxType::BTC_TO_BTC) {
         CAmount to_reduce = fee_needed - current_fee;
         unsigned int i = 0;
         bool fFirst = true;
@@ -1386,20 +1588,23 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
             }
             ++i;
         }
-        current_fee = result.GetSelectedValue() - CalculateOutputValue(txNew);
+        current_fee = selected_input_value - CalculateOutputValue(txNew);
         if (fee_needed != current_fee) {
             return util::Error{Untranslated(STR_INTERNAL_BUG("SFFO: Fee needed != fee paid"))};
         }
     }
 
     // fee_needed should now always be less than or equal to the current fees that we pay.
-    // If it is not, it is a bug.
-    if (fee_needed > current_fee) {
+    // If it is not, it is a bug. MWEB kernel fees are not reflected in LTC output totals.
+    if (mweb_type == MWEB::TxType::BTC_TO_BTC && fee_needed > current_fee) {
         return util::Error{Untranslated(STR_INTERNAL_BUG("Fee needed > fee paid"))};
+    }
+    if (mweb_type != MWEB::TxType::BTC_TO_BTC) {
+        current_fee = fee_needed;
     }
 
     // Give up if change keypool ran out and change is required
-    if (scriptChange.empty() && change_pos) {
+    if (scriptChange.empty() && change_pos && !change_on_mweb) {
         return util::Error{error};
     }
 
@@ -1408,6 +1613,7 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
     }
 
     // Return the constructed transaction data.
+    mw::MutableTx mweb_tx = txNew.mweb_tx;
     CTransactionRef tx = MakeTransactionRef(std::move(txNew));
 
     // Limit size
@@ -1433,10 +1639,18 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
     // accidental reuse.
     reservedest.KeepDestination();
 
-    wallet.WalletLogPrintf("Coin Selection: Algorithm:%s, Waste Metric Score:%d\n", GetAlgorithmName(result.GetAlgo()), result.GetWaste());
+    if (!funded_with_mweb) {
+        wallet.WalletLogPrintf("Coin Selection: Algorithm:%s, Waste Metric Score:%d\n", GetAlgorithmName(result.GetAlgo()), result.GetWaste());
+    }
     wallet.WalletLogPrintf("Fee Calculation: Fee:%d Bytes:%u, Source: %s\n",
                            current_fee, nBytes, StringForFeeReason(min_fee_rate.fee_reason));
-    return CreatedTransactionResult(tx, current_fee, change_pos, min_fee_rate.fee_reason);
+    CreatedTransactionResult created(tx, current_fee, change_pos, min_fee_rate.fee_reason);
+    const size_t mweb_recipients = std::count_if(vecSend.begin(), vecSend.end(), [](const CRecipient& r) { return r.IsMWEB(); });
+    if (change_on_mweb && mweb_tx.outputs.size() > mweb_recipients) {
+        created.mweb_change_index = mweb_tx.outputs.size() - 1;
+    }
+    created.mweb_tx = std::move(mweb_tx);
+    return created;
 }
 
 util::Result<CreatedTransactionResult> CreateTransaction(
@@ -1449,6 +1663,23 @@ util::Result<CreatedTransactionResult> CreateTransaction(
     if (vecSend.empty()) {
         return util::Error{_("Transaction must have at least one recipient")};
     }
+
+#if !ENABLE_MWEB_UNCOMMON_SENDS
+    // Litecoin-style restricts: uncommon (privacy-compromising) MWEB send shapes
+    // are disabled. When ENABLE_MWEB_UNCOMMON_SENDS is on, multi-recipient and
+    // mixed L1+MWEB-input paths are allowed with clear comments elsewhere.
+    if (vecSend.size() > 1
+        && std::any_of(vecSend.cbegin(), vecSend.cend(), [](const auto& recipient){ return recipient.IsMWEB(); })) {
+        return util::Error{_("Only one MWEB recipient supported at this time")};
+    }
+    {
+        const bool sending_to_mweb = std::any_of(vecSend.cbegin(), vecSend.cend(),
+            [](const auto& r) { return r.IsMWEB(); });
+        if (sending_to_mweb && coin_control.HasL1Selected() && coin_control.HasMWEBSelected()) {
+            return util::Error{_("Mixed L1 and MWEB inputs toward an MWEB destination are not enabled")};
+        }
+    }
+#endif
 
     if (std::any_of(vecSend.cbegin(), vecSend.cend(), [](const auto& recipient){ return recipient.nAmount < 0; })) {
         return util::Error{_("Transaction amounts must not be negative")};
@@ -1493,7 +1724,7 @@ util::Result<CreatedTransactionResult> CreateTransaction(
     return res;
 }
 
-util::Result<CreatedTransactionResult> FundTransaction(CWallet& wallet, const CMutableTransaction& tx, const std::vector<CRecipient>& vecSend, std::optional<unsigned int> change_pos, bool lockUnspents, CCoinControl coinControl)
+util::Result<CreatedTransactionResult> FundTransaction(CWallet& wallet, const CMutableTransaction& tx, const std::vector<CRecipient>& vecSend, std::optional<unsigned int> change_pos, bool lockUnspents, CCoinControl coinControl, bool sign)
 {
     // We want to make sure tx.vout is not used now that we are passing outputs as a vector of recipients.
     // This sets us up to remove tx completely in a future PR in favor of passing the inputs directly.
@@ -1533,7 +1764,7 @@ util::Result<CreatedTransactionResult> FundTransaction(CWallet& wallet, const CM
         preset_txin.SetScriptWitness(txin.scriptWitness);
     }
 
-    auto res = CreateTransaction(wallet, vecSend, change_pos, coinControl, false);
+    auto res = CreateTransaction(wallet, vecSend, change_pos, coinControl, sign);
     if (!res) {
         return res;
     }
@@ -1541,6 +1772,9 @@ util::Result<CreatedTransactionResult> FundTransaction(CWallet& wallet, const CM
     if (lockUnspents) {
         for (const CTxIn& txin : res->tx->vin) {
             wallet.LockCoin(txin.prevout, /*persist=*/false);
+        }
+        for (const mw::MutableInput& input : res->mweb_tx.inputs) {
+            wallet.LockCoin(input.output_id, /*persist=*/false);
         }
     }
 

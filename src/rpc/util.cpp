@@ -37,6 +37,8 @@
 #include <tuple>
 #include <utility>
 
+class StealthAddress;
+
 using common::PSBTError;
 using common::PSBTErrorString;
 using common::TransactionErrorString;
@@ -290,6 +292,7 @@ public:
         UniValue obj(UniValue::VOBJ);
         obj.pushKV("isscript", false);
         obj.pushKV("iswitness", false);
+        obj.pushKV("ismweb", false); // MWEB
         return obj;
     }
 
@@ -298,6 +301,7 @@ public:
         UniValue obj(UniValue::VOBJ);
         obj.pushKV("isscript", true);
         obj.pushKV("iswitness", false);
+        obj.pushKV("ismweb", false); // MWEB
         return obj;
     }
 
@@ -308,6 +312,7 @@ public:
         obj.pushKV("iswitness", true);
         obj.pushKV("witness_version", 0);
         obj.pushKV("witness_program", HexStr(id));
+        obj.pushKV("ismweb", false); // MWEB
         return obj;
     }
 
@@ -318,6 +323,7 @@ public:
         obj.pushKV("iswitness", true);
         obj.pushKV("witness_version", 0);
         obj.pushKV("witness_program", HexStr(id));
+        obj.pushKV("ismweb", false); // MWEB
         return obj;
     }
 
@@ -328,6 +334,7 @@ public:
         obj.pushKV("iswitness", true);
         obj.pushKV("witness_version", 1);
         obj.pushKV("witness_program", HexStr(tap));
+        obj.pushKV("ismweb", false); // MWEB
         return obj;
     }
 
@@ -336,6 +343,7 @@ public:
         UniValue obj(UniValue::VOBJ);
         obj.pushKV("isscript", true);
         obj.pushKV("iswitness", true);
+        obj.pushKV("ismweb", false); // MWEB
         return obj;
     }
 
@@ -345,6 +353,16 @@ public:
         obj.pushKV("iswitness", true);
         obj.pushKV("witness_version", id.GetWitnessVersion());
         obj.pushKV("witness_program", HexStr(id.GetWitnessProgram()));
+        obj.pushKV("ismweb", false); // MWEB
+        return obj;
+    }
+
+    UniValue operator()(const StealthAddress& /*dest*/) const // MWEB
+    {
+        UniValue obj(UniValue::VOBJ);
+        obj.pushKV("isscript", false);
+        obj.pushKV("iswitness", false);
+        obj.pushKV("ismweb", true);
         return obj;
     }
 };
@@ -1420,7 +1438,7 @@ std::vector<RPCResult> ScriptPubKeyDoc() {
     return
          {
              {RPCResult::Type::STR, "asm", "Disassembly of the output script"},
-             {RPCResult::Type::STR, "desc", "Inferred descriptor for the output"},
+             {RPCResult::Type::STR, "desc", /*optional=*/true, "Inferred descriptor for the output (omitted for MWEB peg-in and HogAddr scripts)"},
              {RPCResult::Type::STR_HEX, "hex", "The raw output script bytes, hex-encoded"},
              {RPCResult::Type::STR, "address", /*optional=*/true, "The Bitcoin address (only if a well-defined address exists)"},
              {RPCResult::Type::STR, "type", "The type (one of: " + GetAllOutputTypes() + ")"},

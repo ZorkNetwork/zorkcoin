@@ -95,6 +95,11 @@ bool ExtractDestination(const CScript& scriptPubKey, CTxDestination& addressRet)
         addressRet = WitnessUnknown{vSolutions[0][0], vSolutions[1]};
         return true;
     }
+    case TxoutType::WITNESS_MWEB_PEGIN:
+    case TxoutType::WITNESS_MWEB_HOGADDR: {
+        addressRet = CNoDestination(scriptPubKey);
+        return false;
+    }
     case TxoutType::MULTISIG:
     case TxoutType::NULL_DATA:
     case TxoutType::NONSTANDARD:
@@ -147,6 +152,16 @@ public:
     {
         return CScript() << CScript::EncodeOP_N(id.GetWitnessVersion()) << id.GetWitnessProgram();
     }
+
+    CScript operator()(const PayToAnchor& id) const
+    {
+        return operator()(static_cast<const WitnessUnknown&>(id));
+    }
+
+    CScript operator()(const StealthAddress& /*id*/) const // MWEB
+    {
+        return CScript();
+    }
 };
 
 class ValidDestinationVisitor
@@ -160,6 +175,8 @@ public:
     bool operator()(const WitnessV0ScriptHash& dest) const { return true; }
     bool operator()(const WitnessV1Taproot& dest) const { return true; }
     bool operator()(const WitnessUnknown& dest) const { return true; }
+    bool operator()(const PayToAnchor& dest) const { return true; }
+    bool operator()(const StealthAddress& dest) const { return true; } // MWEB
 };
 } // namespace
 

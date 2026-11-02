@@ -67,9 +67,14 @@ FUZZ_TARGET(partially_downloaded_block, .init = initialize_pdb)
     std::set<uint16_t> available;
     // The coinbase is always available
     available.insert(0);
+    // MWEB: The HogEx is prefilled when the block carries an MWEB block. It is
+    // never in a mempool or the extra pool, so it isn't added to them below.
+    const bool hogex_prefilled{!block->mweb_block.IsNull() && block->vtx.size() >= 2 && block->vtx.back()->IsHogEx()};
+    if (hogex_prefilled) available.insert(block->vtx.size() - 1);
 
     std::vector<std::pair<Wtxid, CTransactionRef>> extra_txn;
     for (size_t i = 1; i < block->vtx.size(); ++i) {
+        if (hogex_prefilled && i == block->vtx.size() - 1) break; // MWEB
         auto tx{block->vtx[i]};
 
         bool add_to_extra_txn{fuzzed_data_provider.ConsumeBool()};

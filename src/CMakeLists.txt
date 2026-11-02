@@ -25,6 +25,9 @@ if (ENABLE_IPC AND NOT WITH_EXTERNAL_LIBMULTIPROCESS)
 endif()
 include(../cmake/secp256k1.cmake)
 add_secp256k1(secp256k1)
+include(../cmake/blake3.cmake)
+include(../cmake/libmw.cmake)
+add_libmw()
 
 # Set top-level target output locations.
 if(NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY)
@@ -84,7 +87,11 @@ target_link_libraries(bitcoin_consensus
     core_interface
     bitcoin_crypto
     secp256k1
+    libmw
+    Boost::headers
 )
+
+add_mweb_consensus()
 
 if(WITH_ZMQ)
   add_subdirectory(zmq)
@@ -122,8 +129,10 @@ add_library(bitcoin_common STATIC EXCLUDE_FROM_ALL
   kernel/chainparams.cpp
   key.cpp
   key_io.cpp
+  libmw/src/wallet/sign.cpp
   merkleblock.cpp
   musig.cpp
+  mweb/mweb_psbt.cpp
   net_permissions.cpp
   net_types.cpp
   netaddress.cpp
@@ -139,11 +148,13 @@ add_library(bitcoin_common STATIC EXCLUDE_FROM_ALL
   rpc/util.cpp
   scheduler.cpp
   script/descriptor.cpp
+  script/mweb_descriptor.cpp
   script/miniscript.cpp
   script/parsing.cpp
   script/sign.cpp
   script/signingprovider.cpp
   script/solver.cpp
+  script/standard.cpp
 )
 target_link_libraries(bitcoin_common
   PRIVATE
@@ -152,6 +163,9 @@ target_link_libraries(bitcoin_common
     bitcoin_util
     univalue
     secp256k1
+    libmw
+    mweb_consensus
+    Boost::headers
     $<TARGET_NAME_IF_EXISTS:USDT::headers>
     $<$<PLATFORM_ID:Windows>:ws2_32>
 )
@@ -210,6 +224,10 @@ add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
   kernel/disconnected_transactions.cpp
   kernel/mempool_removal_reason.cpp
   mapport.cpp
+  mweb/mweb_coins_lifecycle.cpp
+  mweb/mweb_mempool_accept.cpp
+  mweb/mweb_mempool_markets.cpp
+  mweb/mweb_miner.cpp
   net.cpp
   net_processing.cpp
   netgroup.cpp
@@ -242,6 +260,17 @@ add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
   node/txdownloadman_impl.cpp
   node/txorphanage.cpp
   node/txreconciliation.cpp
+  node/mweb_historical_cache.cpp
+  node/mweb_serve.cpp
+  node/mweb_serve_coordinator.cpp
+  node/mweb_serve_step_budget.cpp
+  node/mweb_utxo_enumerate.cpp
+  node/coinsview_scan_reserver.cpp
+  node/mweb_chain_scan.cpp
+  node/mweb_rollback_clone.cpp
+  node/mweb_snapshot.cpp
+  node/mweb_snapshot_base_block.cpp
+  node/mweb_leafdb_sync.cpp
   node/utxo_snapshot.cpp
   node/warnings.cpp
   noui.cpp
@@ -269,6 +298,7 @@ add_library(bitcoin_node STATIC EXCLUDE_FROM_ALL
   rpc/server_util.cpp
   rpc/signmessage.cpp
   rpc/txoutproof.cpp
+  rpc/mweb_outputproof.cpp
   script/sigcache.cpp
   signet.cpp
   torcontrol.cpp
@@ -287,6 +317,8 @@ target_link_libraries(bitcoin_node
     core_interface
     bitcoin_common
     bitcoin_util
+    libmw
+    mweb_consensus
     $<TARGET_NAME_IF_EXISTS:bitcoin_zmq>
     leveldb
     minisketch
@@ -327,6 +359,55 @@ if(BUILD_DAEMON)
     $<TARGET_NAME_IF_EXISTS:bitcoin_wallet>
   )
   install_binary_component(bitcoind HAS_MANPAGE)
+endif()
+
+# Alternate bitcoind binaries with raised mine serialized-size budgets (BIP324 v2 send unchanged).
+cmake_dependent_option(BUILD_MWEB_SIZE_TEST_BINARIES
+  "Build bitcoind-mine-max and bitcoind-mine-test for MWEB size/propagation functionals."
+  ON "BUILD_DAEMON;BUILD_TESTS" OFF)
+if(BUILD_MWEB_SIZE_TEST_BINARIES)
+  function(add_mweb_mine_bitcoind variant_suffix compile_def)
+    get_target_property(_node_sources bitcoin_node SOURCES)
+    add_library(bitcoin_node_${variant_suffix} STATIC EXCLUDE_FROM_ALL ${_node_sources})
+    target_link_libraries(bitcoin_node_${variant_suffix}
+      PRIVATE
+        core_interface
+        bitcoin_common
+        bitcoin_util
+        libmw
+        mweb_consensus
+        $<TARGET_NAME_IF_EXISTS:bitcoin_zmq>
+        leveldb
+        minisketch
+        univalue
+        Boost::headers
+        $<TARGET_NAME_IF_EXISTS:libevent::core>
+        $<TARGET_NAME_IF_EXISTS:libevent::extra>
+        $<TARGET_NAME_IF_EXISTS:libevent::pthreads>
+        $<TARGET_NAME_IF_EXISTS:USDT::headers>
+    )
+    target_compile_definitions(bitcoin_node_${variant_suffix} PRIVATE ${compile_def})
+    if(WITH_EMBEDDED_ASMAP)
+      target_compile_definitions(bitcoin_node_${variant_suffix} PRIVATE ENABLE_EMBEDDED_ASMAP=1)
+      include(TargetDataSources)
+      target_raw_data_sources(bitcoin_node_${variant_suffix} NAMESPACE node::data
+        node/data/ip_asn.dat
+      )
+    endif()
+    add_executable(bitcoind-${variant_suffix}
+      bitcoind.cpp
+      bitcoind-res.rc
+      init/bitcoind.cpp
+    )
+    add_windows_application_manifest(bitcoind-${variant_suffix})
+    target_link_libraries(bitcoind-${variant_suffix}
+      core_interface
+      bitcoin_node_${variant_suffix}
+      $<TARGET_NAME_IF_EXISTS:bitcoin_wallet>
+    )
+  endfunction()
+  add_mweb_mine_bitcoind(mine-max MINE_MAX_MWEB_SIZE)
+  add_mweb_mine_bitcoind(mine-test MINE_TEST_MWEB_SIZE)
 endif()
 if(ENABLE_IPC AND BUILD_DAEMON)
   add_executable(bitcoin-node

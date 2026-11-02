@@ -7,6 +7,7 @@
 
 #include <chain.h>
 #include <chainparams.h>
+#include <coins.h>
 #include <common/args.h>
 #include <consensus/amount.h>
 #include <consensus/consensus.h>
@@ -14,7 +15,13 @@
 #include <consensus/params.h>
 #include <consensus/tx_verify.h>
 #include <consensus/validation.h>
+#include <deploymentstatus.h>
 #include <interfaces/types.h>
+#include <mw/consensus/params.h>
+#include <mw/models/tx/mutable_tx.h>
+#include <mw/node/coins_view.h>
+#include <mweb/mweb_miner.h>
+#include <mweb/mweb_models.h>
 #include <node/blockstorage.h>
 #include <node/kernel_notifications.h>
 #include <node/mining_args.h>
@@ -25,6 +32,7 @@
 #include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
+#include <serialize.h>
 #include <sync.h>
 #include <tinyformat.h>
 #include <txgraph.h>
@@ -47,9 +55,12 @@
 #include <cstddef>
 #include <functional>
 #include <numeric>
+#include <optional>
+#include <set>
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <utility>
 
 namespace node {
@@ -107,7 +118,8 @@ void RegenerateCommitments(CBlock& block, ChainstateManager& chainman)
 BlockAssembler::BlockAssembler(Chainstate& chainstate,
                                const CTxMemPool* mempool,
                                BlockCreateOptions options)
-    : chainparams{chainstate.m_chainman.GetParams()},
+    : mweb_miner(std::make_unique<MWEB::Miner>()),
+      chainparams{chainstate.m_chainman.GetParams()},
       m_mempool{options.use_mempool ? mempool : nullptr},
       m_chainstate{chainstate},
       m_options{[&] {
@@ -119,11 +131,21 @@ BlockAssembler::BlockAssembler(Chainstate& chainstate,
 {
 }
 
+BlockAssembler::~BlockAssembler() = default;
+
 void BlockAssembler::resetBlock()
 {
     // Reserve space for fixed-size block header, txs count, and coinbase tx.
     nBlockWeight = *Assert(m_options.block_reserved_weight);
     nBlockSigOpsCost = m_options.coinbase_output_max_additional_sigops;
+    nBlockMWEBWeight = 0;
+    fIncludeMWEB = false;
+
+    // Serialized-size baseline: header + max CompactSize(vtx) + coinbase pad.
+    // MWEB HogEx / extension reserve is added once fIncludeMWEB is known.
+    constexpr size_t BLOCK_HEADER_BYTES = 80;
+    constexpr size_t MAX_COMPACTSIZE_BYTES = 9;
+    nBlockSerializedSize = BLOCK_HEADER_BYTES + MAX_COMPACTSIZE_BYTES + MWEB::BLOCK_SERIALIZED_COINBASE_RESERVE;
 
     // These counters do not include coinbase tx
     nBlockTx = 0;
@@ -158,6 +180,20 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
     pblock->nTime = TicksSinceEpoch<std::chrono::seconds>(NodeClock::now());
     m_lock_time_cutoff = pindexPrev->GetMedianTimePast();
 
+    // MWEB: Every block after activation needs the extension block and HogEx,
+    // including templates built without a mempool.
+    fIncludeMWEB = DeploymentActiveAfter(pindexPrev, chainparams.GetConsensus(), Consensus::DEPLOYMENT_MWEB, m_chainstate.m_chainman.m_versionbitscache);
+    if (fIncludeMWEB) {
+        const mw::ICoinsView::Ptr mweb_view{m_chainstate.CoinsTip().GetMWEBView()};
+        if (!mweb_view) {
+            throw std::runtime_error("MWEB view not initialized");
+        }
+        const bool has_prev_hogex = pindexPrev->mweb_header != nullptr;
+        mweb_miner->NewBlock(nHeight, mweb_view, has_prev_hogex);
+        // Reserve HogEx + empty extension; grows as MWEB txs are added.
+        nBlockSerializedSize += mweb_miner->EstimateSerializedExtensionBytes();
+    }
+
     if (m_mempool) {
         LOCK(m_mempool->cs);
         m_mempool->StartBlockBuilding();
@@ -165,10 +201,15 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
         m_mempool->StopBlockBuilding();
     }
 
+    if (fIncludeMWEB) {
+        mweb_miner->AddHogExTransaction(pindexPrev, pblock, pblocktemplate->vTxFees, pblocktemplate->vTxSigOpsCost, nFees);
+    }
+
     const auto time_1{SteadyClock::now()};
 
     m_last_block_num_txs = nBlockTx;
     m_last_block_weight = nBlockWeight;
+    m_last_block_mweb_weight = nBlockMWEBWeight;
 
     // Create coinbase transaction.
     CMutableTransaction coinbaseTx;
@@ -214,6 +255,17 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
     pblock->vtx[0] = MakeTransactionRef(std::move(coinbaseTx));
     m_chainstate.m_chainman.GenerateCoinbaseCommitment(*pblock, pindexPrev);
 
+    // Exact wire size after HogEx + coinbase commitment. Estimates are
+    // pessimistic, so this should never exceed the consensus cap.
+    {
+        const size_t exact_size = ::GetSerializeSize(TX_WITH_WITNESS(*pblock));
+        if (exact_size > MAX_BLOCK_SERIALIZED_SIZE_MINE) {
+            throw std::runtime_error(strprintf(
+                "CreateNewBlock: serialized size %u exceeds mine cap %u (estimate was %u)",
+                exact_size, MAX_BLOCK_SERIALIZED_SIZE_MINE, nBlockSerializedSize));
+        }
+    }
+
     const CTransactionRef& final_coinbase{pblock->vtx[0]};
     if (final_coinbase->HasWitness()) {
         const auto& witness_stack{final_coinbase->vin[0].scriptWitness.stack};
@@ -227,7 +279,9 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
         coinbase_tx.required_outputs.push_back(final_coinbase->vout[witness_index]);
     }
 
-    LogDebug(BCLog::MINING, "CreateNewBlock(): block weight: %u txs: %u fees: %ld sigops %d\n", GetBlockWeight(*pblock), nBlockTx, nFees, nBlockSigOpsCost);
+    LogDebug(BCLog::MINING, "CreateNewBlock(): block weight: %u txs: %u fees: %ld sigops %d MWEB weight: %u serialized: %u\n",
+             GetBlockWeight(*pblock), nBlockTx, nFees, nBlockSigOpsCost, nBlockMWEBWeight,
+             ::GetSerializeSize(TX_WITH_WITNESS(*pblock)));
 
     // Fill in header
     pblock->hashPrevBlock  = pindexPrev->GetBlockHash();
@@ -235,11 +289,15 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
     pblock->nBits          = GetNextWorkRequired(pindexPrev, pblock, chainparams.GetConsensus());
     pblock->nNonce         = 0;
 
+    // MINE_TEST_MWEB_SIZE builds near-max templates that intentionally violate
+    // production MWEB input/weight caps for reject functionals; skip validity.
+#if !defined(MINE_TEST_MWEB_SIZE)
     if (m_options.test_block_validity) {
         if (BlockValidationState state{TestBlockValidity(m_chainstate, *pblock, /*check_pow=*/false, /*check_merkle_root=*/false)}; !state.IsValid()) {
             throw std::runtime_error(strprintf("TestBlockValidity failed: %s", state.ToString()));
         }
     }
+#endif
     const auto time_2{SteadyClock::now()};
 
     LogDebug(BCLog::BENCH, "CreateNewBlock() chunks: %.2fms, validity: %.2fms (total %.2fms)\n",
@@ -250,39 +308,169 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
     return std::move(pblocktemplate);
 }
 
-bool BlockAssembler::TestChunkBlockLimits(int64_t chunk_weight, int64_t chunk_sigops_cost) const
+BlockAssembler::ChunkLimitReject BlockAssembler::EvaluateChunkBlockLimits(
+    const std::vector<CTxMemPoolEntryRef>& txs,
+    int64_t chunk_weight,
+    int64_t chunk_sigops_cost,
+    uint64_t chunk_mweb_weight) const
 {
     // block_max_weight has been flattened before block assembly limit checks.
     Assert(m_options.block_max_weight);
-    if (nBlockWeight + chunk_weight >= m_options.block_max_weight) {
-        return false;
+    if (nBlockWeight + chunk_weight >= *m_options.block_max_weight) {
+        return ChunkLimitReject::Other;
     }
     if (nBlockSigOpsCost + chunk_sigops_cost >= MAX_BLOCK_SIGOPS_COST) {
-        return false;
+        return ChunkLimitReject::Other;
     }
-    return true;
+
+    // MWEB: CreateNewBlock selection — weight/inputs/size fit on MWEB::Miner.
+    // When not including MWEB, still enforce weight + serialized size (inputs gate skipped).
+    if (fIncludeMWEB) {
+        const auto mweb_reject = mweb_miner->CheckChunkFit(
+            nBlockMWEBWeight, chunk_mweb_weight, nBlockSerializedSize, txs);
+        if (mweb_reject == MWEB::ChunkFitReject::Size) {
+            return ChunkLimitReject::Size;
+        }
+        if (mweb_reject != MWEB::ChunkFitReject::None) {
+            return ChunkLimitReject::Other;
+        }
+    } else {
+        if (nBlockMWEBWeight + chunk_mweb_weight > mw::MAX_BLOCK_WEIGHT) {
+            return ChunkLimitReject::Other;
+        }
+        const uint64_t chunk_ser_delta = MWEB::Miner::EstimateChunkSerializedDelta(txs);
+        if (nBlockSerializedSize + chunk_ser_delta > MAX_BLOCK_SERIALIZED_SIZE_MINE) {
+            return ChunkLimitReject::Size;
+        }
+        const uint64_t remaining = MAX_BLOCK_SERIALIZED_SIZE_MINE - nBlockSerializedSize;
+        if (remaining < MWEB::BLOCK_SERIALIZED_SIZE_PRESSURE) {
+            if (MWEB::Miner::CountChunkMWEBInputs(txs) * mw::INPUT_BYTES > remaining) {
+                return ChunkLimitReject::Size;
+            }
+        }
+    }
+
+    return ChunkLimitReject::None;
+}
+
+bool BlockAssembler::TestChunkBlockLimits(const std::vector<CTxMemPoolEntryRef>& txs,
+                                          int64_t chunk_weight,
+                                          int64_t chunk_sigops_cost,
+                                          uint64_t chunk_mweb_weight) const
+{
+    return EvaluateChunkBlockLimits(txs, chunk_weight, chunk_sigops_cost, chunk_mweb_weight) ==
+           ChunkLimitReject::None;
+}
+
+// True when BIP68 relative locks can actually constrain this tx. SEQUENCE_FINAL
+// (and any nSequence with the disable bit) does not need BIP68 evaluation.
+static bool HasEnabledSequenceLocks(const CTransaction& tx)
+{
+    if (tx.version < 2) return false;
+    for (const auto& txin : tx.vin) {
+        if ((txin.nSequence & CTxIn::SEQUENCE_LOCKTIME_DISABLE_FLAG) == 0) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // Perform transaction-level checks before adding to block:
 // - transaction finality (locktime)
+// - BIP68 relative locks when enabled
+// - input presence when templates are self-validated (skips orphans / extra coinbases)
 bool BlockAssembler::TestChunkTransactions(const std::vector<CTxMemPoolEntryRef>& txs) const
 {
+    AssertLockHeld(::cs_main);
+    CBlockIndex* tip{m_chainstate.m_chain.Tip()};
+    std::optional<CCoinsViewMemPool> view_mempool;
+    if (m_mempool) {
+        view_mempool.emplace(&m_chainstate.CoinsTip(), *m_mempool);
+    }
     for (const auto tx : txs) {
-        if (!IsFinalTx(tx.get().GetTx(), nHeight, m_lock_time_cutoff)) {
+        const CTransaction& tx_raw = tx.get().GetTx();
+        if (!IsFinalTx(tx_raw, nHeight, m_lock_time_cutoff)) {
+            return false;
+        }
+        // CSV is buried at height 0. Resolve coins when BIP68 can apply, or when
+        // CreateNewBlock will TestBlockValidity (so orphans cannot poison the
+        // template). Packing fixtures set test_block_validity=false and use
+        // synthetic SEQUENCE_FINAL prevouts that must still be selectable.
+        if (view_mempool && !tx_raw.IsMWEBOnly() &&
+            (m_options.test_block_validity || HasEnabledSequenceLocks(tx_raw))) {
+            const std::optional<LockPoints> lock_points{CalculateLockPointsAtTip(tip, *view_mempool, tx_raw)};
+            if (!lock_points.has_value()) {
+                return false;
+            }
+            if (HasEnabledSequenceLocks(tx_raw) && !CheckSequenceLocksAtTip(tip, *lock_points)) {
+                return false;
+            }
+        }
+        if (!fIncludeMWEB && tx_raw.HasMWEBTx()) {
             return false;
         }
     }
     return true;
 }
 
-void BlockAssembler::AddToBlock(const CTxMemPoolEntry& entry)
+bool BlockAssembler::AddToBlock(const CTxMemPoolEntry& entry)
 {
-    pblocktemplate->block.vtx.emplace_back(entry.GetSharedTx());
-    pblocktemplate->vTxFees.push_back(entry.GetFee());
-    pblocktemplate->vTxSigOpsCost.push_back(entry.GetSigOpCost());
+    const CTransaction& raw_tx = entry.GetTx();
+    const uint64_t ser_before_ext = fIncludeMWEB ? mweb_miner->EstimateSerializedExtensionBytes() : 0;
+    const size_t l1_stub_bytes = MWEB::Miner::EstimateTxL1StubBytes(raw_tx);
+
+    // MWEB: Check the hybrid's fee and sigop split before staging its MWEB
+    // part, so a rejected transaction leaves nothing staged.
+    CAmount hogex_fee = 0;
+    int64_t hogex_sigops = 0;
+    if (raw_tx.HasMWEBTx() && !raw_tx.IsMWEBOnly()) {
+        const auto tx_fee = raw_tx.mweb_tx.GetFee();
+        if (!tx_fee || *tx_fee > entry.GetFee()) {
+            LogInfo("Invalid MWEB fee amount\n");
+            return false;
+        }
+
+        hogex_fee = *tx_fee;
+        hogex_sigops = MWEB::Miner::GetHogExSigOpCost(raw_tx);
+        if (hogex_sigops > entry.GetSigOpCost()) {
+            LogInfo("Invalid MWEB sigop cost\n");
+            return false;
+        }
+    }
+
+    if (raw_tx.HasMWEBTx() && !mweb_miner->AddMWEBTransaction(entry)) {
+        return false;
+    }
+
+    CTransactionRef pTx = entry.GetSharedTx();
+    if (!pTx->IsMWEBOnly()) {
+        if (pTx->HasMWEBTx() || pTx->HadAttachedMWEB()) {
+            CMutableTransaction mutable_tx(*pTx);
+            mutable_tx.ClearAttachedMWEB();
+            pTx = MakeTransactionRef(std::move(mutable_tx));
+        }
+
+        pblocktemplate->block.vtx.emplace_back(pTx);
+        pblocktemplate->vTxFees.push_back(entry.GetFee() - hogex_fee);
+        pblocktemplate->vTxSigOpsCost.push_back(entry.GetSigOpCost() - hogex_sigops);
+        ++nBlockTx;
+    }
+
+    // Update serialized-size estimate: L1 stub + extension delta.
+    constexpr size_t MAX_COMPACTSIZE_BYTES = 9;
+    if (l1_stub_bytes > 0) {
+        nBlockSerializedSize += l1_stub_bytes + MAX_COMPACTSIZE_BYTES;
+    }
+    if (fIncludeMWEB && raw_tx.HasMWEBTx()) {
+        const uint64_t ser_after_ext = mweb_miner->EstimateSerializedExtensionBytes();
+        if (ser_after_ext > ser_before_ext) {
+            nBlockSerializedSize += ser_after_ext - ser_before_ext;
+        }
+    }
+
     nBlockWeight += entry.GetTxWeight();
-    ++nBlockTx;
     nBlockSigOpsCost += entry.GetSigOpCost();
+    nBlockMWEBWeight += entry.GetMWEBWeight();
     nFees += entry.GetFee();
 
     if (*m_options.print_modified_fee) {
@@ -290,6 +478,61 @@ void BlockAssembler::AddToBlock(const CTxMemPoolEntry& entry)
                   CFeeRate(entry.GetModifiedFee(), entry.GetTxSize()).ToString(),
                   entry.GetTx().GetHash().ToString());
     }
+
+    return true;
+}
+
+void BlockAssembler::AddResidualFill(std::set<Txid>& included)
+{
+    // After the feerate-first walk, fill any leftover budget from remaining
+    // mempool txs, smallest serialized delta first, until none fit.
+    bool added_any;
+    do {
+        added_any = false;
+
+        std::vector<CTxMemPoolEntryRef> candidates;
+        candidates.reserve(m_mempool->size());
+        for (const auto& entry : m_mempool->entryAll()) {
+            const Txid& hash = entry.get().GetTx().GetHash();
+            if (included.contains(hash)) continue;
+
+            // Require all in-mempool parents already in the template (no tearing).
+            bool parents_ok = true;
+            for (const auto& parent : m_mempool->GetParents(entry.get())) {
+                if (!included.contains(parent.get().GetTx().GetHash())) {
+                    parents_ok = false;
+                    break;
+                }
+            }
+            if (!parents_ok) continue;
+            candidates.push_back(entry);
+        }
+
+        std::stable_sort(candidates.begin(), candidates.end(), MWEB::Miner::ResidualFillBefore);
+
+        for (const auto& entry : candidates) {
+            const std::vector<CTxMemPoolEntryRef> chunk{entry};
+            const int64_t chunk_sig_ops = entry.get().GetSigOpCost();
+            const int64_t chunk_weight = entry.get().GetTxWeight();
+            const uint64_t chunk_mweb_weight = entry.get().GetMWEBWeight();
+            const CAmount chunk_fees = entry.get().GetModifiedFee();
+            const int32_t chunk_vsize = entry.get().GetTxSize();
+
+            if (m_options.block_min_fee_rate->GetTotalFee(chunk_vsize, chunk_mweb_weight) > chunk_fees) {
+                continue;
+            }
+            if (!TestChunkBlockLimits(chunk, chunk_weight, chunk_sig_ops, chunk_mweb_weight) ||
+                !TestChunkTransactions(chunk)) {
+                continue;
+            }
+            if (!AddToBlock(entry.get())) {
+                continue;
+            }
+            included.insert(entry.get().GetTx().GetHash());
+            added_any = true;
+            // Keep scanning this sorted pass; another pass re-sorts leftovers.
+        }
+    } while (added_any);
 }
 
 void BlockAssembler::addChunks()
@@ -301,6 +544,8 @@ void BlockAssembler::addChunks()
     constexpr int32_t BLOCK_FULL_ENOUGH_WEIGHT_DELTA = 4000;
     int64_t nConsecutiveFailed = 0;
 
+    std::set<Txid> included;
+
     std::vector<CTxMemPoolEntry::CTxMemPoolEntryRef> selected_transactions;
     selected_transactions.reserve(MAX_CLUSTER_COUNT_LIMIT);
     FeePerWeight chunk_feerate;
@@ -310,47 +555,87 @@ void BlockAssembler::addChunks()
     FeePerVSize chunk_feerate_vsize = ToFeePerVSize(chunk_feerate);
 
     while (selected_transactions.size() > 0) {
-        // Check to see if min fee rate is still respected.
-        if (ByRatio{chunk_feerate_vsize} < ByRatio{m_options.block_min_fee_rate->GetFeePerVSize()}) {
-            // Everything else we might consider has a lower feerate
-            return;
-        }
-
         int64_t chunk_sig_ops = 0;
         int64_t chunk_weight = 0;
+        uint64_t chunk_mweb_weight = 0;
         for (const auto& tx : selected_transactions) {
             chunk_sig_ops += tx.get().GetSigOpCost();
+            chunk_mweb_weight += tx.get().GetMWEBWeight();
             chunk_weight += tx.get().GetTxWeight();
         }
 
-        // Check to see if this chunk will fit.
-        if (!TestChunkBlockLimits(chunk_weight, chunk_sig_ops) || !TestChunkTransactions(selected_transactions)) {
-            // This chunk won't fit, so we skip it and will try the next best one.
-            m_mempool->SkipBuilderChunk();
-            ++nConsecutiveFailed;
+        const CAmount chunk_fees = std::accumulate(selected_transactions.begin(), selected_transactions.end(), CAmount{0},
+            [](CAmount sum, const auto& tx) { return sum + tx.get().GetModifiedFee(); });
+        const int32_t chunk_vsize = std::accumulate(selected_transactions.begin(), selected_transactions.end(), int32_t{0},
+            [](int32_t sum, const auto& tx) { return sum + tx.get().GetTxSize(); });
 
+        // Check to see if min fee rate is still respected.
+        if (m_options.block_min_fee_rate->GetTotalFee(chunk_vsize, chunk_mweb_weight) > chunk_fees) {
+            // Everything else we might consider has a lower feerate — residual next.
+            break;
+        }
+
+        const ChunkLimitReject limit_reject =
+            EvaluateChunkBlockLimits(selected_transactions, chunk_weight, chunk_sig_ops, chunk_mweb_weight);
+        const bool tx_ok = TestChunkTransactions(selected_transactions);
+
+        if (limit_reject != ChunkLimitReject::None || !tx_ok) {
+            // Pure size skips do not charge consecutive failures (avoids early-exit
+            // starvation when large high-feerate chunks precede small fillers).
+            if (limit_reject != ChunkLimitReject::Size || !tx_ok) {
+                ++nConsecutiveFailed;
+            }
+            m_mempool->SkipBuilderChunk();
+
+            const uint64_t remaining_ser = nBlockSerializedSize < MAX_BLOCK_SERIALIZED_SIZE_MINE
+                                               ? MAX_BLOCK_SERIALIZED_SIZE_MINE - nBlockSerializedSize
+                                               : 0;
             // block_max_weight has been flattened before block assembly limit checks.
             Assert(m_options.block_max_weight);
-            if (nConsecutiveFailed > MAX_CONSECUTIVE_FAILURES && nBlockWeight +
-                    BLOCK_FULL_ENOUGH_WEIGHT_DELTA > *m_options.block_max_weight) {
-                // Give up if we're close to full and haven't succeeded in a while
-                return;
+            const bool weight_near_full =
+                nBlockWeight + BLOCK_FULL_ENOUGH_WEIGHT_DELTA > *m_options.block_max_weight;
+            const bool size_near_full = remaining_ser < MWEB::BLOCK_SERIALIZED_SIZE_PRESSURE;
+            if (nConsecutiveFailed > MAX_CONSECUTIVE_FAILURES && (weight_near_full || size_near_full)) {
+                // Give up primary walk; residual may still fill leftovers.
+                break;
             }
         } else {
-            m_mempool->IncludeBuilderChunk();
+            // MWEB: Add the chunk whole or not at all. A transaction that fails to
+            // stage unwinds the chunk, so the block never holds part of a chunk
+            // while the graph treats the rest, and its descendants, as included.
+            const size_t num_txs{pblocktemplate->block.vtx.size()};
+            const size_t num_fees{pblocktemplate->vTxFees.size()};
+            const size_t num_sigops{pblocktemplate->vTxSigOpsCost.size()};
+            const auto block_totals{std::tuple{nBlockWeight, nBlockTx, nBlockSigOpsCost, nBlockMWEBWeight, nBlockSerializedSize, nFees}};
+            const auto mweb_checkpoint{fIncludeMWEB ? std::make_optional(mweb_miner->GetCheckpoint()) : std::nullopt};
+            const bool added{std::all_of(selected_transactions.begin(), selected_transactions.end(),
+                                         [this](const auto& tx) { return AddToBlock(tx); })};
+            if (!added) {
+                pblocktemplate->block.vtx.resize(num_txs);
+                pblocktemplate->vTxFees.resize(num_fees);
+                pblocktemplate->vTxSigOpsCost.resize(num_sigops);
+                std::tie(nBlockWeight, nBlockTx, nBlockSigOpsCost, nBlockMWEBWeight, nBlockSerializedSize, nFees) = block_totals;
+                if (mweb_checkpoint) mweb_miner->Restore(*mweb_checkpoint);
+                ++nConsecutiveFailed;
+                m_mempool->SkipBuilderChunk();
+            } else {
+                m_mempool->IncludeBuilderChunk();
 
-            // This chunk will fit, so add it to the block.
-            nConsecutiveFailed = 0;
-            for (const auto& tx : selected_transactions) {
-                AddToBlock(tx);
+                // This chunk fit and was added to the block.
+                nConsecutiveFailed = 0;
+                for (const auto& tx : selected_transactions) {
+                    included.insert(tx.get().GetTx().GetHash());
+                }
+                pblocktemplate->m_package_feerates.emplace_back(chunk_feerate_vsize);
             }
-            pblocktemplate->m_package_feerates.emplace_back(chunk_feerate_vsize);
         }
 
         selected_transactions.clear();
         chunk_feerate = m_mempool->GetBlockBuilderChunk(selected_transactions);
         chunk_feerate_vsize = ToFeePerVSize(chunk_feerate);
     }
+
+    AddResidualFill(included);
 }
 
 void AddMerkleRootAndCoinbase(CBlock& block, CTransactionRef coinbase, uint32_t version, uint32_t timestamp, uint32_t nonce)

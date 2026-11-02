@@ -4,6 +4,8 @@ Bitcoin Core can be launched with `-signer=<cmd>` where `<cmd>` is an external t
 
 Interaction with external signer uses [Partially Signed Bitcoin Transaction (PSBT)](psbt.md).
 
+An external signer wallet can hold an MWEB account if the signer returns one from `getdescriptors` and signs MWEB PSBTs; see [mweb/psbt.md](mweb/psbt.md#external-signers). No released hardware wallet supports MWEB yet. MWEB coins held by other devices are spent with the air-gapped PSBT workflow in that document.
+
 ## Example usage
 
 The following example is based on the [HWI](https://github.com/bitcoin-core/HWI) tool. Version 2.0 or newer is required. Although this tool is hosted under the Bitcoin Core GitHub organization and maintained by Bitcoin Core developers, it should be used with caution. It is considered experimental and has far less review than Bitcoin Core itself. Be particularly careful when running tools such as these on a computer with private keys on it.
@@ -94,7 +96,7 @@ Bitcoin Core passes this flag to commands that operate on a chain-specific signe
 
 Indicate that (sub)command should be received over stdin and results returned in response to that. `--stdin` is a global flag, it is not specific to any subcommand.
 
-Bitcoin Core currently uses this flag for `signtx`.
+Bitcoin Core currently uses this flag for `signtx`, and for `displayaddress` of MWEB addresses, whose descriptors carry the scan secret.
 
 All subcommands SHOULD support both
 - being called as commandline arguments; or
@@ -221,6 +223,6 @@ The `createwallet` RPC calls:
 
 It then imports descriptors for all supported address types, in a BIP44/49/84/86 compatible manner.
 
-The `walletdisplayaddress` RPC obtains the inferred descriptor for the provided address. It then calls `<cmd> --fingerprint 00000000 --chain <name> displayaddress --desc <descriptor>`.
+The `walletdisplayaddress` RPC obtains the inferred descriptor for the provided address. It then calls `<cmd> --fingerprint 00000000 --chain <name> displayaddress --desc <descriptor>`. For an MWEB address it uses the address descriptor `mweb([fp/path]<scan WIF>,[fp/path]<spend pubkey>,i)`, refuses addresses whose key origins don't carry the signer's fingerprint, calls `<cmd> --stdin --fingerprint 00000000 --chain <name>`, and sends `displayaddress --desc <descriptor>` over stdin.
 
 For external-signer wallets, spending uses `send` or `sendall`, and fee-bumping uses `bumpfee`. Bitcoin Core builds a PSBT, adds key origin information, checks whether any input key origin fingerprint matches the signer, calls `<cmd> --stdin --fingerprint 00000000 --chain <name>`, and sends `signtx <psbt>` over stdin. If signatures are sufficient, it finalizes the transaction and, for broadcasting RPCs, broadcasts it. If signing cannot complete, the call fails with an error. For manual fee-bumping, use `psbtbumpfee` to obtain a PSBT for signing.

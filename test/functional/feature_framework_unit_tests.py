@@ -17,6 +17,7 @@ from test_framework.test_framework import TEST_EXIT_PASSED, TEST_EXIT_FAILED
 TEST_FRAMEWORK_MODULES = [
     "address",
     "crypto.bip324_cipher",
+    "crypto.blake3",
     "blocktools",
     "compressor",
     "crypto.chacha20",
@@ -25,6 +26,9 @@ TEST_FRAMEWORK_MODULES = [
     "key",
     "messages",
     "crypto.muhash",
+    "mweb_block_size_calc",
+    "mweb_proof",
+    "mweb_stress_mega_util",
     "crypto.poly1305",
     "crypto.ripemd160",
     "crypto.secp256k1",

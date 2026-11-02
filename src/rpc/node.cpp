@@ -20,6 +20,7 @@
 #include <kernel/cs_main.h>
 #include <logging.h>
 #include <node/context.h>
+#include <node/mweb_historical_cache.h>
 #include <rpc/protocol.h>
 #include <rpc/request.h>
 #include <rpc/server.h>
@@ -420,6 +421,28 @@ static RPCMethod getindexinfo()
     };
 }
 
+static RPCMethod clearmwebhistoricalcache()
+{
+    return RPCMethod{
+        "clearmwebhistoricalcache",
+        "Clear the in-memory MWEB historical serve cache (regtest only).\n",
+        {},
+        RPCResult{RPCResult::Type::NONE, "", ""},
+        RPCExamples{
+            HelpExampleCli("clearmwebhistoricalcache", "")
+          + HelpExampleRpc("clearmwebhistoricalcache", "")
+        },
+        [](const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
+{
+    if (!Params().IsMockableChain()) {
+        throw std::runtime_error("clearmwebhistoricalcache is for regression testing only");
+    }
+    node::GetMWEBHistoricalViewCache().ClearForTest();
+    return UniValue::VNULL;
+},
+    };
+}
+
 void RegisterNodeRPCCommands(CRPCTable& t)
 {
     static const CRPCCommand commands[]{
@@ -431,6 +454,7 @@ void RegisterNodeRPCCommands(CRPCTable& t)
         {"hidden", &echo},
         {"hidden", &echojson},
         {"hidden", &echoipc},
+        {"hidden", &clearmwebhistoricalcache},
     };
     for (const auto& c : commands) {
         t.appendCommand(c.name, &c);

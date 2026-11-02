@@ -50,6 +50,7 @@ class PackageValidationState : public ValidationState<PackageValidationResult> {
  * parent), checks that all parents appear somewhere in the list before their respective children.
  * No other ordering is enforced. This function cannot detect indirect dependencies (e.g. a
  * transaction's grandparent if its parent is not present).
+ * MWEB: an MWEB input spending an MWEB output of a later transaction also counts as unsorted.
  * @returns true if sorted. False if any tx spends the output of a tx that appears later in txns.
  */
 bool IsTopoSortedPackage(const Package& txns);
@@ -57,6 +58,8 @@ bool IsTopoSortedPackage(const Package& txns);
 /** Checks that these transactions don't conflict, i.e., spend the same prevout. This includes
  * checking that there are no duplicate transactions. Since these checks require looking at the inputs
  * of a transaction, returns false immediately if any transactions have empty vin.
+ * MWEB: MWEB inputs (spent output IDs) are checked the same way, and a transaction with
+ * MWEB inputs but empty vin is allowed.
  *
  * Does not check consistency of a transaction with oneself; does not check if a transaction spends
  * the same prevout multiple times (see bad-txns-inputs-duplicate in CheckTransaction()).
@@ -76,11 +79,13 @@ bool IsWellFormedPackage(const Package& txns, PackageValidationState& state);
 /** Context-free check that a package is exactly one child and its parents; not all parents need to
  * be present, but the package must not contain any transactions that are not the child's parents.
  * It is expected to be sorted, which means the last transaction must be the child.
+ * MWEB: a transaction is also a parent when the child spends one of its MWEB outputs.
  */
 bool IsChildWithParents(const Package& package);
 
 /** Context-free check that a package IsChildWithParents() and none of the parents depend on each
  * other (the package is a "tree").
+ * MWEB: dependencies through MWEB outputs count as well.
  */
 bool IsChildWithParentsTree(const Package& package);
 

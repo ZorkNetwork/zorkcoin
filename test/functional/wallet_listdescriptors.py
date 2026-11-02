@@ -43,18 +43,64 @@ class ListDescriptorsTest(BitcoinTestFramework):
         node.createwallet(wallet_name='w3')
         result = node.get_wallet_rpc('w3').listdescriptors()
         assert_equal("w3", result['wallet_name'])
-        assert_equal(8, len(result['descriptors']))
-        assert_equal(8, len([d for d in result['descriptors'] if d['active']]))
-        assert_equal(4, len([d for d in result['descriptors'] if d['internal']]))
+        # Default wallet: 8 L1 descriptors (4 types x external/internal) plus public
+        # MWEB account (neutered) and 2 reserved internals (change/pegin).
+        mweb_descs = [d for d in result['descriptors'] if d['desc'].startswith('mweb(')]
+        assert_equal(len(mweb_descs), 3)
+        assert_equal(len(result['descriptors']), 11)
+        # 8 L1 actives + 1 active MWEB account (internals are inactive).
+        assert_equal(9, len([d for d in result['descriptors'] if d['active']]))
+        assert_equal(4, len([d for d in result['descriptors'] if d.get('internal')]))
         for item in result['descriptors']:
             assert_not_equal(item['desc'], '')
-            assert_equal(item['next_index'], 0)
-            assert_equal(item['range'], [0, 0])
+            if item['desc'].startswith('mweb('):
+                body = item['desc'].split('#')[0]
+                if body.count(',') == 3:
+                    assert 'range' not in item
+                elif body.endswith(',*)'):
+                    # Account may include a keypool-style range for mint indices.
+                    if 'range' in item:
+                        assert_equal(len(item['range']), 2)
+                    assert 'tprv' not in body and 'xprv' not in body
+                else:
+                    assert_equal(item['next_index'], 0)
+                    assert_equal(item['range'], [0, 0])
+            else:
+                assert_equal(item['next_index'], 0)
+                assert_equal(item['range'], [0, 0])
             assert item['timestamp'] is not None
+
+        self.log.info('Private listing includes the MWEB account descriptor with private KEYs.')
+        private = node.get_wallet_rpc('w3').listdescriptors(True)
+        mweb_private = [d for d in private['descriptors'] if d['desc'].startswith('mweb(')]
+        assert_equal(len(mweb_private), 3)
+        assert_equal(len(private['descriptors']), 11)
+        priv_accounts = [d for d in mweb_private if d['desc'].split('#')[0].endswith(',*)')]
+        assert_equal(len(priv_accounts), 1)
+        assert 'tprv' in priv_accounts[0]['desc'] or 'xprv' in priv_accounts[0]['desc']
 
         self.log.info('Test that descriptor strings are returned in lexicographically sorted order.')
         descriptor_strings = [descriptor['desc'] for descriptor in result['descriptors']]
         assert_equal(descriptor_strings, sorted(descriptor_strings))
+
+        self.log.info('Test the MWEB account next index advances and survives reload.')
+
+        def check_mweb_next(wallet, expected_next):
+            accounts = [
+                d for d in wallet.listdescriptors()['descriptors']
+                if d['active'] and d['desc'].startswith('mweb(') and d['desc'].split('#')[0].endswith(',*)')
+            ]
+            assert_equal(len(accounts), 1)
+            assert_equal(accounts[0]['next'], expected_next)
+            assert_equal(accounts[0]['next_index'], expected_next)
+
+        mweb_wallet = node.get_wallet_rpc('w3')
+        check_mweb_next(mweb_wallet, 2)
+        mweb_wallet.getnewaddress(address_type='mweb')
+        check_mweb_next(mweb_wallet, 3)
+        node.unloadwallet('w3')
+        node.loadwallet('w3')
+        check_mweb_next(node.get_wallet_rpc('w3'), 3)
 
         self.log.info('Test descriptors with hardened derivations are listed in importable form.')
         extended_key = ExtendedPrivateKey.generate()

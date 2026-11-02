@@ -18,6 +18,7 @@
 #include <script/script.h>
 #include <script/verify_flags.h>
 #include <uint256.h>
+#include <util/bip32.h>
 #include <util/chaintype.h>
 #include <util/log.h>
 #include <util/strencodings.h>
@@ -102,6 +103,20 @@ void CChainParams::ApplyDeploymentOptions(const DeploymentOptions& opts)
     }
 }
 
+/** Greenfield: no outputs to freeze; keep hook for incident response (Litecoin pins one OID). */
+static std::vector<uint256> GetFrozenMWEBOutputIDs()
+{
+    return {};
+}
+
+/** Regtest-only: synthetic frozen OID for functional frozen-output rejection tests. */
+static std::vector<uint256> GetRegtestFrozenMWEBOutputIDs()
+{
+    return {
+        uint256{"2f3a08d9f5ef5f388386c11efe935394b14b524220cff4ec5c81942b82e694f7"},
+    };
+}
+
 /**
  * Main network on which people trade goods and services.
  */
@@ -136,7 +151,22 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].threshold = 1815; // 90%
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].period = 2016;
 
+        // MWEB
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].bit = 4;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].nStartTime = 0;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].min_activation_height = 16384;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].threshold = 3840;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].period = 4096;
+
         ApplyDeploymentOptions(opts.dep_opts);
+
+        consensus.frozen_mweb_output_ids = GetFrozenMWEBOutputIDs();
+        // MWEB has no history on this chain, so canonical kernel features are enforced from the first MWEB block.
+        consensus.mweb_pegout_feature_activation_height = 0;
+        consensus.mweb_extradata_feature_activation_height = 0;
+        // No historical kernel lock-height grandfather on this chain (enforce from first MWEB block).
+        consensus.mweb_kernel_lock_height_grandfather = 0;
 
         consensus.nMinimumChainWork = uint256{"000000000000000000000000000000000000000145ec036acc5ba740052af1a0"};
         consensus.defaultAssumeValid = uint256{"00000000000000000000748969ec33043c0e52a763c6dd5193861f559f2c72e3"}; // 966143
@@ -180,6 +210,8 @@ public:
         base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x88, 0xAD, 0xE4};
 
         bech32_hrp = "bc";
+        mweb_hrp = "bc1m"; // MWEB
+        m_mweb_account_path = {0 | BIP32_HARDENED_FLAG, 100 | BIP32_HARDENED_FLAG}; // MWEB
 
         vFixedSeeds = std::vector<uint8_t>(std::begin(chainparams_seed_main), std::end(chainparams_seed_main));
 
@@ -266,7 +298,20 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].threshold = 1512; // 75%
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].period = 2016;
 
+        // MWEB
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].bit = 4;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].nStartTime = 0;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].min_activation_height = 16384;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].threshold = 3840;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].period = 4096;
+
         ApplyDeploymentOptions(opts.dep_opts);
+
+        consensus.frozen_mweb_output_ids = GetFrozenMWEBOutputIDs();
+        // MWEB has no history on this chain, so canonical kernel features are enforced from the first MWEB block.
+        consensus.mweb_pegout_feature_activation_height = 0;
+        consensus.mweb_extradata_feature_activation_height = 0;
 
         consensus.nMinimumChainWork = uint256{"0000000000000000000000000000000000000000000017f49f702147f10c0eb6"};
         consensus.defaultAssumeValid = uint256{"00000000b318a3703d14a844c55ef507f4c2fc8f8766e24271fd43c180c51637"}; // 5128859
@@ -300,6 +345,8 @@ public:
         base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x35, 0x83, 0x94};
 
         bech32_hrp = "tb";
+        mweb_hrp = "tb1m"; // MWEB
+        m_mweb_account_path = {0 | BIP32_HARDENED_FLAG, 100 | BIP32_HARDENED_FLAG}; // MWEB
 
         vFixedSeeds = std::vector<uint8_t>(std::begin(chainparams_seed_test), std::end(chainparams_seed_test));
 
@@ -373,7 +420,20 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].threshold = 1512; // 75%
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].period = 2016;
 
+        // MWEB
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].bit = 4;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].min_activation_height = 0;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].threshold = 1512;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].period = 2016;
+
         ApplyDeploymentOptions(opts.dep_opts);
+
+        consensus.frozen_mweb_output_ids = GetFrozenMWEBOutputIDs();
+        // MWEB has no history on this chain, so canonical kernel features are enforced from the first MWEB block.
+        consensus.mweb_pegout_feature_activation_height = 0;
+        consensus.mweb_extradata_feature_activation_height = 0;
 
         consensus.nMinimumChainWork = uint256{"000000000000000000000000000000000000000000000e346a558455ade8eca9"};
         consensus.defaultAssumeValid = uint256{"0000000021df65b91665a342e26ceb05e54826ad7d8fcd40316230058fa3b865"}; // 151604
@@ -413,6 +473,8 @@ public:
         base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x35, 0x83, 0x94};
 
         bech32_hrp = "tb";
+        mweb_hrp = "tb1m"; // MWEB
+        m_mweb_account_path = {0 | BIP32_HARDENED_FLAG, 100 | BIP32_HARDENED_FLAG}; // MWEB
 
         vFixedSeeds = std::vector<uint8_t>(std::begin(chainparams_seed_testnet4), std::end(chainparams_seed_testnet4));
 
@@ -524,7 +586,20 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].threshold = 1815; // 90%
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].period = 2016;
 
+        // MWEB
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].bit = 4;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].min_activation_height = 0;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].threshold = 1815;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].period = 2016;
+
         ApplyDeploymentOptions(options.dep_opts);
+
+        consensus.frozen_mweb_output_ids = GetFrozenMWEBOutputIDs();
+        // MWEB has no history on this chain, so canonical kernel features are enforced from the first MWEB block.
+        consensus.mweb_pegout_feature_activation_height = 0;
+        consensus.mweb_extradata_feature_activation_height = 0;
 
         // message start is defined as the first 4 bytes of the sha256d of the block script
         HashWriter h{};
@@ -568,6 +643,8 @@ public:
         base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x35, 0x83, 0x94};
 
         bech32_hrp = "tb";
+        mweb_hrp = "tb1m"; // MWEB
+        m_mweb_account_path = {0 | BIP32_HARDENED_FLAG, 100 | BIP32_HARDENED_FLAG}; // MWEB
 
         fDefaultConsistencyChecks = false;
         m_is_mockable_chain = false;
@@ -614,6 +691,14 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].threshold = 108; // 75%
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].period = 144; // Faster than normal for regtest (144 instead of 2016)
 
+        // MWEB: inactive by default on regtest (like mainnet/testnet); MWEB tests enable via -vbparams
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].bit = 4;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].min_activation_height = 0;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].threshold = 108;
+        consensus.vDeployments[Consensus::DEPLOYMENT_MWEB].period = 144;
+
         consensus.nMinimumChainWork = uint256{};
         consensus.defaultAssumeValid = uint256{};
 
@@ -627,6 +712,10 @@ public:
         m_assumed_chain_state_size = 0;
 
         ApplyDeploymentOptions(opts.dep_opts);
+
+        consensus.frozen_mweb_output_ids = GetRegtestFrozenMWEBOutputIDs();
+        consensus.mweb_pegout_feature_activation_height = 0;
+        consensus.mweb_extradata_feature_activation_height = 0;
 
         genesis = CreateGenesisBlock(1296688602, 2, 0x207fffff, 1, 50 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
@@ -661,6 +750,15 @@ public:
                 .m_chain_tx_count = 334,
                 .blockhash = uint256{"0c552ced4721c249a389eb9b08cb8da261cd46f0e7b5f9d064d48f3113406853"},
             },
+            {
+                // For use by test/functional/feature_assumeutxo.py (post-MWEB snapshot)
+                .height = 750,
+                .hash_serialized = AssumeutxoHash{uint256{"9303aeb7750145255fb60915087daa86b043c53cbd0a90935fb97bd4c7f4c114"}},
+                // Regenerated after committing peg-in to this tree HD receive address.
+                .mweb_hash_serialized = AssumeutxoHash{uint256{"fc8a750880edf955fb16d00817357ae88e2e12bc4dd5199bb8b7dcc131bf1052"}},
+                .m_chain_tx_count = 817,
+                .blockhash = uint256{"62a2d0861699b88a2cfd7b9ff334bff9bf6faa39c44c7130a3e55706ca438c53"},
+            },
         };
 
         chainTxData = ChainTxData{
@@ -676,6 +774,8 @@ public:
         base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x35, 0x83, 0x94};
 
         bech32_hrp = "bcrt";
+        mweb_hrp = "bcrt1m"; // MWEB
+        m_mweb_account_path = {0 | BIP32_HARDENED_FLAG, 100 | BIP32_HARDENED_FLAG}; // MWEB
 
         // Copied from Testnet4.
         m_headers_sync_params = HeadersSyncParams{

@@ -11,6 +11,7 @@
 #include <common/types.h>
 #include <musig.h>
 #include <node/types.h>
+#include <mw/wallet/keychain.h> // MWEB hooks
 #include <psbt.h>
 #include <script/descriptor.h>
 #include <script/script.h>
@@ -23,7 +24,7 @@
 #include <wallet/crypter.h>
 #include <wallet/types.h>
 #include <wallet/walletdb.h>
-#include <wallet/walletutil.h>
+#include <wallet/imweb_keystore.h>
 
 #include <functional>
 #include <optional>
@@ -55,6 +56,8 @@ public:
     virtual bool IsLocked() const = 0;
     //! Callback function for after TopUp completes containing any scripts that were added by a SPKMan
     virtual void TopUpCallback(const std::set<CScript>&, ScriptPubKeyMan*) = 0;
+    //! Number of unused MWEB addresses an MWEB account watches past its next index (-mwebkeypool)
+    virtual int64_t GetMWEBKeypoolSize() const;
 };
 
 //! Constant representing an unknown spkm creation time
@@ -62,6 +65,8 @@ inline constexpr int64_t UNKNOWN_TIME = std::numeric_limits<int64_t>::max();
 
 //! Default for -keypool
 inline constexpr unsigned int DEFAULT_KEYPOOL_SIZE = 1000;
+
+inline int64_t WalletStorage::GetMWEBKeypoolSize() const { return DEFAULT_KEYPOOL_SIZE; }
 
 struct WalletDestination
 {
@@ -80,12 +85,16 @@ class ScriptPubKeyMan
 {
 protected:
     WalletStorage& m_storage;
+    mw::Keychain::Ptr m_mwebKeychain; // MWEB hooks
 
 public:
-    explicit ScriptPubKeyMan(WalletStorage& storage) : m_storage(storage) {}
+    explicit ScriptPubKeyMan(WalletStorage& storage) : m_storage(storage), m_mwebKeychain(nullptr) {}
     virtual ~ScriptPubKeyMan() = default;
     virtual util::Result<CTxDestination> GetNewDestination(const OutputType type) { return util::Error{Untranslated("Not supported")}; }
+    //! MWEB: The destination GetNewDestination would return next, without taking it.
+    virtual util::Result<CTxDestination> PeekNewDestination(const OutputType type) const { return util::Error{Untranslated("Not supported")}; }
     virtual bool IsMine(const CScript& script) const { return false; }
+    virtual bool IsMine(const CTxDestination& dest) const { return false; }
 
     //! Check that the given decryption key is valid for this ScriptPubKeyMan, i.e. it decrypts all of the keys handled by it.
     virtual bool CheckDecryptionKey(const CKeyingMaterial& master_key) { return false; }
@@ -124,6 +133,10 @@ public:
     virtual int64_t GetTimeFirstKey() const { return 0; }
 
     virtual std::unique_ptr<CKeyMetadata> GetMetadata(const CTxDestination& dest) const { return nullptr; }
+
+    // MWEB hooks
+    virtual void LoadMWEBKeychain() { }
+    virtual const mw::Keychain::Ptr& GetMWEBKeychain() const noexcept { return m_mwebKeychain; }
 
     virtual std::unique_ptr<SigningProvider> GetSolvingProvider(const CScript& script) const { return nullptr; }
 
@@ -195,6 +208,9 @@ private:
     // Used only in migration.
     std::unordered_set<CScript, SaltedSipHasher> GetCandidateScriptPubKeys() const;
 
+    // Keep the base destination overload visible. Legacy wallets do not own
+    // Stealth destinations; CWallet::IsMine routes those to MWEB descriptors.
+    using ScriptPubKeyMan::IsMine;
     bool IsMine(const CScript& script) const override;
     bool CanProvide(const CScript& script, SignatureData& sigdata) override;
 public:
@@ -271,13 +287,49 @@ public:
 
 class DescriptorScriptPubKeyMan : public ScriptPubKeyMan
 {
+public:
+    enum class MWEBInternalProtect : uint8_t { NONE, MANUAL, KEEP };
+
 private:
     using ScriptPubKeyMap = std::map<CScript, int32_t>; // Map of scripts to descriptor range index
     using PubKeyMap = std::map<CPubKey, int32_t>; // Map of pubkeys involved in scripts to descriptor range index
+    using MWEBAddressMap = std::map<StealthAddress, int32_t>;
 
     ScriptPubKeyMap m_map_script_pub_keys GUARDED_BY(cs_desc_man);
     PubKeyMap m_map_pubkeys GUARDED_BY(cs_desc_man);
+    MWEBAddressMap m_map_mweb_addresses GUARDED_BY(cs_desc_man);
+    std::map<CKeyID, CKeyMetadata> m_map_mweb_metadata GUARDED_BY(cs_desc_man);
+    std::map<uint32_t, WalletDescriptor> m_mweb_internal_descriptors GUARDED_BY(cs_desc_man);
+    std::set<uint32_t> m_ephemeral_mweb_indices GUARDED_BY(cs_desc_man);
+    //! Unused account indices watched for payments, with their derived addresses. Never persisted.
+    std::map<uint32_t, StealthAddress> m_mweb_lookahead GUARDED_BY(cs_desc_man);
+    //! Supporting account of indexed imports: discover only explicitly registered addresses.
+    bool m_mweb_limited_account GUARDED_BY(cs_desc_man){false};
+    std::set<uint32_t> m_mweb_scan_active_indices GUARDED_BY(cs_desc_man);
+    std::map<uint32_t, int64_t> m_mweb_internal_last_active GUARDED_BY(cs_desc_man);
+    std::map<uint32_t, MWEBInternalProtect> m_mweb_internal_protect GUARDED_BY(cs_desc_man);
     int32_t m_max_cached_index = -1;
+
+    bool m_internal{false};
+    SecretKey m_mweb_scan_secret;
+    //! The scan secret in the mwebscank record, as last read or written.
+    SecretKey m_mweb_scan_secret_on_disk;
+    std::optional<std::string> m_mweb_keychain_error;
+
+    //! Composed IMWEBKeyStore for mw::Keychain (avoids MI into DescriptorScriptPubKeyMan).
+    class MWEBKeyStoreAdapter final : public IMWEBKeyStore
+    {
+        DescriptorScriptPubKeyMan& m_parent;
+    public:
+        explicit MWEBKeyStoreAdapter(DescriptorScriptPubKeyMan& parent) : m_parent(parent) {}
+        std::unique_ptr<CKeyMetadata> GetMetadata(const StealthAddress& addr) const override
+        {
+            return m_parent.GetMetadata(addr);
+        }
+        bool GetKey(const CKeyID& id, CKey& keyOut) const override { return m_parent.GetKey(id, keyOut); }
+        bool HaveKey(const CKeyID& id) const override { return m_parent.HaveKey(id); }
+    };
+    MWEBKeyStoreAdapter m_mweb_keystore{*this};
 
     KeyMap m_map_keys GUARDED_BY(cs_desc_man);
     CryptedKeyMap m_map_crypted_keys GUARDED_BY(cs_desc_man);
@@ -303,8 +355,6 @@ private:
 
     const uint256 m_id;
 
-    bool AddDescriptorKeyWithDB(WalletBatch& batch, const CKey& key, const CPubKey &pubkey) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
-
     KeyMap GetKeys() const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
 
     // Cached FlatSigningProviders to avoid regenerating them each time they are needed.
@@ -317,6 +367,23 @@ private:
     void Load();
 
     void UpdateWithSigningProvider(WalletBatch& batch, const FlatSigningProvider& signing_provider) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+
+    bool KeyIsMWEBSeed(const KeyMap& keys, const CKey& key) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    std::optional<CKey> FindMWEBWalletSeed(const KeyMap& keys) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    //! Origins of keys of this MWEB entry's descriptor; nullopt for a key without an origin of its own.
+    std::vector<std::optional<KeyOriginInfo>> GetMWEBKeyOrigins(const std::vector<CPubKey>& pubkeys) const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    std::string FormatMWEBKeyOrigin(const std::optional<KeyOriginInfo>& origin) const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    std::optional<CKey> GetMWEBScanKey() const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    //! "[origin]<scan WIF>" of any MWEB entry that holds the scan secret.
+    std::optional<std::string> GetMWEBScanKeyExpression() const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    //! "[origin]<scan WIF>" and "[origin]<spend pubkey hex>" of an MWEB account.
+    std::optional<std::pair<std::string, std::string>> GetMWEBAccountKeyExpressions() const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    //! The account's spend pubkey from its descriptor or, for a hardened spend path, the descriptor cache.
+    std::optional<PublicKey> GetMWEBAccountSpendPubKey() const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    //! Why the account's internal records do not match keychain, if they do not.
+    std::optional<std::string> VerifyMWEBInternalRecords(const mw::Keychain& keychain) const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    void RefuseMWEBKeychain(std::string error) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    void ClearMWEBLookahead() EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
 
 protected:
     //! Create a DescriptorScriptPubKeyMan from existing data (i.e. during loading)
@@ -340,14 +407,100 @@ protected:
 
 public:
     static std::unique_ptr<DescriptorScriptPubKeyMan> LoadFromStorage(WalletStorage& storage, const uint256& id, WalletDescriptor& descriptor, int64_t keypool_size, const KeyMap& keys, const CryptedKeyMap& ckeys);
-    static std::unique_ptr<DescriptorScriptPubKeyMan> CreateFromImport(WalletStorage& storage, WalletDescriptor& descriptor, int64_t keypool_size, const FlatSigningProvider& provider);
+    static std::unique_ptr<DescriptorScriptPubKeyMan> CreateFromImport(WalletStorage& storage, WalletDescriptor& descriptor, int64_t keypool_size, const FlatSigningProvider& provider, bool internal);
+    static std::unique_ptr<DescriptorScriptPubKeyMan> CreateMWEBSupportingAccount(WalletStorage& storage, WalletDescriptor& descriptor, int64_t keypool_size, const FlatSigningProvider& provider);
     static std::unique_ptr<DescriptorScriptPubKeyMan> CreateFromMigration(WalletStorage& storage, WalletBatch& batch, WalletDescriptor& descriptor, int64_t keypool_size, const FlatSigningProvider& provider);
     static std::unique_ptr<DescriptorScriptPubKeyMan> GenerateNewSingleSig(WalletStorage& storage, WalletBatch& batch, int64_t keypool_size, const CExtKey& master_key, OutputType addr_type, bool internal);
 
     mutable RecursiveMutex cs_desc_man;
 
     util::Result<CTxDestination> GetNewDestination(OutputType type) override;
+    util::Result<CTxDestination> PeekNewDestination(OutputType type) const override; // MWEB
     bool IsMine(const CScript& script) const override;
+    bool IsMine(const CTxDestination& dest) const override;
+
+    void LoadMWEBKeychain() override;
+    void RestoreMWEBSpendKeysAfterUnlock();
+    /** Validate and load a wallet-internal mweb(A_i,B_i,i,acct_cksum) record.
+     *  Rejects keys that do not match account derivation (or DKSAP self-check
+     *  when watch-only). Reserved change/pegin index rejection is enforced at
+     *  the importdescriptors RPC boundary so wallet DB reload of indices 0/1
+     *  still succeeds. */
+    util::Result<void> LoadMWEBInternalDescriptorRecord(const WalletDescriptor& descriptor) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    std::vector<const WalletDescriptor*> GetMWEBInternalWalletDescriptors() const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+
+    bool IsMWEBDescriptor() const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    bool IsMWEBAccountDescriptor() const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    bool IsMWEBLimitedAccount() const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man) { return m_mweb_limited_account; }
+    void LoadMWEBLimitedAccountRecord() EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    bool EnableMWEBAccountDiscovery(WalletBatch& batch) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    /** ACCOUNT, INDEXED, or SINGLE_SUBADDR — can identify/scan (not INTERNAL). */
+    bool IsMWEBCapabilityDescriptor() const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    std::string GetMWEBAccountChecksum() const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    bool AddDescriptorKeyWithDB(WalletBatch& batch, const CKey& key, const CPubKey &pubkey) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    const mw::Keychain* GetMWEBKeychainForExpansion() const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    void InitMWEBReservedIndices(WalletBatch& batch) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    bool PersistMWEBInternalIndex(WalletBatch& batch, uint32_t index, const StealthAddress& addr) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    /** The index at which this account derives addr: its recorded index, else a search of indices
+     *  below max(1024, keypool size) and of a keypool-sized band around the next index. */
+    std::optional<uint32_t> FindMWEBAccountAddressIndex(const StealthAddress& addr) const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    /** Store the master spend secret of an account that holds only B, so the account can spend.
+     *  Fails unless spend_secret*G == B and the account's spend key expression resolves to it. */
+    util::Result<void> AddMWEBAccountSpendSecret(WalletBatch& batch, const SecretKey& spend_secret) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    void ReloadMWEBScanMapsFromInternalDescriptors() EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    void RegisterMWEBSingleSubaddress(const SigningProvider& provider) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    bool TopUpMWEBWithDB(WalletBatch& batch, unsigned int size) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    bool RegisterEphemeralMWEBIndex(uint32_t index) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    bool RegisterEphemeralMWEBIndexRange(uint32_t from, uint32_t to_inclusive) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    void UnregisterEphemeralMWEBIndex(uint32_t index) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    void ClearEphemeralMWEBIndices() EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    void ResetMWEBScanState() EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    void MarkMWEBIndexActive(uint32_t index) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    uint32_t CommitActiveMWEBIndices(WalletBatch& batch) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    void EnsureMWEBNextIndexAtLeast(uint32_t index) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    /** Watch the account's unused indices from one lookahead window below the next index up to
+     *  max(range end, next index + lookahead size), in memory only. */
+    void RegisterMWEBLookahead() EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    /** When a payment reaches index or beyond the next index, move the next index past it and
+     *  top up the lookahead. Returns whether the next index moved. */
+    bool AdvanceMWEBNextIndexPast(WalletBatch& batch, uint32_t index) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    size_t GetMWEBLookaheadCount() const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    void SetMWEBInternalProtect(uint32_t index, MWEBInternalProtect flag) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    void SetMWEBInternalProtectMemory(uint32_t index, MWEBInternalProtect flag) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    MWEBInternalProtect GetMWEBInternalProtect(uint32_t index) const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    void UpdateMWEBInternalActivity(uint32_t index, int64_t activity_time) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    int64_t GetMWEBInternalLastActive(uint32_t index) const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    size_t GetMWEBInternalDescriptorCount() const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    size_t PruneMWEBInternalDescriptors(WalletBatch& batch, size_t& global_count, size_t global_threshold, int64_t inactivity_secs,
+        const std::function<bool(uint32_t)>& has_unspent) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    /** getaddressinfo's desc for one of this entry's addresses: mweb([origin]<scan WIF>,[origin]<spend pubkey>,index)
+     *  when an account derives it, otherwise mweb([origin]<scan WIF>,<address spend pubkey>). */
+    std::optional<std::string> GetMWEBAddressInfoDescriptor(const StealthAddress& addr) const;
+    /** getaddressinfo's parent_desc: the account's watch-only form, or a separate entry's own address descriptor. */
+    std::optional<std::string> GetMWEBParentDescriptor(const StealthAddress& addr) const;
+    std::optional<KeyOriginInfo> GetMWEBScanKeyOrigin() const;
+    /** The single-address mweb([origin]<scan WIF>,[origin]<spend pubkey>,index) descriptor of an account's subaddress. */
+    std::optional<std::string> GetMWEBAddressDescriptor(uint32_t index) const;
+    /** The account as mweb([origin]<scan WIF>,[origin]<spend pubkey>,*), importable into a watch-only wallet. */
+    std::optional<std::string> GetMWEBAccountWatchOnlyDescriptor() const;
+    bool HasMWEBScanCapability() const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    SecretKey GetMWEBScanSecret() const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    void LoadMWEBScanSecretRecord(const SecretKey& scan_secret) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    /** Write what the entry needs to scan and describe its addresses while locked: the descriptor cache
+     *  of its hardened keys, then the mwebscank record when the wallet has none. */
+    bool PersistMWEBLockedMaterial(WalletBatch& batch) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    /** Why the keys contradict the wallet's records, if they do: the scan secret derived from the keys
+     *  differs from the mwebscank record, the decrypted spend key does not match the spend pubkey the
+     *  keychain already used, or an internal record does not match the account's keychain. The entry
+     *  then has no keychain until the wallet is reloaded. */
+    std::optional<std::string> CheckMWEBKeychain() EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    bool SetMWEBScanSecret(WalletBatch& batch, const SecretKey& scan_secret) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    bool TryExtractMWEBScanSecretFromProvider(WalletBatch& batch, const FlatSigningProvider& signing_provider) EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+
+    //! MWEB keystore surface used by mw::Keychain (composed; not MI into ScriptPubKeyMan).
+    std::unique_ptr<CKeyMetadata> GetMetadata(const StealthAddress& addr) const;
+    bool GetKey(const CKeyID& id, CKey& keyOut) const;
+    bool HaveKey(const CKeyID& id) const;
 
     bool CheckDecryptionKey(const CKeyingMaterial& master_key) override;
     bool Encrypt(const CKeyingMaterial& master_key, WalletBatch* batch) override;
@@ -368,7 +521,7 @@ public:
     bool HavePrivateKeys() const override;
     bool HasPrivKey(const CKeyID& keyid) const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
     //! Retrieve the particular key if it is available. Returns nullopt if the key is not in the wallet, or if the wallet is locked.
-    std::optional<CKey> GetKey(const CKeyID& keyid) const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
+    std::optional<CKey> LookupPrivKey(const CKeyID& keyid) const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
     bool HaveCryptedKeys() const override;
 
     unsigned int GetKeyPoolSize() const override;
@@ -405,6 +558,8 @@ public:
     [[nodiscard]] bool GetDescriptorString(std::string& out, bool priv) const;
 
     void UpgradeDescriptorCache();
+
+    void SetInternal(bool internal) { LOCK(cs_desc_man); m_internal = internal; }
 };
 
 /** struct containing information needed for migrating legacy wallets to descriptor wallets */

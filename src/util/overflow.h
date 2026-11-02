@@ -58,6 +58,18 @@ template <std::integral T>
     return i + j;
 }
 
+/** Negate i, mapping the type minimum to the type maximum (avoids -INT64_MIN UB). */
+template <std::integral T>
+[[nodiscard]] T SaturatingNegate(const T i) noexcept
+{
+    if constexpr (std::numeric_limits<T>::is_signed) {
+        if (i == std::numeric_limits<T>::min()) {
+            return std::numeric_limits<T>::max();
+        }
+    }
+    return T{0} - i;
+}
+
 /**
  * @brief Integer ceiling division (for unsigned values).
  *

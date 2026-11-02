@@ -8,6 +8,7 @@
 
 #include <attributes.h>
 #include <crypto/common.h>
+#include <mw/models/crypto/hash.h> // MWEB
 #include <prevector.h>
 #include <serialize.h>
 #include <uint256.h>
@@ -24,6 +25,18 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+
+// MWEB: Size of the witness program of the first output in HogEx transactions
+static constexpr size_t WITNESS_MWEB_HEADERHASH_SIZE = 32;
+
+// MWEB: Size of the witness program for peg-in transactions
+static constexpr size_t WITNESS_MWEB_PEGIN_SIZE = 32;
+
+// MWEB: Version of MWEB witness programs for HogAddr outputs
+static constexpr int MWEB_HOG_ADDR_WITNESS_VERSION = 8;
+
+// MWEB: Version of MWEB witness programs for peg-in transactions
+static constexpr int MWEB_PEGIN_WITNESS_VERSION = 9;
 
 // Maximum number of bytes pushable to the stack
 inline constexpr unsigned int MAX_SCRIPT_ELEMENT_SIZE = 520;
@@ -548,6 +561,10 @@ public:
     bool IsWitnessProgram(int& version, std::vector<unsigned char>& program) const;
 
     bool IsPayToTaproot() const;
+
+    // MWEB
+    bool IsMWEBPegin(mw::Hash* kernel_id = nullptr) const;
+    bool IsMWEBHogAddr(mw::Hash* header_hash = nullptr) const;
 
     /** Called by IsStandardTx and P2SH/BIP62 VerifyScript (which makes it consensus-critical). */
     bool IsPushOnly(const_iterator pc) const;

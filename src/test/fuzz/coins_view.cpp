@@ -5,6 +5,7 @@
 #include <coins.h>
 #include <consensus/amount.h>
 #include <consensus/tx_check.h>
+#include <chainparams.h>
 #include <consensus/tx_verify.h>
 #include <consensus/validation.h>
 #include <kernel/chainstatemanager_opts.h>
@@ -70,11 +71,11 @@ private:
     mutable std::vector<CacheCoinSnapshot> m_expected_snapshot{ComputeCacheCoinsSnapshot()};
 
 public:
-    void BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block_hash) override
+    void BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block_hash, const mw::CoinsViewCache::Ptr& mweb_cache = nullptr) override
     {
         // Nothing must modify cacheCoins other than BatchWrite.
         assert(ComputeCacheCoinsSnapshot() == m_expected_snapshot);
-        CCoinsViewCache::BatchWrite(cursor, block_hash);
+        CCoinsViewCache::BatchWrite(cursor, block_hash, mweb_cache);
         m_expected_snapshot = ComputeCacheCoinsSnapshot();
     }
 
@@ -328,7 +329,7 @@ void TestCoinsView(FuzzedDataProvider& fuzzed_data_provider, CCoinsViewCache& co
                     // It is not allowed to call CheckTxInputs if CheckTransaction failed
                     return;
                 }
-                if (Consensus::CheckTxInputs(transaction, state, coins_view_cache, fuzzed_data_provider.ConsumeIntegralInRange<int>(0, std::numeric_limits<int>::max()), tx_fee_out)) {
+                if (Consensus::CheckTxInputs(transaction, state, coins_view_cache, fuzzed_data_provider.ConsumeIntegralInRange<int>(0, std::numeric_limits<int>::max()), Params().GetConsensus(), tx_fee_out)) {
                     assert(MoneyRange(tx_fee_out));
                 }
             },

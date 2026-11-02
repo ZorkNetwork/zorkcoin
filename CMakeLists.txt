@@ -116,6 +116,7 @@ cmake_dependent_option(BUILD_KERNEL_TEST "Build tests for the experimental bitco
 
 option(ENABLE_WALLET "Enable wallet." ON)
 cmake_dependent_option(BUILD_WALLET_TOOL "Build bitcoin-wallet tool." ${BUILD_TESTS} "ENABLE_WALLET" OFF)
+option(ENABLE_MWEB_UNCOMMON_SENDS "Allow uncommon (privacy-compromising) MWEB wallet send shapes: multi-recipient with MWEB dests, mixed L1+MWEB inputs toward MWEB." ON)
 
 option(ENABLE_EXTERNAL_SIGNER "Enable external signer support." ON)
 option(WITH_ZMQ "Enable ZMQ notifications." OFF)

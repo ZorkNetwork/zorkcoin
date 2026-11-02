@@ -135,6 +135,7 @@ add_executable(fuzz
   tx_pool.cpp
   txgraph.cpp
   txorphan.cpp
+  mweb_serve.cpp
   txrequest.cpp
   utxo_snapshot.cpp
   utxo_total_supply.cpp
@@ -162,6 +163,10 @@ target_link_libraries(fuzz
   secp256k1
   Boost::headers
 )
+
+if(APPLE)
+  target_link_options(fuzz PRIVATE "-Wl,-no_warn_duplicate_libraries")
+endif()
 
 if(ENABLE_WALLET)
   add_subdirectory(${PROJECT_SOURCE_DIR}/src/wallet/test/fuzz wallet)

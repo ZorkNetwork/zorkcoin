@@ -12,6 +12,14 @@ from test_framework.messages import CAddress, hash256
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import check_node_connections, assert_equal
 
+DISK_VERSION_INIT = 220000
+DISK_VERSION_ADDRV2 = 1 << 29
+
+
+def serialize_caddress_disk_v2(caddr):
+    """Serialize a CAddress using the on-disk addrv2 format."""
+    return (DISK_VERSION_INIT | DISK_VERSION_ADDRV2).to_bytes(4, "little") + caddr.serialize_v2()
+
 INBOUND_CONNECTIONS = 5
 BLOCK_RELAY_CONNECTIONS = 2
 ONION_ADDR = "pg6mmjiyjmcrsslvykfwnntlaru7p5svn6y2ymmju6nubxndf4pscryd.onion:8333"
@@ -114,17 +122,15 @@ class AnchorsTest(BitcoinTestFramework):
         caddr.net = CAddress.NET_TORV3
         caddr.ip, port_str = ONION_ADDR.split(":")
         caddr.port = int(port_str)
-        # TorV3 addrv2 serialization:
-        # time(4) | services(1) | networkID(1) | address length(1) | address(32)
+        caddr.nServices = 0
+        # TorV3 addrv2 serialization (address pubkey is at a fixed offset in serialize_v2):
+        # time(4) | services(compact) | networkID(1) | address length(1) | address(32)
         expected_pubkey = caddr.serialize_v2()[7:39].hex()
 
-        # position of services byte of first addr in anchors.dat
-        # network magic, vector length, version, nTime
-        services_index = 4 + 1 + 4 + 4
         data = bytes()
         with open(node_anchors_path, "rb") as file_handler:
             data = file_handler.read()
-            assert_equal(data[services_index], 0x00)  # services == NONE
+            assert_equal(data[13], 0x00)  # services == NONE (compact size 0)
             anchors2 = data.hex()
             assert expected_pubkey in anchors2
 
@@ -132,10 +138,10 @@ class AnchorsTest(BitcoinTestFramework):
             # Modify service flags for this address even though we never connected to it.
             # This is necessary because on restart we will not attempt an anchor connection
             # to a host without our required services, even if its address is in the anchors.dat file
-            new_data = bytearray(data)[:-32]
-            new_data[services_index] = P2P_SERVICES
-            new_data_hash = hash256(new_data)
-            file_handler.write(new_data + new_data_hash)
+            caddr.nServices = P2P_SERVICES
+            caddr.time = int.from_bytes(data[9:13], "little")
+            payload = data[:5] + serialize_caddress_disk_v2(caddr)
+            file_handler.write(payload + hash256(payload))
 
         self.log.info("Restarting node attempts to reconnect to anchors")
         with self.nodes[0].assert_debug_log([f"Trying to make an anchor connection to {ONION_ADDR}"], timeout=2):

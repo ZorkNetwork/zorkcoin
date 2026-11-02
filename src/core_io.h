@@ -42,9 +42,9 @@ bool DecodeHexBlockHeader(CBlockHeader&, const std::string& hex_header);
 
 UniValue ValueFromAmount(CAmount amount);
 std::string FormatScript(const CScript& script);
-std::string EncodeHexTx(const CTransaction& tx);
+std::string EncodeHexTx(const CTransaction& tx, bool include_mweb = true); // MWEB: include_mweb for -rpcserialversion
 std::string SighashToStr(int32_t sighash_type);
 void ScriptToUniv(const CScript& script, UniValue& out, bool include_hex = true, bool include_address = false, const SigningProvider* provider = nullptr);
-void TxToUniv(const CTransaction& tx, const uint256& block_hash, UniValue& entry, bool include_hex = true, const CTxUndo* txundo = nullptr, TxVerbosity verbosity = TxVerbosity::SHOW_DETAILS, std::function<bool(const CTxOut&)> is_change_func = {});
+void TxToUniv(const CTransaction& tx, const uint256& block_hash, UniValue& entry, bool include_hex = true, const CTxUndo* txundo = nullptr, TxVerbosity verbosity = TxVerbosity::SHOW_DETAILS, std::function<bool(const CTxOut&)> is_change_func = {}, bool hex_include_mweb = true);
 
 #endif // BITCOIN_CORE_IO_H

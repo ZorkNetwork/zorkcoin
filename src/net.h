@@ -61,8 +61,11 @@ inline constexpr std::chrono::minutes TIMEOUT_INTERVAL{20};
 inline constexpr auto FEELER_INTERVAL = 2min;
 /** Run the extra block-relay-only connection loop once every 5 minutes. **/
 inline constexpr auto EXTRA_BLOCK_RELAY_ONLY_PEER_INTERVAL = 5min;
-/** Maximum length of incoming protocol messages (no message over 4 MB is currently acceptable). */
-inline constexpr unsigned int MAX_PROTOCOL_MESSAGE_LENGTH = 4 * 1000 * 1000;
+/** Maximum length of incoming protocol messages (no message over 32 MB is currently acceptable).
+ * Kept at Litecoin's 32 MB for v1 transport compatibility and non-block messages.
+ * Consensus allows up to MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB (~25.8 MB); BIP324 short-id
+ * block bodies are limited to MAX_BLOCK_SERIALIZED_SIZE_BIP324 (16,777,214). */
+inline constexpr unsigned int MAX_PROTOCOL_MESSAGE_LENGTH = 32 * 1000 * 1000;
 /** Maximum length of the user agent string in `version` message */
 inline constexpr unsigned int MAX_SUBVERSION_LENGTH = 256;
 /** Maximum number of automatic outgoing nodes over which we'll relay everything (blocks, tx, addrs, etc) */
@@ -1071,6 +1074,9 @@ public:
      * @return                      True if there is more work to be done
      */
     virtual bool SendMessages(CNode& node) EXCLUSIVE_LOCKS_REQUIRED(g_msgproc_mutex) = 0;
+
+    /** Optional per-msghand-iteration work (MWEB AssumeUTXO warm, etc.). */
+    virtual bool ProcessBackgroundWork() { return false; }
 
 
 protected:

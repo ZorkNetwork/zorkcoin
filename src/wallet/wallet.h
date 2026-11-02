@@ -38,6 +38,8 @@
 #include <wallet/types.h>
 #include <wallet/walletutil.h>
 
+#include <mweb/mweb_wallet_scan.h>
+
 #include <atomic>
 #include <cassert>
 #include <cstddef>
@@ -65,6 +67,7 @@ enum class PSBTError;
 } // namespace common
 namespace interfaces {
 class Wallet;
+struct MWEBAddressInfo;
 }
 namespace wallet {
 class CWallet;
@@ -81,6 +84,14 @@ struct SignatureData;
 using LoadWalletFn = std::function<void(std::unique_ptr<interfaces::Wallet> wallet)>;
 
 struct bilingual_str;
+
+namespace MWEB {
+struct OutputCandidates;
+class Wallet;
+struct WalletTxInfo;
+} // namespace MWEB
+class MWEBSigningKeyStore;
+class SecretKey;
 
 namespace wallet {
 struct WalletContext;
@@ -124,6 +135,8 @@ inline constexpr CAmount HIGH_APS_FEE{COIN / 10000};
 inline constexpr CAmount WALLET_INCREMENTAL_RELAY_FEE = 5000;
 //! Default for -spendzeroconfchange
 inline constexpr bool DEFAULT_SPEND_ZEROCONF_CHANGE = true;
+//! Default for -mwebdeterministicsenders (false = 21.x random ephemeral sender keys)
+inline constexpr bool DEFAULT_MWEB_DETERMINISTIC_SENDERS = false;
 //! Default for -walletrejectlongchains
 inline constexpr bool DEFAULT_WALLET_REJECT_LONG_CHAINS{true};
 //! -txconfirmtarget default
@@ -300,6 +313,10 @@ struct CRecipient
     CTxDestination dest;
     CAmount nAmount;
     bool fSubtractFeeFromAmount;
+
+    // MWEB hooks
+    bool IsMWEB() const noexcept { return std::holds_alternative<StealthAddress>(dest); }
+    const StealthAddress& GetMWEBAddress() const noexcept { return std::get<StealthAddress>(dest); }
 };
 
 class WalletRescanReserver; //forward declarations for ScanForWalletTransactions/RescanFromTime
@@ -341,6 +358,8 @@ private:
     TxSpends mapTxSpends GUARDED_BY(cs_wallet);
     void AddToSpends(const COutPoint& outpoint, const Txid& txid) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
     void AddToSpends(const CWalletTx& wtx) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    /** If GetHash() no longer matches map_key, move the mapWallet entry and rewrite spend/MWEB indexes. */
+    CWalletTx* RekeyWalletTx(const Txid& map_key) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
     /**
      * Add a transaction to the wallet, or update it.  confirm.block_* should
@@ -424,6 +443,12 @@ private:
     // ScriptPubKeyMan::GetID. In many cases it will be the hash of an internal structure
     std::map<uint256, std::unique_ptr<ScriptPubKeyMan>> m_spk_managers;
 
+    // MWEB hooks
+    std::shared_ptr<MWEB::Wallet> mweb_wallet;
+    std::multimap<mw::Hash, Txid> mapOutputsMWEB GUARDED_BY(cs_wallet);
+    std::map<mw::Hash, Txid> mapKernelsMWEB GUARDED_BY(cs_wallet);
+    std::multimap<mw::Hash, Txid> mapMWEBSpends GUARDED_BY(cs_wallet);
+
     // Appends spk managers into the main 'm_spk_managers'.
     // Must be the only method adding data to it.
     void AddScriptPubKeyMan(const uint256& id, std::unique_ptr<ScriptPubKeyMan> spkm_man);
@@ -477,12 +502,7 @@ public:
     unsigned int nMasterKeyMaxID = 0;
 
     /** Construct wallet with specified name and database implementation. */
-    CWallet(interfaces::Chain* chain, const std::string& name, std::unique_ptr<WalletDatabase> database)
-        : m_chain(chain),
-          m_name(name),
-          m_database(std::move(database))
-    {
-    }
+    CWallet(interfaces::Chain* chain, const std::string& name, std::unique_ptr<WalletDatabase> database);
 
     ~CWallet()
     {
@@ -515,6 +535,8 @@ public:
      * bool to track whether this locked coin is persisted to disk.
      */
     std::map<COutPoint, bool> m_locked_coins GUARDED_BY(cs_wallet);
+    //! MWEB coins locked by output id, with the same persistence flag.
+    std::map<mw::Hash, bool> m_locked_mweb_coins GUARDED_BY(cs_wallet);
 
     /** Registered interfaces::Chain::Notifications handler. */
     std::unique_ptr<interfaces::Handler> m_chain_notifications_handler;
@@ -579,6 +601,11 @@ public:
     bool UnlockCoin(const COutPoint& output) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
     bool UnlockAllCoins() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
     void ListLockedCoins(std::vector<COutPoint>& vOutpts) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    bool IsLockedCoin(const mw::Hash& output_id) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    void LoadLockedCoin(const mw::Hash& output_id, bool persistent) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    bool LockCoin(const mw::Hash& output_id, bool persist) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    bool UnlockCoin(const mw::Hash& output_id) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    void ListLockedCoins(std::vector<mw::Hash>& output_ids) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
     /*
      * Rescan abort properties
@@ -633,7 +660,7 @@ public:
      * Add the transaction to the wallet, wrapping it up inside a CWalletTx
      * @return the recently added wtx pointer or nullptr if there was a db write error.
      */
-    CWalletTx* AddToWallet(CTransactionRef tx, const TxState& state, const UpdateWalletTxFn& update_wtx=nullptr, bool rescanning_old_block = false);
+    CWalletTx* AddToWallet(CTransactionRef tx, const TxState& state, const UpdateWalletTxFn& update_wtx=nullptr, bool rescanning_old_block = false, const std::optional<MWEB::WalletTxInfo>& mweb_wtx_info = std::nullopt);
     bool LoadToWallet(CWalletTx&& wtx) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
     void transactionAddedToMempool(const CTransactionRef& tx) override;
     void blockConnected(const kernel::ChainstateRole& role, const interfaces::BlockInfo& block) override;
@@ -688,6 +715,8 @@ public:
                   const common::PSBTFillOptions& options,
                   bool& complete,
                   size_t* n_signed = nullptr) const;
+    //! Sign the wallet's unsigned MWEB inputs on the external signer, when one matches them.
+    std::optional<common::PSBTError> FillMWEBWithExternalSigner(PartiallySignedTransaction& psbtx, size_t* n_signed) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet); // MWEB
 
     /**
      * Submit the transaction to the node's mempool and then relay to peers.
@@ -755,6 +784,11 @@ public:
 
     /** Number of pre-generated keys/scripts by each spkm (part of the look-ahead process, used to detect payments) */
     int64_t m_keypool_size{DEFAULT_KEYPOOL_SIZE};
+    /** Number of unused MWEB addresses watched past each MWEB account's next index (-mwebkeypool) */
+    int64_t m_mweb_keypool_size{DEFAULT_KEYPOOL_SIZE};
+    int64_t m_mweb_descriptor_threshold{DEFAULT_KEYPOOL_SIZE};
+    int64_t m_mweb_descriptor_inactivity{90 * 24 * 60 * 60};
+    std::optional<bool> m_mweb_deterministic_senders{std::nullopt};
 
     /** Notify external script when a wallet transaction comes in or is updated (handled by -walletnotify) */
     std::string m_notify_tx_changed_script;
@@ -794,6 +828,8 @@ public:
     void MarkDestinationsDirty(const std::set<CTxDestination>& destinations) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
     util::Result<CTxDestination> GetNewDestination(OutputType type, const std::string& label);
+    //! MWEB: The destination GetNewDestination would return next, without taking it.
+    util::Result<CTxDestination> PeekNewDestination(OutputType type) const;
     util::Result<CTxDestination> GetNewChangeDestination(OutputType type);
 
     bool IsMine(const CTxDestination& dest) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
@@ -971,6 +1007,78 @@ public:
     //! Get the ScriptPubKeyMan for the given OutputType and internal/external chain.
     ScriptPubKeyMan* GetScriptPubKeyMan(const OutputType& type, bool internal) const;
 
+    // MWEB hooks
+    static constexpr uint32_t MWEB_DEFAULT_PHASE1_END = 1000; //!< Minimum import scan window (indices 0..1000 inclusive)
+    static constexpr uint32_t MWEB_GAP_LIMIT = 20;
+
+    struct MWEBIndexScanParams {
+        uint32_t phase1_end{MWEB_DEFAULT_PHASE1_END};
+        uint32_t gap_limit{MWEB_GAP_LIMIT};
+        std::optional<uint32_t> max_index;
+    };
+
+    DescriptorScriptPubKeyMan* GetExternalMWEBScriptPubKeyMan() const;
+    DescriptorScriptPubKeyMan* GetInternalMWEBScriptPubKeyMan() const;
+    std::vector<DescriptorScriptPubKeyMan*> GetMWEBAccountScriptPubKeyMans() const;
+    DescriptorScriptPubKeyMan& AddMWEBSupportingAccount(WalletDescriptor& descriptor, const FlatSigningProvider& provider) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    DescriptorScriptPubKeyMan* GetMWEBAccountScriptPubKeyMan(const std::string& acct_cksum) const;
+    DescriptorScriptPubKeyMan* GetMWEBAccountForStealthAddress(const StealthAddress& addr) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    //! Why the last Unlock or EncryptWallet failed on an MWEB entry's keys, if it did.
+    std::optional<std::string> GetMWEBUnlockError() const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet) { return m_mweb_unlock_error; }
+    std::optional<std::string> m_mweb_unlock_error GUARDED_BY(cs_wallet);
+    //! Load every MWEB entry's keychain; the first entry whose keys contradict the wallet's records stops it.
+    std::optional<std::string> LoadMWEBKeychains() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    DescriptorScriptPubKeyMan* GetMWEBAccountForCoin(const mw::Coin& coin) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    bool GetMWEBStealthAddress(const DescriptorScriptPubKeyMan& account_spk, uint32_t index, StealthAddress& address) const;
+    bool GetMWEBChangeAddress(const DescriptorScriptPubKeyMan& account_spk, StealthAddress& address) const;
+    bool ScanMWEBAccountIndices(DescriptorScriptPubKeyMan& account_spk, const MWEBIndexScanParams& params, int start_height) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    MWEB::UTXOScanStats ScanMWEBUTXOSet(const MWEBIndexScanParams* index_params = nullptr);
+    bool HasMWEBAccounts() const;
+    bool ScanMWEBBlocksFromHeight(int start_height, std::optional<int> max_height = std::nullopt) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    //! candidates: output matching done before taking cs_wallet (MWEB::Wallet::FindCandidateOutputs).
+    void ScanMWEBExtensionBlock(const CBlock& block, int height, const uint256& block_hash, bool rescanning_old_block = false,
+                                const MWEB::OutputCandidates* candidates = nullptr) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    void OnMWEBCoinDetected(DescriptorScriptPubKeyMan& account_spk, const mw::Coin& coin) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    void PruneMWEBDescriptors() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    bool HasUnspentMWEBAtIndex(const DescriptorScriptPubKeyMan& account_spk, uint32_t index) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    size_t CountMWEBInternalDescriptors() const;
+    const mw::Keychain::Ptr& GetMWEBKeychain() const;
+    //! The wallet's default MWEB keychain: the external MWEB SPKM's if it can spend, else the
+    //! first spend-capable account's, else the external one's (possibly watch-only).
+    const mw::Keychain::Ptr& GetWalletMWEBKeychain() const;
+    //! The MWEB coins and keys of this wallet, as seen by the MWEB PSBT updater and signer.
+    std::unique_ptr<MWEBSigningKeyStore> MakeMWEBSigningKeyStore() const;
+    //! The key the wallet's range proofs commit to, so it can rewind outputs it sent.
+    SecretKey GetMWEBRewindKeyForSigning() const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    const std::shared_ptr<MWEB::Wallet>& GetMWWallet() const noexcept { return mweb_wallet; }
+    void AddMWEBOrigins(const CWalletTx& wtx) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    bool GetCoin(const mw::Hash& output_id, mw::Coin& coin) const;
+    bool IsSpentMWEB(const mw::Hash& output_id) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    /** True when a spend of this output is in the mempool or confirmed (matches ListMWEBUnspent). */
+    bool IsSpentMWEBInChainOrMempool(const mw::Hash& output_id) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    bool IsOutputSpentMWEB(const mw::Hash& output_id, const CWalletTx& create_wtx) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    bool IsOutputSpentMWEBInChainOrMempool(const mw::Hash& output_id, const CWalletTx& create_wtx) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    int GetMWEBOutputOccurrenceHeightForSpendAt(const mw::Hash& output_id, int spend_height) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    int GetMWEBOutputOccurrenceHeight(const mw::Hash& output_id, const CWalletTx& spend_wtx) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    void AddToSpends(const mw::Hash& output_id, const Txid& txid) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    std::vector<CWalletTx*> FindWalletTxsByOutputId(const mw::Hash& output_id) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    CWalletTx* FindWalletTxByOutputId(const mw::Hash& output_id, std::optional<uint64_t> leaf_index = std::nullopt) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    CWalletTx* FindWalletTxForBlockOutput(const mw::Hash& output_id, const CBlock& block_data, const uint256& block_hash, std::optional<uint64_t> leaf_index) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    CWalletTx* FindWalletTxByKernelId(const mw::Hash& kernel_id) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    bool IsMine(const CTransaction& tx, const std::optional<MWEB::WalletTxInfo>& mweb_wtx_info) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+
+    struct MWEBUnspentEntry {
+        mw::Hash output_id;
+        Txid txid;
+        CAmount amount;
+        int depth;
+        StealthAddress address;
+        bool safe;
+    };
+    std::vector<MWEBUnspentEntry> ListMWEBUnspent(int min_depth, int max_depth, bool include_unsafe,
+        const std::set<CTxDestination>* filter_destinations,
+        CAmount min_amount, CAmount max_amount) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+
     //! Get all the ScriptPubKeyMans for a script
     std::set<ScriptPubKeyMan*> GetScriptPubKeyMans(const CScript& script) const;
     //! Get the ScriptPubKeyMan by id
@@ -1082,6 +1190,10 @@ public:
 
     void TopUpCallback(const std::set<CScript>& spks, ScriptPubKeyMan* spkm) override;
 
+    int64_t GetMWEBKeypoolSize() const override { return m_mweb_keypool_size; }
+    void SetMWEBDeterministicSenders(std::optional<bool> enabled) { m_mweb_deterministic_senders = enabled; }
+    std::optional<bool> GetMWEBDeterministicSenders() const { return m_mweb_deterministic_senders; }
+
     //! Which descriptors GetHDPubKeys() should consider.
     enum class HDKeyFilter {
         Active,    //!< Only active descriptors
@@ -1109,6 +1221,7 @@ public:
  * their transactions. Actual rebroadcast schedule is managed by the wallets themselves.
  */
 void MaybeResendWalletTxs(WalletContext& context);
+void MaybePruneMWEBDescriptors(WalletContext& context);
 
 /** RAII object to check and reserve a wallet rescan */
 class WalletRescanReserver

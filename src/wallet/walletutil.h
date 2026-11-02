@@ -101,6 +101,15 @@ public:
         range_end = end;
     }
 
+    //! MWEB hooks: mweb() account descriptors track subaddress indices in
+    //! next_index/range_end without being ranged descriptors.
+    void SetMWEBIndices(int32_t start, int32_t next, int32_t end)
+    {
+        range_start = start;
+        next_index = next;
+        range_end = end;
+    }
+
     template <typename Stream>
     void Serialize(Stream& s) const
     {
@@ -125,7 +134,13 @@ public:
         if (descs.size() > 1) {
             throw std::ios_base::failure("Can't load a multipath descriptor from databases");
         }
-        return WalletDescriptor(std::move(descs.at(0)), creation_time, range_start, range_end, next_index);
+        WalletDescriptor desc(std::move(descs.at(0)), creation_time, range_start, range_end, next_index);
+        // The constructor clamps non-range descriptors. mweb() accounts store
+        // subaddress indices in these fields without being ranged descriptors.
+        if (desc.descriptor->GetMWEBForm() == MWEBDescriptorForm::ACCOUNT) {
+            desc.SetMWEBIndices(range_start, next_index, range_end);
+        }
+        return desc;
     }
 
     WalletDescriptor() = delete;
@@ -146,6 +161,8 @@ public:
     // Compare by using the canonical string to make the hardened indicators consistent for comparison
     bool IsCanonicallyEquivalent(const WalletDescriptor& other) const;
 };
+
+static constexpr int FEATURE_MWEB = 210000;
 
 WalletDescriptor GenerateWalletDescriptor(const CExtPubKey& master_key, const OutputType& output_type, bool internal);
 } // namespace wallet

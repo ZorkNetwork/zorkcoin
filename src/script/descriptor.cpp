@@ -13,11 +13,15 @@
 #include <key.h>
 #include <key_io.h>
 #include <musig.h>
+#include <mw/models/crypto/public_key.h>
+#include <mw/models/crypto/secret_key.h>
+#include <mw/models/wallet/stealth_address.h>
 #include <primitives/transaction.h>
 #include <pubkey.h>
 #include <script/interpreter.h>
 #include <script/keyorigin.h>
 #include <script/miniscript.h>
+#include <script/mweb_descriptor.h>
 #include <script/parsing.h>
 #include <script/script.h>
 #include <script/signingprovider.h>
@@ -32,6 +36,10 @@
 #include <util/string.h>
 #include <util/vector.h>
 
+#include <mw/wallet/keychain.h>
+#include <mw/crypto/hasher.h>
+#include <mw/crypto/secret_keys.h>
+
 #include <algorithm>
 #include <compare>
 #include <iterator>
@@ -42,9 +50,11 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 using util::Split;
@@ -1059,6 +1069,34 @@ public:
         return ExpandHelper(pos, DUMMY_SIGNING_PROVIDER, &read_cache, output_scripts, out, nullptr);
     }
 
+    bool ExpandDestinations(int pos, const SigningProvider& provider, std::vector<CTxDestination>& output_destinations, FlatSigningProvider& out, DescriptorCache* write_cache, const mw::Keychain* keychain) const override
+    {
+        std::vector<CScript> scripts;
+        if (!Expand(pos, provider, scripts, out, write_cache)) return false;
+        output_destinations.clear();
+        output_destinations.reserve(scripts.size());
+        for (const CScript& script : scripts) {
+            CTxDestination dest;
+            if (!ExtractDestination(script, dest)) return false;
+            output_destinations.push_back(std::move(dest));
+        }
+        return true;
+    }
+
+    bool ExpandDestinationsFromCache(int pos, const DescriptorCache& read_cache, std::vector<CTxDestination>& output_destinations, FlatSigningProvider& out, const mw::Keychain* keychain) const override
+    {
+        std::vector<CScript> scripts;
+        if (!ExpandFromCache(pos, read_cache, scripts, out)) return false;
+        output_destinations.clear();
+        output_destinations.reserve(scripts.size());
+        for (const CScript& script : scripts) {
+            CTxDestination dest;
+            if (!ExtractDestination(script, dest)) return false;
+            output_destinations.push_back(std::move(dest));
+        }
+        return true;
+    }
+
     // NOLINTNEXTLINE(misc-no-recursion)
     void ExpandPrivate(int pos, const SigningProvider& provider, FlatSigningProvider& out) const final
     {
@@ -1822,6 +1860,333 @@ public:
     }
 };
 
+};
+
+static StealthAddress MWEBStealthFromPubkeys(const CPubKey& scan, const CPubKey& spend)
+{
+    return StealthAddress(PublicKey(scan.data()), PublicKey(spend.data()));
+}
+
+/** Append ",SUFFIX)" before the closing paren produced by DescriptorImpl::ToStringHelper. */
+static bool MWEBAppendToStringSuffix(std::string& out, std::string_view suffix)
+{
+    if (out.empty() || out.back() != ')') return false;
+    out.pop_back();
+    out += ',';
+    out += suffix;
+    out += ')';
+    return true;
+}
+
+static bool MWEBExtractScanSpendKeys(const std::vector<std::unique_ptr<PubkeyProvider>>& pubkey_args,
+                                     const SigningProvider& provider,
+                                     std::optional<CKey>& scan,
+                                     std::optional<CKey>& spend)
+{
+    scan.reset();
+    spend.reset();
+    if (pubkey_args.size() < 2) return false;
+    FlatSigningProvider tmp;
+    pubkey_args.at(0)->GetPrivKey(0, provider, tmp);
+    if (!tmp.keys.empty()) {
+        scan = tmp.keys.begin()->second;
+    }
+    tmp.keys.clear();
+    pubkey_args.at(1)->GetPrivKey(0, provider, tmp);
+    if (!tmp.keys.empty()) {
+        spend = tmp.keys.begin()->second;
+    }
+    return scan.has_value();
+}
+
+static std::optional<CPubKey> MWEBScanPubKey(const std::vector<std::unique_ptr<PubkeyProvider>>& pubkey_args, const SigningProvider& provider)
+{
+    if (pubkey_args.empty()) return std::nullopt;
+    FlatSigningProvider out;
+    const std::optional<CPubKey> scan = pubkey_args.at(0)->GetPubKey(0, provider, out);
+    if (!scan || !scan->IsFullyValid() || !scan->IsCompressed()) return std::nullopt;
+    return scan;
+}
+
+static std::optional<CPubKey> MWEBArgRootPubKey(const std::vector<std::unique_ptr<PubkeyProvider>>& pubkey_args, size_t pos)
+{
+    if (pubkey_args.size() <= pos) return std::nullopt;
+    if (const std::optional<CExtPubKey> root = pubkey_args.at(pos)->GetRootExtPubKey()) return root->pubkey;
+    return pubkey_args.at(pos)->GetRootPubKey();
+}
+
+/** A parsed mweb(master_scan,master_spend,*) ranged account descriptor. */
+class MWEBAccountDescriptor final : public DescriptorImpl
+{
+protected:
+    std::vector<CScript> MakeScripts(const std::vector<CPubKey>&, std::span<const CScript>, FlatSigningProvider&) const override { return {}; }
+public:
+    MWEBAccountDescriptor(std::unique_ptr<PubkeyProvider> scan_prov, std::unique_ptr<PubkeyProvider> spend_prov)
+        : DescriptorImpl(Vector(std::move(scan_prov), std::move(spend_prov)), "mweb") {}
+    MWEBDescriptorForm GetMWEBForm() const override { return MWEBDescriptorForm::ACCOUNT; }
+    bool IsSingleType() const final { return true; }
+    bool HasScripts() const override { return false; }
+    std::optional<OutputType> GetOutputType() const override { return OutputType::MWEB; }
+
+    bool GetMWEBScanSpendKeys(const SigningProvider& provider, std::optional<CKey>& scan, std::optional<CKey>& spend) const override
+    {
+        return MWEBExtractScanSpendKeys(m_pubkey_args, provider, scan, spend);
+    }
+
+    std::optional<CPubKey> GetMWEBAccountSpendPubKey(const SigningProvider& provider, const DescriptorCache* read_cache = nullptr) const override
+    {
+        FlatSigningProvider out;
+        std::optional<CPubKey> spend = m_pubkey_args.at(1)->GetPubKey(0, provider, out);
+        // A hardened spend path needs the private keys or the cached xpub.
+        if (!spend && read_cache) spend = m_pubkey_args.at(1)->GetPubKey(0, provider, out, read_cache);
+        if (!spend || !spend->IsFullyValid() || !spend->IsCompressed()) return std::nullopt;
+        return spend;
+    }
+
+    std::optional<CPubKey> GetMWEBScanPubKey(const SigningProvider& provider) const override
+    {
+        return MWEBScanPubKey(m_pubkey_args, provider);
+    }
+
+    std::optional<CPubKey> GetMWEBScanRootPubKey() const override { return MWEBArgRootPubKey(m_pubkey_args, 0); }
+    std::optional<CPubKey> GetMWEBSpendRootPubKey() const override { return MWEBArgRootPubKey(m_pubkey_args, 1); }
+
+    bool ToStringHelper(const SigningProvider* arg, std::string& out, const StringType type, const DescriptorCache* cache = nullptr) const override
+    {
+        const bool ret = DescriptorImpl::ToStringHelper(arg, out, type, cache);
+        if (!MWEBAppendToStringSuffix(out, "*")) return false;
+        return ret;
+    }
+
+    bool ExpandDestinations(int pos, const SigningProvider& provider, std::vector<CTxDestination>& output_destinations, FlatSigningProvider& out, DescriptorCache* write_cache, const mw::Keychain* keychain) const override
+    {
+        (void)pos;
+        (void)provider;
+        (void)output_destinations;
+        (void)out;
+        (void)write_cache;
+        (void)keychain;
+        return false;
+    }
+
+    bool ExpandDestinationsFromCache(int pos, const DescriptorCache& read_cache, std::vector<CTxDestination>& output_destinations, FlatSigningProvider& out, const mw::Keychain* keychain) const override
+    {
+        (void)pos;
+        (void)read_cache;
+        (void)output_destinations;
+        (void)out;
+        (void)keychain;
+        return false;
+    }
+
+    std::unique_ptr<DescriptorImpl> Clone() const override
+    {
+        return std::make_unique<MWEBAccountDescriptor>(m_pubkey_args.at(0)->Clone(), m_pubkey_args.at(1)->Clone());
+    }
+};
+
+/** A parsed mweb(master_scan,master_spend,i) indexed descriptor. */
+class MWEBIndexedDescriptor final : public DescriptorImpl
+{
+    const uint32_t m_index;
+
+protected:
+    std::vector<CScript> MakeScripts(const std::vector<CPubKey>&, std::span<const CScript>, FlatSigningProvider&) const override { return {}; }
+public:
+    MWEBIndexedDescriptor(std::unique_ptr<PubkeyProvider> scan_prov, std::unique_ptr<PubkeyProvider> spend_prov, uint32_t index)
+        : DescriptorImpl(Vector(std::move(scan_prov), std::move(spend_prov)), "mweb"), m_index(index) {}
+    MWEBDescriptorForm GetMWEBForm() const override { return MWEBDescriptorForm::INDEXED; }
+    std::optional<uint32_t> GetMWEBIndex() const override { return m_index; }
+    bool IsSingleType() const final { return true; }
+    bool HasScripts() const override { return false; }
+    std::optional<OutputType> GetOutputType() const override { return OutputType::MWEB; }
+
+    bool GetMWEBScanSpendKeys(const SigningProvider& provider, std::optional<CKey>& scan, std::optional<CKey>& spend) const override
+    {
+        return MWEBExtractScanSpendKeys(m_pubkey_args, provider, scan, spend);
+    }
+
+    std::optional<CPubKey> GetMWEBScanPubKey(const SigningProvider& provider) const override
+    {
+        return MWEBScanPubKey(m_pubkey_args, provider);
+    }
+
+    std::optional<CPubKey> GetMWEBScanRootPubKey() const override { return MWEBArgRootPubKey(m_pubkey_args, 0); }
+    std::optional<CPubKey> GetMWEBSpendRootPubKey() const override { return MWEBArgRootPubKey(m_pubkey_args, 1); }
+
+    bool ToStringHelper(const SigningProvider* arg, std::string& out, const StringType type, const DescriptorCache* cache = nullptr) const override
+    {
+        const bool ret = DescriptorImpl::ToStringHelper(arg, out, type, cache);
+        if (!MWEBAppendToStringSuffix(out, strprintf("%u", m_index))) return false;
+        return ret;
+    }
+
+    bool ExpandDestinations(int pos, const SigningProvider& provider, std::vector<CTxDestination>& output_destinations, FlatSigningProvider& out, DescriptorCache* write_cache, const mw::Keychain* keychain) const override
+    {
+        (void)write_cache;
+        (void)keychain;
+        FlatSigningProvider scan_keys;
+        m_pubkey_args.at(0)->GetPrivKey(pos, provider, scan_keys);
+        if (scan_keys.keys.empty()) return false;
+        const CKey& scan_ckey = scan_keys.keys.begin()->second;
+        if (!scan_ckey.IsValid() || scan_ckey.size() != SecretKey::SIZE) return false;
+        const SecretKey a{reinterpret_cast<const uint8_t*>(scan_ckey.data())};
+        FlatSigningProvider spend_priv_out;
+        m_pubkey_args.at(1)->GetPrivKey(pos, provider, spend_priv_out);
+        FlatSigningProvider spend_out;
+        const std::optional<CPubKey> spend_pub = m_pubkey_args.at(1)->GetPubKey(pos, provider, spend_out);
+        if (!spend_pub || !spend_pub->IsFullyValid() || !spend_pub->IsCompressed()) return false;
+
+        PublicKey Bi;
+        if (!spend_priv_out.keys.empty()) {
+            const CKey& spend_ckey = spend_priv_out.keys.begin()->second;
+            if (!spend_ckey.IsValid() || spend_ckey.size() != SecretKey::SIZE) return false;
+            const SecretKey b{reinterpret_cast<const uint8_t*>(spend_ckey.data())};
+            const SecretKey mi = SecretKey::FromHash(Hasher(EHashTag::ADDRESS)
+                                                         .Append<uint32_t>(m_index)
+                                                         .Append(a)
+                                                         .hash());
+            Bi = PublicKey::From(SecretKeys::From(b).Add(mi).Total());
+        } else {
+            const PublicKey B{spend_pub->data()};
+            const SecretKey mi = SecretKey::FromHash(Hasher(EHashTag::ADDRESS)
+                                                         .Append<uint32_t>(m_index)
+                                                         .Append(a)
+                                                         .hash());
+            Bi = B.Add(mi);
+        }
+        const PublicKey Ai = Bi.Mul(a);
+        output_destinations = {CTxDestination{StealthAddress(Ai, Bi)}};
+        out = std::move(spend_out);
+        return true;
+    }
+
+    bool ExpandDestinationsFromCache(int pos, const DescriptorCache& read_cache, std::vector<CTxDestination>& output_destinations, FlatSigningProvider& out, const mw::Keychain* keychain) const override
+    {
+        (void)read_cache;
+        return ExpandDestinations(pos, DUMMY_SIGNING_PROVIDER, output_destinations, out, nullptr, keychain);
+    }
+
+    std::unique_ptr<DescriptorImpl> Clone() const override
+    {
+        return std::make_unique<MWEBIndexedDescriptor>(m_pubkey_args.at(0)->Clone(), m_pubkey_args.at(1)->Clone(), m_index);
+    }
+};
+
+/** A parsed mweb(a,b_i) / mweb(a,B_i) LIP single-subaddress descriptor. */
+class MWEBSingleSubaddrDescriptor final : public DescriptorImpl
+{
+protected:
+    std::vector<CScript> MakeScripts(const std::vector<CPubKey>&, std::span<const CScript>, FlatSigningProvider&) const override { return {}; }
+public:
+    MWEBSingleSubaddrDescriptor(std::unique_ptr<PubkeyProvider> scan_prov, std::unique_ptr<PubkeyProvider> spend_prov)
+        : DescriptorImpl(Vector(std::move(scan_prov), std::move(spend_prov)), "mweb") {}
+    MWEBDescriptorForm GetMWEBForm() const override { return MWEBDescriptorForm::SINGLE_SUBADDR; }
+    bool IsSingleType() const final { return true; }
+    bool HasScripts() const override { return false; }
+    std::optional<OutputType> GetOutputType() const override { return OutputType::MWEB; }
+
+    bool GetMWEBScanSpendKeys(const SigningProvider& provider, std::optional<CKey>& scan, std::optional<CKey>& spend) const override
+    {
+        return MWEBExtractScanSpendKeys(m_pubkey_args, provider, scan, spend);
+    }
+
+    std::optional<CPubKey> GetMWEBScanPubKey(const SigningProvider& provider) const override
+    {
+        return MWEBScanPubKey(m_pubkey_args, provider);
+    }
+
+    std::optional<CPubKey> GetMWEBScanRootPubKey() const override { return MWEBArgRootPubKey(m_pubkey_args, 0); }
+    std::optional<CPubKey> GetMWEBSpendRootPubKey() const override { return MWEBArgRootPubKey(m_pubkey_args, 1); }
+
+    bool ExpandDestinations(int pos, const SigningProvider& provider, std::vector<CTxDestination>& output_destinations, FlatSigningProvider& out, DescriptorCache* write_cache, const mw::Keychain* keychain) const override
+    {
+        (void)write_cache;
+        SecretKey a = SecretKey::Null();
+        FlatSigningProvider scan_keys;
+        m_pubkey_args.at(0)->GetPrivKey(pos, provider, scan_keys);
+        if (!scan_keys.keys.empty()) {
+            const CKey& scan_ckey = scan_keys.keys.begin()->second;
+            if (!scan_ckey.IsValid() || scan_ckey.size() != SecretKey::SIZE) return false;
+            a = SecretKey{reinterpret_cast<const uint8_t*>(scan_ckey.data())};
+        } else if (keychain && !keychain->GetScanSecret().IsNull()) {
+            // Watch-only: scan secret lives on the keychain (MWEBSCANK), not in map_keys.
+            a = keychain->GetScanSecret();
+            FlatSigningProvider scan_out;
+            const std::optional<CPubKey> scan_pub = m_pubkey_args.at(0)->GetPubKey(pos, provider, scan_out);
+            if (scan_pub && PublicKey{scan_pub->data()} != PublicKey::From(a)) return false;
+        } else {
+            return false;
+        }
+
+        FlatSigningProvider spend_out;
+        const std::optional<CPubKey> spend_pub = m_pubkey_args.at(1)->GetPubKey(pos, provider, spend_out);
+        if (!spend_pub || !spend_pub->IsFullyValid() || !spend_pub->IsCompressed()) return false;
+
+        const PublicKey Bi{spend_pub->data()};
+        const PublicKey Ai = Bi.Mul(a);
+        output_destinations = {CTxDestination{StealthAddress(Ai, Bi)}};
+        out = std::move(spend_out);
+        return true;
+    }
+
+    bool ExpandDestinationsFromCache(int pos, const DescriptorCache& read_cache, std::vector<CTxDestination>& output_destinations, FlatSigningProvider& out, const mw::Keychain* keychain) const override
+    {
+        (void)read_cache;
+        return ExpandDestinations(pos, DUMMY_SIGNING_PROVIDER, output_destinations, out, nullptr, keychain);
+    }
+
+    std::unique_ptr<DescriptorImpl> Clone() const override
+    {
+        return std::make_unique<MWEBSingleSubaddrDescriptor>(m_pubkey_args.at(0)->Clone(), m_pubkey_args.at(1)->Clone());
+    }
+};
+
+/** A parsed mweb(A_i,B_i,i,acct_cksum) wallet-internal descriptor. */
+class MWEBInternalDescriptor final : public DescriptorImpl
+{
+    const std::string m_acct_cksum;
+    const uint32_t m_index;
+    const StealthAddress m_addr;
+
+protected:
+    std::string ToStringExtra() const override
+    {
+        CPubKey scan(m_addr.GetScanPubKey().vec());
+        CPubKey spend(m_addr.GetSpendPubKey().vec());
+        return strprintf("%s,%s,%u,%s", HexStr(scan), HexStr(spend), m_index, m_acct_cksum);
+    }
+    std::vector<CScript> MakeScripts(const std::vector<CPubKey>&, std::span<const CScript>, FlatSigningProvider&) const override { return {}; }
+public:
+    MWEBInternalDescriptor(std::string acct_cksum, uint32_t index, CPubKey scan, CPubKey spend)
+        : DescriptorImpl({}, "mweb"), m_acct_cksum(std::move(acct_cksum)), m_index(index), m_addr(MWEBStealthFromPubkeys(scan, spend)) {}
+    MWEBDescriptorForm GetMWEBForm() const override { return MWEBDescriptorForm::INTERNAL; }
+    std::optional<std::string> GetMWEBAccountChecksum() const override { return m_acct_cksum; }
+    std::optional<uint32_t> GetMWEBIndex() const override { return m_index; }
+
+    bool IsSingleType() const final { return true; }
+    bool HasScripts() const override { return false; }
+    std::optional<OutputType> GetOutputType() const override { return OutputType::MWEB; }
+
+    bool ExpandDestinations(int, const SigningProvider&, std::vector<CTxDestination>& output_destinations, FlatSigningProvider&, DescriptorCache*, const mw::Keychain*) const override
+    {
+        output_destinations = {CTxDestination{m_addr}};
+        return true;
+    }
+
+    bool ExpandDestinationsFromCache(int pos, const DescriptorCache& read_cache, std::vector<CTxDestination>& output_destinations, FlatSigningProvider& out, const mw::Keychain* keychain) const override
+    {
+        return ExpandDestinations(pos, DUMMY_SIGNING_PROVIDER, output_destinations, out, nullptr, keychain);
+    }
+
+    std::unique_ptr<DescriptorImpl> Clone() const override
+    {
+        CPubKey scan(m_addr.GetScanPubKey().vec());
+        CPubKey spend(m_addr.GetSpendPubKey().vec());
+        return std::make_unique<MWEBInternalDescriptor>(m_acct_cksum, m_index, std::move(scan), std::move(spend));
+    }
+};
+
 /** A parsed unused(KEY) descriptor */
 class UnusedDescriptor final : public DescriptorImpl
 {
@@ -2378,6 +2743,116 @@ std::vector<std::unique_ptr<DescriptorImpl>> ParseScript(uint32_t& key_exp_index
     Assume(ctx == ParseScriptContext::TOP || ctx == ParseScriptContext::P2SH || ctx == ParseScriptContext::P2WSH || ctx == ParseScriptContext::P2TR);
     std::vector<std::unique_ptr<DescriptorImpl>> ret;
     auto expr = Expr(sp);
+    if (ctx == ParseScriptContext::TOP && Func("mweb", expr)) {
+        std::vector<std::span<const char>> args;
+        auto rest = expr;
+        while (rest.size()) {
+            args.push_back(Expr(rest));
+            if (rest.size()) {
+                if (!Const(",", rest)) {
+                    error = strprintf("mweb(): expected ',', got '%c'", rest[0]);
+                    return {};
+                }
+                if (rest.empty()) {
+                    error = "mweb(): missing argument after ','";
+                    return {};
+                }
+            }
+        }
+
+        auto parse_key = [&](std::span<const char> key_sp, const char* which) -> std::unique_ptr<PubkeyProvider> {
+            auto pubkeys = ParsePubkey(key_exp_index, key_sp, ctx, out, error);
+            if (pubkeys.empty()) {
+                error = strprintf("mweb() %s: %s", which, error);
+                return nullptr;
+            }
+            if (pubkeys.size() != 1) {
+                error = strprintf("mweb() %s must be a single key expression", which);
+                return nullptr;
+            }
+            if (pubkeys.at(0)->IsRange()) {
+                error = strprintf("mweb() %s must not be a ranged BIP32 key (use literal '*' for ranged accounts)", which);
+                return nullptr;
+            }
+            if (!pubkeys.at(0)->IsBIP32()) {
+                FlatSigningProvider tmp;
+                const std::optional<CPubKey> pubkey = pubkeys.at(0)->GetPubKey(0, DUMMY_SIGNING_PROVIDER, tmp);
+                if (!pubkey || !pubkey->IsCompressed()) {
+                    error = strprintf("mweb() %s must be a compressed key", which);
+                    return nullptr;
+                }
+            }
+            return std::move(pubkeys.at(0));
+        };
+
+        if (args.size() == 3) {
+            const bool is_star = args[2].size() == 1 && args[2][0] == '*';
+            const auto index = ParseMWEBIndex(args[2]);
+
+            if (!is_star && !index) {
+                error = strprintf("mweb() third argument must be '*' or an index from 0 to %u without leading zeros", MWEB_MAX_DESCRIPTOR_INDEX);
+                return {};
+            }
+
+            auto scan_prov = parse_key(args[0], "scan key");
+            if (!scan_prov) return {};
+            auto spend_prov = parse_key(args[1], "spend key");
+            if (!spend_prov) return {};
+
+            // Scan privacy is enforced at wallet import/use (descriptor strings are
+            // often stored public with private keys held separately, like other BIP-380 forms).
+            if (is_star) {
+                ret.emplace_back(std::make_unique<MWEBAccountDescriptor>(std::move(scan_prov), std::move(spend_prov)));
+            } else {
+                ret.emplace_back(std::make_unique<MWEBIndexedDescriptor>(std::move(scan_prov), std::move(spend_prov), *index));
+            }
+            return ret;
+        }
+
+        if (args.size() == 4) {
+            CPubKey scan;
+            CPubKey spend;
+            if (!ParseMWEBCompressedPubkey(args[0], scan, error)) {
+                error = strprintf("mweb(): %s", error);
+                return {};
+            }
+            if (!ParseMWEBCompressedPubkey(args[1], spend, error)) {
+                error = strprintf("mweb(): %s", error);
+                return {};
+            }
+            const auto index = ParseMWEBIndex(args[2]);
+            if (!index) {
+                error = strprintf("mweb() index '%s' must be from 0 to %u without leading zeros", std::string(args[2].begin(), args[2].end()), MWEB_MAX_DESCRIPTOR_INDEX);
+                return {};
+            }
+            if (!IsValidMWEBAccountChecksum(args[3])) {
+                error = "mweb() internal descriptor requires an 8-character account checksum";
+                return {};
+            }
+            ret.emplace_back(std::make_unique<MWEBInternalDescriptor>(std::string(args[3].begin(), args[3].end()), *index, std::move(scan), std::move(spend)));
+            return ret;
+        }
+
+        if (args.size() == 2) {
+            auto scan_prov = parse_key(args[0], "scan key");
+            if (!scan_prov) return {};
+            auto spend_prov = parse_key(args[1], "spend key");
+            if (!spend_prov) return {};
+            // An extended spend key is an account's master spend key, so the two-argument form is ranged.
+            if (IsMWEBExtKeyExpression(args[1])) {
+                ret.emplace_back(std::make_unique<MWEBAccountDescriptor>(std::move(scan_prov), std::move(spend_prov)));
+                return ret;
+            }
+            ret.emplace_back(std::make_unique<MWEBSingleSubaddrDescriptor>(std::move(scan_prov), std::move(spend_prov)));
+            return ret;
+        }
+
+        error = "mweb() requires mweb(scan,spend,*), mweb(scan,spend,i), mweb(scan,spend), or mweb(A_i,B_i,i,acct_cksum)";
+        return {};
+    } else if (Func("mweb", expr)) {
+        error = "Can only have mweb() at top level";
+        return {};
+    }
     if (Func("pk", expr)) {
         auto pubkeys = ParsePubkey(key_exp_index, expr, ctx, out, error);
         if (pubkeys.empty()) {
@@ -2953,9 +3428,6 @@ std::unique_ptr<DescriptorImpl> InferScript(const CScript& script, ParseScriptCo
 
     return std::make_unique<RawDescriptor>(script);
 }
-
-
-} // namespace
 
 /** Check a descriptor checksum, and update desc to be the checksum-less part. */
 bool CheckChecksum(std::span<const char>& sp, bool require_checksum, std::string& error, std::string* out_checksum = nullptr)

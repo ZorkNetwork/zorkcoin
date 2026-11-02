@@ -1,5 +1,7 @@
 # Package Mempool Accept
 
+ZORK: MWEB links, fee rates and local-only relay for packages: see [MWEB Packages](../mweb/packages.md).
+
 ## Definitions
 
 A **package** is an ordered list of transactions, representable by a connected Directed Acyclic

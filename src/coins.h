@@ -11,6 +11,8 @@
 #include <core_memusage.h>
 #include <crypto/siphash.h>
 #include <memusage.h>
+#include <mw/models/tx/output.h> // MWEB
+#include <mw/node/coins_view.h> // MWEB
 #include <primitives/transaction.h>
 #include <primitives/transaction_identifier.h>
 #include <serialize.h>
@@ -39,7 +41,7 @@ class ThreadPool;
  * A UTXO entry.
  *
  * Serialized format:
- * - VARINT((height << 1) | (coinbase ? 1 : 0))
+ * - VARINT((height << 1) | (coinbase ? 1 : 0) | (pegout ? 1 << 31 : 0))
  * - the non-spent CTxOut (via TxOutCompression)
  */
 class Coin
@@ -49,32 +51,42 @@ public:
     CTxOut out;
 
     //! whether containing transaction was a coinbase
-    bool fCoinBase : 1;
+    unsigned int fCoinBase : 1;
 
     //! at which height this containing transaction was included in the active block chain
     uint32_t nHeight : 31;
 
+    //! MWEB: whether this is a pegout output (HogEx vout after the HogAddr)
+    bool fPegout;
+
     //! construct a Coin from a CTxOut and height/coinbase information.
-    Coin(CTxOut&& outIn, int nHeightIn, bool fCoinBaseIn) : out(std::move(outIn)), fCoinBase(fCoinBaseIn), nHeight(nHeightIn) {}
-    Coin(const CTxOut& outIn, int nHeightIn, bool fCoinBaseIn) : out(outIn), fCoinBase(fCoinBaseIn),nHeight(nHeightIn) {}
+    Coin(CTxOut&& outIn, int nHeightIn, bool fCoinBaseIn, bool fPegoutIn = false)
+        : out(std::move(outIn)), fCoinBase(fCoinBaseIn), nHeight(nHeightIn), fPegout(fPegoutIn) {}
+    Coin(const CTxOut& outIn, int nHeightIn, bool fCoinBaseIn, bool fPegoutIn = false)
+        : out(outIn), fCoinBase(fCoinBaseIn), nHeight(nHeightIn), fPegout(fPegoutIn) {}
 
     void Clear() {
         out.SetNull();
         fCoinBase = false;
+        fPegout = false;
         nHeight = 0;
     }
 
     //! empty constructor
-    Coin() : fCoinBase(false), nHeight(0) { }
+    Coin() : fCoinBase(false), nHeight(0), fPegout(false) { }
 
     bool IsCoinBase() const {
         return fCoinBase;
     }
 
+    bool IsPegout() const { // MWEB
+        return fPegout;
+    }
+
     template<typename Stream>
     void Serialize(Stream &s) const {
         assert(!IsSpent());
-        uint32_t code{(uint32_t{nHeight} << 1) | uint32_t{fCoinBase}};
+        uint32_t code = nHeight * uint32_t{2} + fCoinBase + (fPegout ? (uint32_t{1} << 31) : uint32_t{0});
         ::Serialize(s, VARINT(code));
         ::Serialize(s, Using<TxOutCompression>(out));
     }
@@ -83,7 +95,8 @@ public:
     void Unserialize(Stream &s) {
         uint32_t code = 0;
         ::Unserialize(s, VARINT(code));
-        nHeight = code >> 1;
+        fPegout = code >> 31;
+        nHeight = (code & ~(uint32_t{1} << 31)) >> 1;
         fCoinBase = code & 1;
         ::Unserialize(s, Using<TxOutCompression>(out));
     }
@@ -381,10 +394,14 @@ public:
 
     //! Do a bulk modification (multiple Coin changes + BestBlock change).
     //! The passed cursor is used to iterate through the coins.
-    virtual void BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block_hash) = 0;
+    virtual void BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block_hash, const mw::CoinsViewCache::Ptr& mweb_cache = nullptr) = 0;
 
     //! Estimate database size
     virtual size_t EstimateSize() const = 0;
+
+    // MWEB: Extension block UTXO view
+    virtual mw::ICoinsView::Ptr GetMWEBView() const { return nullptr; }
+    virtual bool GetMWEBCoin(const mw::Hash& output_id, Output& coin) const { return false; }
 };
 
 /** Noop coins view. */
@@ -404,7 +421,7 @@ public:
     bool HaveCoin(const COutPoint& outpoint) const override { return !!GetCoin(outpoint); }
     uint256 GetBestBlock() const override { return {}; }
     std::vector<uint256> GetHeadBlocks() const override { return {}; }
-    void BatchWrite(CoinsViewCacheCursor& cursor, const uint256&) override
+    void BatchWrite(CoinsViewCacheCursor& cursor, const uint256&, const mw::CoinsViewCache::Ptr& mweb_cache = nullptr) override
     {
         for (auto it{cursor.Begin()}; it != cursor.End(); it = cursor.NextAndMaybeErase(*it)) { }
     }
@@ -427,8 +444,12 @@ public:
     bool HaveCoin(const COutPoint& outpoint) const override { return base->HaveCoin(outpoint); }
     uint256 GetBestBlock() const override { return base->GetBestBlock(); }
     std::vector<uint256> GetHeadBlocks() const override { return base->GetHeadBlocks(); }
-    void BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block_hash) override { base->BatchWrite(cursor, block_hash); }
+    void BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block_hash, const mw::CoinsViewCache::Ptr& mweb_cache = nullptr) override { base->BatchWrite(cursor, block_hash, mweb_cache); }
     size_t EstimateSize() const override { return base->EstimateSize(); }
+    mw::ICoinsView::Ptr GetMWEBView() const override { return base->GetMWEBView(); }
+    bool GetMWEBCoin(const mw::Hash& output_id, Output& coin) const override { return base->GetMWEBCoin(output_id, coin); }
+
+    CCoinsView* GetBackend() const { return base; }
 };
 
 
@@ -467,6 +488,8 @@ protected:
     /* Running count of dirty Coin cache entries. */
     mutable size_t m_dirty_count{0};
 
+    mw::CoinsViewCache::Ptr mweb_view; // MWEB
+
     /**
      * Discard all modifications made to this cache without flushing to the base view.
      * This can be used to efficiently reuse a cache instance across multiple operations.
@@ -490,7 +513,24 @@ public:
     bool HaveCoin(const COutPoint& outpoint) const override;
     uint256 GetBestBlock() const override;
     void SetBestBlock(const uint256& block_hash);
-    void BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block_hash) override;
+    void BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block_hash, const mw::CoinsViewCache::Ptr& mweb_cache = nullptr) override;
+
+    mw::ICoinsView::Ptr GetMWEBView() const final { return mweb_view; }
+    mw::CoinsViewCache::Ptr GetMWEBCacheView() const { return mweb_view; }
+    bool GetMWEBCoin(const mw::Hash& output_id, Output& coin) const final;
+
+    // MWEB: refresh extension-block cache when the backing view changes (e.g. mempool acceptance).
+    void SetBackend(CCoinsView& view_in);
+
+    //! Rebuild the MWEB cache layer from the current base view, discarding any
+    //! unflushed MWEB state in this cache. Only valid when the base's underlying
+    //! MWEB view object genuinely changes (SetBackend, coinsdb cache resize,
+    //! AssumeUTXO snapshot attach), or before ConnectTip connects one block on
+    //! its single-block connect view. Never call from other block
+    //! connect/disconnect paths: multi-block walkers accumulate MWEB undo state
+    //! in this layer and re-wrapping it discards that state (multi-block walker
+    //! undo integrity).
+    void RefreshMWEBCache();
 
     /**
      * Check if we have the given utxo already loaded in this cache.

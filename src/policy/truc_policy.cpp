@@ -11,7 +11,16 @@
 
 #include <algorithm>
 #include <numeric>
+#include <set>
 #include <vector>
+
+/** MWEB: whether any of mweb_inputs is an MWEB output of tx. */
+static bool SpendsMWEBOutputOf(const std::set<mw::Hash>& mweb_inputs, const CTransaction& tx)
+{
+    if (mweb_inputs.empty()) return false;
+    const std::set<mw::Hash> outputs{tx.mweb_tx.GetOutputIDs()};
+    return std::any_of(outputs.cbegin(), outputs.cend(), [&](const mw::Hash& id) { return mweb_inputs.contains(id); });
+}
 
 /** Helper for PackageTRUCChecks: Returns a vector containing the indices of transactions (within
  * package) that are direct parents of ptx. */
@@ -23,13 +32,14 @@ std::vector<size_t> FindInPackageParents(const Package& package, const CTransact
     for (auto &input : ptx->vin) {
         possible_parents.insert(input.prevout.hash);
     }
+    const std::set<mw::Hash> mweb_inputs{ptx->mweb_tx.GetSpentIDs()}; // MWEB
 
     for (size_t i{0}; i < package.size(); ++i) {
         const auto& tx = package.at(i);
         // We assume the package is sorted, so that we don't need to continue
         // looking past the transaction itself.
         if (&(*tx) == &(*ptx)) break;
-        if (possible_parents.contains(tx->GetHash())) {
+        if (possible_parents.contains(tx->GetHash()) || SpendsMWEBOutputOf(mweb_inputs, *tx)) {
             in_package_parents.push_back(i);
         }
     }
@@ -119,9 +129,24 @@ std::optional<std::string> PackageTRUCChecks(const CTxMemPool& pool, const CTran
                                  parent_info.m_txid.ToString(), parent_info.m_wtxid.ToString());
             }
 
+            // MWEB: in-package siblings and children may be linked through MWEB outputs instead.
+            const CTransaction& parent_tx{mempool_parents.size() > 0 ? mempool_parents[0].get().GetTx() :
+                                                                       *package.at(in_package_parents.front())};
+
             for (const auto& package_tx : package) {
                 // Skip same tx.
                 if (&(*package_tx) == &(*ptx)) continue;
+
+                const std::set<mw::Hash> mweb_inputs{package_tx->mweb_tx.GetSpentIDs()};
+                if (SpendsMWEBOutputOf(mweb_inputs, parent_tx)) {
+                    return strprintf("tx %s (wtxid=%s) would exceed descendant count limit",
+                                     parent_info.m_txid.ToString(),
+                                     parent_info.m_wtxid.ToString());
+                }
+                if (SpendsMWEBOutputOf(mweb_inputs, *ptx)) {
+                    return strprintf("tx %s (wtxid=%s) would have too many ancestors",
+                                     package_tx->GetHash().ToString(), package_tx->GetWitnessHash().ToString());
+                }
 
                 for (auto& input : package_tx->vin) {
                     // Fail if we find another tx with the same parent. We don't check whether the

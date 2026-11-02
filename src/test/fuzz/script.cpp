@@ -76,11 +76,15 @@ FUZZ_TARGET(script, .init = initialize_script)
         assert(which_type == TxoutType::PUBKEY ||
                which_type == TxoutType::NONSTANDARD ||
                which_type == TxoutType::NULL_DATA ||
-               which_type == TxoutType::MULTISIG);
+               which_type == TxoutType::MULTISIG ||
+               which_type == TxoutType::WITNESS_MWEB_PEGIN || // MWEB
+               which_type == TxoutType::WITNESS_MWEB_HOGADDR); // MWEB
     }
     if (which_type == TxoutType::NONSTANDARD ||
         which_type == TxoutType::NULL_DATA ||
-        which_type == TxoutType::MULTISIG) {
+        which_type == TxoutType::MULTISIG ||
+        which_type == TxoutType::WITNESS_MWEB_PEGIN || // MWEB
+        which_type == TxoutType::WITNESS_MWEB_HOGADDR) { // MWEB
         assert(!extract_destination_ret);
     }
 
@@ -149,7 +153,8 @@ FUZZ_TARGET(script, .init = initialize_script)
 
         if (!std::get_if<PubKeyDestination>(&tx_destination_1)) {
             // Only try to round trip non-pubkey destinations since PubKeyDestination has no encoding
-            Assert(dest.empty() != valid);
+            // MWEB: a stealth address is valid but has no script.
+            Assert(std::holds_alternative<StealthAddress>(tx_destination_1) ? dest.empty() : dest.empty() != valid);
             Assert(tx_destination_1 == DecodeDestination(encoded_dest));
             Assert(valid == IsValidDestinationString(encoded_dest));
         }

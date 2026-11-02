@@ -10,6 +10,7 @@
 #include <serialize.h>
 #include <uint256.h>
 #include <util/time.h>
+#include <mweb/mweb_models.h> // MWEB
 
 #include <cstdint>
 #include <string>
@@ -70,6 +71,21 @@ public:
 };
 
 
+// MWEB: Determine whether extension block data is included in serialization.
+template <typename Stream>
+bool MwebAllowedInBlockSerialization(Stream& s)
+{
+    if constexpr (requires { s.GetVersion(); }) {
+        if (s.GetVersion() & SERIALIZE_NO_MWEB) { // MWEB
+            return false;
+        }
+    }
+    if constexpr (requires { s.template GetParams<TransactionSerParams>(); }) {
+        return s.template GetParams<TransactionSerParams>().allow_mweb;
+    }
+    return true;
+}
+
 class CBlock : public CBlockHeader
 {
 public:
@@ -80,6 +96,8 @@ public:
     mutable bool fChecked;                            // CheckBlock()
     mutable bool m_checked_witness_commitment{false}; // CheckWitnessCommitment()
     mutable bool m_checked_merkle_root{false};        // CheckMerkleRoot()
+
+    MWEB::Block mweb_block; // MWEB
 
     CBlock()
     {
@@ -94,7 +112,13 @@ public:
 
     SERIALIZE_METHODS(CBlock, obj)
     {
+        SER_READ(obj, obj.mweb_block.SetNull()); // MWEB
         READWRITE(AsBase<CBlockHeader>(obj), obj.vtx);
+        if (MwebAllowedInBlockSerialization(s)) { // MWEB
+            if (obj.vtx.size() >= 2 && obj.vtx.back()->IsHogEx()) {
+                READWRITE(obj.mweb_block);
+            }
+        }
     }
 
     void SetNull()
@@ -104,9 +128,13 @@ public:
         fChecked = false;
         m_checked_witness_commitment = false;
         m_checked_merkle_root = false;
+        mweb_block.SetNull(); // MWEB
     }
 
     std::string ToString() const;
+
+    // MWEB: Returns the HogEx (integrating) transaction, if present.
+    CTransactionRef GetHogEx() const noexcept;
 };
 
 /** Describes a place in the block chain to another node such that if the

@@ -167,9 +167,9 @@ class CreateWalletTest(BitcoinTestFramework):
             w6.keypoolrefill(1)
             # There should only be 1 key for legacy, 3 for descriptors
             walletinfo = w6.getwalletinfo()
-            keys = 4
+            keys = 5  # 4 standard output types + MWEB external keypool
             assert_equal(walletinfo['keypoolsize'], keys)
-            assert_equal(walletinfo['keypoolsize_hd_internal'], keys)
+            assert_equal(walletinfo['keypoolsize_hd_internal'], keys - 1)
         # Allow empty passphrase, but there should be a warning
         resp = self.nodes[0].createwallet(wallet_name='w7', disable_private_keys=False, blank=False, passphrase='')
         assert_equal(resp["warnings"], [EMPTY_PASSPHRASE_MSG])

@@ -8,6 +8,36 @@
 #include <tinyformat.h>
 
 #include <cstdlib>
+#include <limits>
+
+namespace {
+static constexpr CAmount BASE_MWEB_FEE = 100;
+
+CAmount GetMWEBFeeForWeight(uint64_t mweb_weight)
+{
+    if (mweb_weight > uint64_t(std::numeric_limits<CAmount>::max() / BASE_MWEB_FEE)) {
+        return std::numeric_limits<CAmount>::max();
+    }
+
+    return CAmount(mweb_weight) * BASE_MWEB_FEE;
+}
+} // namespace
+
+CAmount CFeeRate::GetMWEBFee(uint64_t mweb_weight)
+{
+    return GetMWEBFeeForWeight(mweb_weight);
+}
+
+CAmount CFeeRate::GetTotalFee(int32_t virtual_bytes, uint64_t mweb_weight) const
+{
+    const CAmount byte_fee = GetFee(virtual_bytes);
+    const CAmount mweb_fee = GetMWEBFee(mweb_weight);
+    if (byte_fee > 0 && mweb_fee > std::numeric_limits<CAmount>::max() - byte_fee) {
+        return std::numeric_limits<CAmount>::max();
+    }
+
+    return byte_fee + mweb_fee;
+}
 
 CFeeRate::CFeeRate(const CAmount& nFeePaid, int32_t virtual_bytes)
 {
@@ -15,6 +45,16 @@ CFeeRate::CFeeRate(const CAmount& nFeePaid, int32_t virtual_bytes)
         m_feerate = FeePerVSize(nFeePaid, virtual_bytes);
     } else {
         m_feerate = FeePerVSize();
+    }
+}
+
+CFeeRate::CFeeRate(const CAmount& nFeePaid, int32_t virtual_bytes, uint64_t mweb_weight)
+{
+    const CAmount mweb_fee{GetMWEBFee(mweb_weight)};
+    if (mweb_fee > 0 && nFeePaid < mweb_fee) {
+        m_feerate = FeePerVSize(0, 1000);
+    } else {
+        *this = CFeeRate(nFeePaid - mweb_fee, virtual_bytes);
     }
 }
 

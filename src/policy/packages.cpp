@@ -13,6 +13,8 @@
 #include <iterator>
 #include <memory>
 #include <numeric>
+#include <set>
+#include <unordered_set>
 
 /** IsTopoSortedPackage where a set of txids has been pre-populated. The set is assumed to be correct and
  * is mutated within this function (even if return value is false). */
@@ -20,6 +22,14 @@ bool IsTopoSortedPackage(const Package& txns, std::unordered_set<Txid, SaltedTxi
 {
     // Avoid misusing this function: later_txids should contain the txids of txns.
     Assume(txns.size() == later_txids.size());
+
+    // MWEB: MWEB inputs name output IDs, not txids, so track the later MWEB outputs as well.
+    std::unordered_set<mw::Hash, SaltedMWHashHasher> later_mweb_outputs;
+    for (const auto& tx : txns) {
+        for (const auto& output_id : tx->mweb_tx.GetOutputIDs()) {
+            later_mweb_outputs.insert(output_id);
+        }
+    }
 
     // later_txids always contains the txids of this transaction and the ones that come later in
     // txns. If any transaction's input spends a tx in that set, we've found a parent placed later
@@ -31,8 +41,14 @@ bool IsTopoSortedPackage(const Package& txns, std::unordered_set<Txid, SaltedTxi
                 return false;
             }
         }
+        for (const auto& spent_id : tx->mweb_tx.GetSpentIDs()) {
+            if (later_mweb_outputs.contains(spent_id)) return false;
+        }
         // Avoid misusing this function: later_txids must contain every tx.
         Assume(later_txids.erase(tx->GetHash()) == 1);
+        for (const auto& output_id : tx->mweb_tx.GetOutputIDs()) {
+            later_mweb_outputs.erase(output_id);
+        }
     }
 
     // Avoid misusing this function: later_txids should have contained the txids of txns.
@@ -53,8 +69,10 @@ bool IsConsistentPackage(const Package& txns)
 {
     // Don't allow any conflicting transactions, i.e. spending the same inputs, in a package.
     std::unordered_set<COutPoint, SaltedOutpointHasher> inputs_seen;
+    std::unordered_set<mw::Hash, SaltedMWHashHasher> mweb_inputs_seen; // MWEB
     for (const auto& tx : txns) {
-        if (tx->vin.empty()) {
+        const std::set<mw::Hash> mweb_inputs{tx->mweb_tx.GetSpentIDs()};
+        if (tx->vin.empty() && mweb_inputs.empty()) {
             // This function checks consistency based on inputs, and we can't do that if there are
             // no inputs. Duplicate empty transactions are also not consistent with one another.
             // This doesn't create false negatives, as unconfirmed transactions are not allowed to
@@ -67,11 +85,15 @@ bool IsConsistentPackage(const Package& txns)
                 return false;
             }
         }
+        for (const auto& spent_id : mweb_inputs) {
+            if (mweb_inputs_seen.contains(spent_id)) return false;
+        }
         // Batch-add all the inputs for a tx at a time. If we added them 1 at a time, we could
         // catch duplicate inputs within a single tx.  This is a more severe, consensus error,
         // and we want to report that from CheckTransaction instead.
         std::transform(tx->vin.cbegin(), tx->vin.cend(), std::inserter(inputs_seen, inputs_seen.end()),
                        [](const auto& input) { return input.prevout; });
+        mweb_inputs_seen.insert(mweb_inputs.cbegin(), mweb_inputs.cend());
     }
     return true;
 }
@@ -127,10 +149,16 @@ bool IsChildWithParents(const Package& package)
     std::transform(child->vin.cbegin(), child->vin.cend(),
                    std::inserter(input_txids, input_txids.end()),
                    [](const auto& input) { return input.prevout.hash; });
+    const std::set<mw::Hash> child_mweb_inputs{child->mweb_tx.GetSpentIDs()}; // MWEB
 
     // Every transaction must be a parent of the last transaction in the package.
     return std::all_of(package.cbegin(), package.cend() - 1,
-                       [&input_txids](const auto& ptx) { return input_txids.contains(ptx->GetHash()); });
+                       [&](const auto& ptx) {
+                           if (input_txids.contains(ptx->GetHash())) return true;
+                           const std::set<mw::Hash> outputs{ptx->mweb_tx.GetOutputIDs()};
+                           return std::any_of(outputs.cbegin(), outputs.cend(),
+                                              [&](const auto& output_id) { return child_mweb_inputs.contains(output_id); });
+                       });
 }
 
 bool IsChildWithParentsTree(const Package& package)
@@ -139,10 +167,19 @@ bool IsChildWithParentsTree(const Package& package)
     std::unordered_set<Txid, SaltedTxidHasher> parent_txids;
     std::transform(package.cbegin(), package.cend() - 1, std::inserter(parent_txids, parent_txids.end()),
                    [](const auto& ptx) { return ptx->GetHash(); });
+    std::unordered_set<mw::Hash, SaltedMWHashHasher> parent_mweb_outputs; // MWEB
+    for (auto it = package.cbegin(); it != package.cend() - 1; ++it) {
+        for (const auto& output_id : (*it)->mweb_tx.GetOutputIDs()) {
+            parent_mweb_outputs.insert(output_id);
+        }
+    }
     // Each parent must not have an input who is one of the other parents.
     return std::all_of(package.cbegin(), package.cend() - 1, [&](const auto& ptx) {
         for (const auto& input : ptx->vin) {
             if (parent_txids.contains(input.prevout.hash)) return false;
+        }
+        for (const auto& spent_id : ptx->mweb_tx.GetSpentIDs()) {
+            if (parent_mweb_outputs.contains(spent_id)) return false;
         }
         return true;
     });

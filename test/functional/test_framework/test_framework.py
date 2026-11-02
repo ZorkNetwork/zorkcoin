@@ -39,6 +39,7 @@ from .util import (
     get_datadir_path,
     initialize_datadir,
     p2p_port,
+    rpc_port,
     wait_until_helper_internal,
     wallet_importprivkey,
     JSONRPCException,
@@ -190,6 +191,10 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                             help="Location of the test framework config file (default: %(default)s)")
         parser.add_argument("--pdbonfailure", dest="pdbonfailure", default=False, action="store_true",
                             help="Attach a python debugger if test fails")
+        parser.add_argument("--pauseonfailure", dest="pauseonfailure", default=False, action="store_true",
+                            help="On failure, keep bitcoind nodes running and block until Ctrl+C (manual intervention)")
+        parser.add_argument("--nopauseonfailure", dest="pauseonfailure", action="store_false",
+                            help="Exit immediately on failure (overrides --pauseonfailure)")
         parser.add_argument("--usecli", dest="usecli", default=False, action="store_true",
                             help="use bitcoin-cli instead of RPC for all commands")
         parser.add_argument("--valgrind", dest="valgrind", default=False, action="store_true",
@@ -280,6 +285,10 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             print("Testcase failed. Attaching python debugger. Enter ? for help")
             pdb.set_trace()
 
+        leave_nodes_running = False
+        if self.success == TestStatus.FAILED and self.options.pauseonfailure:
+            leave_nodes_running = self._pause_for_manual_intervention()
+
         self.log.debug('Closing down network thread')
         self.network_thread.close(timeout=self.options.timeout_factor * 10)
         if self.success == TestStatus.FAILED:
@@ -330,8 +339,50 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         if cleanup_tree_on_exit:
             self.cleanup_folder(self.options.tmpdir)
 
+        if leave_nodes_running:
+            for node in self.nodes:
+                node.process = None
         self.nodes.clear()
         return exit_code
+
+    def _pause_for_manual_intervention(self):
+        """Block with nodes up so an operator can RPC in after a failure.
+
+        Returns True if bitcoinds should be left running (detached from TestNode
+        destructors).  Ctrl+C ends the pause and returns True; a second Ctrl+C
+        during shutdown is handled by the interpreter.
+        """
+        self.log.error("TEST FAILED — pausing with bitcoind nodes left running.")
+        self.log.error("Datadir: %s", self.options.tmpdir)
+        self.log.error("Combine logs: %s '../combine_logs.py' '%s'",
+                       os.path.normpath(os.path.dirname(os.path.realpath(__file__))),
+                       self.options.tmpdir)
+        for i, node in enumerate(self.nodes):
+            try:
+                height = node.getblockcount()
+                mempool = len(node.getrawmempool())
+                peers = len(node.getpeerinfo())
+            except Exception as e:
+                height = mempool = peers = f"rpc_error:{e}"
+            self.log.error(
+                "  node %d datadir=%s rpc_port=%s height=%s mempool=%s peers=%s",
+                i, node.datadir_path, rpc_port(i), height, mempool, peers,
+            )
+        if hasattr(self, "log_manual_intervention_state"):
+            try:
+                self.log_manual_intervention_state()
+            except Exception as e:
+                self.log.warning("log_manual_intervention_state failed: %s", e)
+        self.log.error(
+            "Press Ctrl+C when finished; bitcoinds will keep running and the "
+            "datadir will be preserved."
+        )
+        try:
+            while True:
+                time.sleep(30)
+        except KeyboardInterrupt:
+            self.log.info("Manual-intervention pause ended (KeyboardInterrupt).")
+        return True
 
     # Methods to override in subclass test scripts.
     def set_test_params(self):
@@ -1192,4 +1243,10 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         path = Path(_path)
         if not path.is_relative_to(self.options.tmpdir):
             raise AssertionError(f"Trying to delete #{path} outside of #{self.options.tmpdir}")
+        shutil.rmtree(path)
+
+    def cleanup_cache_folder(self, _path):
+        path = Path(_path)
+        if not path.is_relative_to(self.options.cachedir):
+            raise AssertionError(f"Trying to delete #{path} outside of #{self.options.cachedir}")
         shutil.rmtree(path)

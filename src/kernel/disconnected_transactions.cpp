@@ -50,9 +50,12 @@ size_t DisconnectedBlockTransactions::DynamicMemoryUsage() const
 {
     iters_by_txid.reserve(iters_by_txid.size() + vtx.size());
     for (auto block_it = vtx.rbegin(); block_it != vtx.rend(); ++block_it) {
+        if (iters_by_txid.contains((*block_it)->GetHash())) {
+            continue;
+        }
         auto it = queuedTx.insert(queuedTx.end(), *block_it);
         auto [_, inserted] = iters_by_txid.emplace((*block_it)->GetHash(), it);
-        assert(inserted); // callers may never pass multiple transactions with the same txid
+        assert(inserted);
         cachedInnerUsage += RecursiveDynamicUsage(*block_it);
     }
     return LimitMemoryUsage();

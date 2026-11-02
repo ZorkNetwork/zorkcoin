@@ -9,14 +9,58 @@
 #include <cstddef>
 #include <cstdint>
 
+#include <mw/consensus/params.h> // MWEB
+
 /** The maximum allowed size for a serialized block, in bytes (only for buffer size limits) */
 inline constexpr unsigned int MAX_BLOCK_SERIALIZED_SIZE{4'000'000};
+/**
+ * Maximum wire-serialized block size (witness + MWEB extension). Consensus.
+ * Litecoin-compatible full envelope: L1 block + pessimistic MWEB extension body.
+ */
+inline constexpr unsigned int MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB =
+    MAX_BLOCK_SERIALIZED_SIZE + mw::MAX_BLOCK_BYTES; // 25'800'195
+/**
+ * BIP324 short-id `block` application-payload max for v2 **send** only:
+ *   (2^24 - 1) - 1 = 16,777,214
+ * (3-byte length field caps contents at 2^24-1; short-id encoding uses 1 type byte).
+ * Mining/assembly uses MAX_BLOCK_SERIALIZED_SIZE_MINE (may equal this by default).
+ */
+inline constexpr unsigned int MAX_BLOCK_SERIALIZED_SIZE_BIP324 = 16'777'214;
+
+/**
+ * Serialized-size budget for CreateNewBlock / GBT / MWEB miner packing.
+ * Default equals BIP324. Compile-time overrides (mutually exclusive):
+ *   -DMINE_MAX_MWEB_SIZE  -> MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB
+ *   -DMINE_TEST_MWEB_SIZE -> MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB + 512
+ */
+#if defined(MINE_TEST_MWEB_SIZE)
+#  if defined(MINE_MAX_MWEB_SIZE)
+#    error "Define only one of MINE_MAX_MWEB_SIZE, MINE_TEST_MWEB_SIZE"
+#  endif
+inline constexpr unsigned int MAX_BLOCK_SERIALIZED_SIZE_MINE =
+    MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB + 512;
+#elif defined(MINE_MAX_MWEB_SIZE)
+inline constexpr unsigned int MAX_BLOCK_SERIALIZED_SIZE_MINE =
+    MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB;
+#else
+inline constexpr unsigned int MAX_BLOCK_SERIALIZED_SIZE_MINE =
+    MAX_BLOCK_SERIALIZED_SIZE_BIP324;
+#endif
+
+/** True if a serialized block body cannot be carried as a BIP324 short-id `block` payload. */
+inline constexpr bool ExceedsBip324BlockPayload(size_t serialized_size)
+{
+    return serialized_size > MAX_BLOCK_SERIALIZED_SIZE_BIP324;
+}
+
 /** The maximum allowed weight for a block, see BIP 141 (network rule) */
 inline constexpr unsigned int MAX_BLOCK_WEIGHT{4'000'000};
 /** The maximum allowed number of signature check operations in a block (network rule) */
 inline constexpr int64_t MAX_BLOCK_SIGOPS_COST{80'000};
 /** Coinbase transaction outputs can only be spent after this number of new blocks (network rule) */
 inline constexpr int COINBASE_MATURITY = 100;
+/** MWEB: Pegout transaction outputs can only be spent after this number of new blocks (network rule) */
+inline constexpr int PEGOUT_MATURITY = 6;
 
 inline constexpr int WITNESS_SCALE_FACTOR = 4;
 

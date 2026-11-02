@@ -13,6 +13,7 @@
 #include <common/settings.h>
 #include <consensus/amount.h>
 #include <consensus/merkle.h>
+#include <consensus/params.h>
 #include <consensus/validation.h>
 #include <external_signer.h>
 #include <httprpc.h>
@@ -42,6 +43,7 @@
 #include <node/mini_miner.h>
 #include <node/mining_args.h>
 #include <node/mining_types.h>
+#include <node/mweb_chain_scan.h>
 #include <node/transaction.h>
 #include <node/types.h>
 #include <node/warnings.h>
@@ -346,6 +348,14 @@ public:
         return chainman().IsInitialBlockDownload();
     }
     bool isLoadingBlocks() override { return chainman().m_blockman.LoadingBlocks(); }
+    bool isMWEBActive() override
+    {
+        if (!m_context->chainman) return false;
+        LOCK(::cs_main);
+        const CBlockIndex* tip = m_context->chainman->ActiveChain().Tip();
+        if (!tip) return false;
+        return DeploymentActiveAfter(tip, *m_context->chainman, Consensus::DEPLOYMENT_MWEB);
+    }
     void setNetworkActive(bool active) override
     {
         if (m_context->connman) {
@@ -753,6 +763,11 @@ public:
         if (!m_node.mempool) return {};
         return m_node.mempool->GetMinFee();
     }
+    CFeeRate mempoolMWEBMinFee() override
+    {
+        if (!m_node.mempool) return {};
+        return m_node.mempool->GetMWEBMinFee();
+    }
     CFeeRate relayMinFee() override
     {
         if (!m_node.mempool) return CFeeRate{DEFAULT_MIN_RELAY_TX_FEE};
@@ -863,6 +878,17 @@ public:
         for (const CTxMemPoolEntry& entry : m_node.mempool->entryAll()) {
             notifications.transactionAddedToMempool(entry.GetSharedTx());
         }
+    }
+    MWEBUTXOScanResult scanMWEBUTXOs(
+        const std::function<bool(int32_t height, const Output& output)>& callback,
+        const std::function<void()>& interruption_point) override
+    {
+        const node::MWEBUTXOScanResult node_result = node::ScanMWEBUTXOsAtTip(m_node, callback, interruption_point);
+        MWEBUTXOScanResult result;
+        result.success = node_result.success;
+        result.error = node_result.error;
+        result.examined = node_result.examined;
+        return result;
     }
     bool hasAssumedValidChain() override
     {

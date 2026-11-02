@@ -34,6 +34,8 @@ enum class MemPoolRemovalReason;
 enum class RBFTransactionState;
 struct bilingual_str;
 struct CBlockLocator;
+class Output;
+
 namespace kernel {
 struct ChainstateRole;
 } // namespace kernel
@@ -264,6 +266,9 @@ public:
     //! Mempool minimum fee.
     virtual CFeeRate mempoolMinFee() = 0;
 
+    //! MWEB mempool minimum fee (excess above the base MWEB fee, per 1000 MWEB weight).
+    virtual CFeeRate mempoolMWEBMinFee() = 0;
+
     //! Relay current minimum fee (from -minrelaytxfee and -incrementalrelayfee settings).
     virtual CFeeRate relayMinFee() = 0;
 
@@ -383,6 +388,17 @@ public:
     //! to be prepared to handle this by ignoring notifications about unknown
     //! removed transactions and already added new transactions.
     virtual void requestMempoolTransactions(Notifications& notifications) = 0;
+
+    struct MWEBUTXOScanResult {
+        bool success{false};
+        std::string error;
+        uint64_t examined{0};
+    };
+
+    //! Scan unspent MWEB outputs in active chainstate at tip (leafset enumeration).
+    virtual MWEBUTXOScanResult scanMWEBUTXOs(
+        const std::function<bool(int32_t height, const Output& output)>& callback,
+        const std::function<void()>& interruption_point) = 0;
 
     //! Return true if an assumed-valid snapshot is in use. Note that this
     //! returns true even after the snapshot is validated, until the next node

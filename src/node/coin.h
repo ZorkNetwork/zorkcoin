@@ -5,7 +5,11 @@
 #ifndef BITCOIN_NODE_COIN_H
 #define BITCOIN_NODE_COIN_H
 
+#include <mw/models/crypto/hash.h>
+#include <mw/models/tx/output.h>
+
 #include <map>
+#include <optional>
 
 class COutPoint;
 class Coin;
@@ -22,6 +26,12 @@ struct NodeContext;
  * @param[in,out] coins map to fill
  */
 void FindCoins(const node::NodeContext& node, std::map<COutPoint, Coin>& coins);
+
+/**
+ * Look up unspent MWEB outputs by output ID, in the mempool and in the current
+ * chain MWEB UTXO set. Outputs that are unknown or spent are set to nullopt.
+ */
+void FindCoins(const node::NodeContext& node, std::map<mw::Hash, std::optional<Output>>& coins);
 } // namespace node
 
 #endif // BITCOIN_NODE_COIN_H

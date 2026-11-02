@@ -7,6 +7,8 @@
 #include <chainparams.h>
 #include <common/args.h>
 #include <key_io.h>
+#include <tinyformat.h>
+#include <util/bip32.h>
 #include <util/log.h>
 
 namespace wallet {
@@ -59,6 +61,10 @@ WalletDescriptor GenerateWalletDescriptor(const CExtPubKey& master_key, const Ou
         desc_prefix = "tr(" + xpub + "/86h";
         break;
     }
+    case OutputType::MWEB: {
+        desc_prefix = "mweb(";
+        break;
+    }
     case OutputType::UNKNOWN: {
         // We should never have a DescriptorScriptPubKeyMan for an UNKNOWN OutputType,
         // so if we get to this point something is wrong
@@ -67,15 +73,22 @@ WalletDescriptor GenerateWalletDescriptor(const CExtPubKey& master_key, const Ou
     } // no default case, so the compiler can warn about missing cases
     assert(!desc_prefix.empty());
 
-    // Mainnet derives at 0', testnet and regtest derive at 1'
-    if (Params().IsTestChain()) {
-        desc_prefix += "/1h";
+    std::string desc_str;
+    if (addr_type == OutputType::MWEB) {
+        // LIP-0008 ranged account: scan and spend are the 0' and 1' children of the account path.
+        const std::string account_path = FormatHDKeypath(Params().MWEBAccountPath());
+        desc_str = strprintf("%s%s%s/0h,%s%s/1h,*)", desc_prefix, xpub, account_path, xpub, account_path);
     } else {
-        desc_prefix += "/0h";
-    }
+        // Mainnet derives at 0', testnet and regtest derive at 1'
+        if (Params().IsTestChain()) {
+            desc_prefix += "/1h";
+        } else {
+            desc_prefix += "/0h";
+        }
 
-    std::string internal_path = internal ? "/1" : "/0";
-    std::string desc_str = desc_prefix + "/0h" + internal_path + desc_suffix;
+        std::string internal_path = internal ? "/1" : "/0";
+        desc_str = desc_prefix + "/0h" + internal_path + desc_suffix;
+    }
 
     // Make the descriptor
     FlatSigningProvider keys;

@@ -8,8 +8,12 @@
 
 #include <coins.h>
 #include <consensus/amount.h>
+#include <consensus/params.h>
 #include <indirectmap.h>
 #include <kernel/cs_main.h>
+#include <mw/models/tx/output.h> // MWEB
+#include <mweb/mweb_mempool_index.h> // MWEB
+#include <mweb/mweb_mempool_markets.h> // MWEB
 #include <kernel/mempool_entry.h>          // IWYU pragma: export
 #include <kernel/mempool_limits.h>         // IWYU pragma: export
 #include <kernel/mempool_options.h>        // IWYU pragma: export
@@ -122,6 +126,9 @@ struct TxMempoolInfo
     /** Virtual size of the transaction. */
     int32_t vsize;
 
+    /** MWEB weight */
+    uint64_t mweb_weight;
+
     /** The fee delta. */
     int64_t nFeeDelta;
 };
@@ -194,7 +201,10 @@ protected:
 
     mutable int64_t lastRollingFeeUpdate GUARDED_BY(cs){GetTime()};
     mutable bool blockSinceLastRollingFeeBump GUARDED_BY(cs){false};
-    mutable double rollingMinimumFeeRate GUARDED_BY(cs){0}; //!< minimum fee to get into the pool, decreases exponentially
+    mutable double rollingMinimumFeeRate GUARDED_BY(cs){0}; //!< L1 minimum fee (sat/kvB), decreases exponentially
+    mutable int64_t mweb_last_rolling_fee_update GUARDED_BY(cs){GetTime()}; // MWEB
+    mutable bool mweb_block_since_rolling_fee_bump GUARDED_BY(cs){false}; // MWEB
+    mutable double mweb_rolling_minimum_fee_rate GUARDED_BY(cs){0}; //!< MWEB excess min (sat per 1000 W), decreases exponentially
 
     // In-memory counter for external mempool tracking purposes.
     // This number is incremented once every time a transaction
@@ -202,10 +212,12 @@ protected:
     mutable uint64_t m_sequence_number GUARDED_BY(cs){1};
 
     void trackPackageRemoved(const CFeeRate& rate) EXCLUSIVE_LOCKS_REQUIRED(cs);
+    void trackMWEBPackageRemoved(const CFeeRate& rate) EXCLUSIVE_LOCKS_REQUIRED(cs); // MWEB
 
     bool m_load_tried GUARDED_BY(cs){false};
 
     CFeeRate GetMinFee(size_t sizelimit) const;
+    CFeeRate GetMWEBMinFee(size_t mweb_cap) const; // MWEB
 
 public:
 
@@ -269,6 +281,10 @@ public:
 
     std::tuple<size_t, size_t, CAmount> CalculateAncestorData(const CTxMemPoolEntry& entry) const EXCLUSIVE_LOCKS_REQUIRED(cs);
     std::tuple<size_t, size_t, CAmount> CalculateDescendantData(const CTxMemPoolEntry& entry) const EXCLUSIVE_LOCKS_REQUIRED(cs);
+    /** Sum GetMWEBWeight() over the same ancestor set as CalculateAncestorData (includes entry). */
+    uint64_t CalculateAncestorMWEBWeight(const CTxMemPoolEntry& entry) const EXCLUSIVE_LOCKS_REQUIRED(cs);
+    /** Sum GetMWEBWeight() over the same descendant set as CalculateDescendantData (includes entry). */
+    uint64_t CalculateDescendantMWEBWeight(const CTxMemPoolEntry& entry) const EXCLUSIVE_LOCKS_REQUIRED(cs);
     int64_t GetDescendantCount(txiter it) const { LOCK(cs); return m_txgraph->GetDescendants(*it, TxGraph::Level::MAIN).size(); }
     int64_t GetDescendantCount(const CTxMemPoolEntry &e) const { LOCK(cs); return m_txgraph->GetDescendants(e, TxGraph::Level::MAIN).size(); }
     int64_t GetAncestorCount(const CTxMemPoolEntry &e) const { LOCK(cs); return m_txgraph->GetAncestors(e, TxGraph::Level::MAIN).size(); }
@@ -285,7 +301,7 @@ private:
 
     static TxMempoolInfo GetInfo(CTxMemPool::indexed_transaction_set::const_iterator it)
     {
-        return TxMempoolInfo{it->GetSharedTx(), it->GetTime(), it->GetFee(), it->GetTxSize(), it->GetModifiedFee() - it->GetFee()};
+        return TxMempoolInfo{it->GetSharedTx(), it->GetTime(), it->GetFee(), it->GetTxSize(), it->GetMWEBWeight(), it->GetModifiedFee() - it->GetFee()};
     }
 
     // Helper to remove all transactions that conflict with a given
@@ -294,6 +310,12 @@ private:
 
 public:
     indirectmap<COutPoint, txiter> mapNextTx GUARDED_BY(cs);
+
+    /** MWEB: Dual spend/output maps + kernel FIFO (sidecar; see mweb_mempool_index.h). */
+    MWEBMempoolIndex<txiter> m_mweb GUARDED_BY(cs);
+    /** MWEB: Per-market eviction graphs and memory usage (see mweb_mempool_markets.h). */
+    std::unique_ptr<MWEBMempoolMarkets> m_mweb_markets GUARDED_BY(cs);
+
     std::map<Txid, CAmount> mapDeltas GUARDED_BY(cs);
 
     using Options = kernel::MemPoolOptions;
@@ -313,7 +335,7 @@ public:
      * all inputs are in the mapNextTx array). If sanity-checking is turned off,
      * check does nothing.
      */
-    void check(const CCoinsViewCache& active_coins_tip, int64_t spendheight) const EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    void check(const CCoinsViewCache& active_coins_tip, int64_t spendheight, const Consensus::Params& consensus_params) const EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     /**
      * Remove a transaction from the mempool along with any descendants.
@@ -373,6 +395,43 @@ public:
 
     /** Get the transaction in the pool that spends the same prevout */
     const CTransaction* GetConflictTx(const COutPoint& prevout) const EXCLUSIVE_LOCKS_REQUIRED(cs);
+
+    /** Get the transaction in the pool that spends the same MWEB output */
+    const CTransaction* GetMWEBConflictTx(const mw::Hash& output_id) const EXCLUSIVE_LOCKS_REQUIRED(cs);
+
+    /** Mempool tx that creates this MWEB output, if any. */
+    const CTransaction* GetMWEBOutputTx(const mw::Hash& output_id) const EXCLUSIVE_LOCKS_REQUIRED(cs)
+    {
+        return m_mweb.FindCreatingTx(output_id);
+    }
+
+    /** True if a recently removed MWEB tx for this kernel is still in the FIFO. */
+    bool HasCachedMWEBTxByKernel(const mw::Hash& kernel_id) const EXCLUSIVE_LOCKS_REQUIRED(cs)
+    {
+        return m_mweb.RecentKernelCached(kernel_id);
+    }
+
+    /** Fetch a recently removed MWEB tx by kernel id (DisconnectTip reorg replay). */
+    CTransactionRef GetCachedMWEBTxByKernel(const mw::Hash& kernel_id) EXCLUSIVE_LOCKS_REQUIRED(cs)
+    {
+        return m_mweb.GetRecentByKernel(kernel_id);
+    }
+
+    void ClearMWEBKernelCacheForTesting() EXCLUSIVE_LOCKS_REQUIRED(cs) { m_mweb.ClearRecentByKernelForTesting(); }
+
+    /**
+     * Before removeForBlock: remove (as CONFLICT) mempool transactions that conflict
+     * with a block's MWEB data. A transaction is mined only if its canonical side is
+     * in the block and every one of its kernels is; otherwise sharing a kernel with
+     * the block or spending a block MWEB input makes it a conflict. Children are
+     * evicted only through outputs that do not survive the block, so valid children
+     * of mined parents stay. Runs while mined parents are still indexed.
+     */
+    void removeMWEBConflictsForBlock(const std::vector<CTransactionRef>& vtx, const MWEB::Block& mweb_block) EXCLUSIVE_LOCKS_REQUIRED(cs);
+
+    /** Remove (as BLOCK) mempool transactions whose MWEB kernels were included in a
+     *  block, and their conflicts. Descendants are left in the mempool. */
+    std::vector<RemovedMempoolTransactionInfo> removeForMWEBKernels(const std::set<mw::Hash>& block_kernels) EXCLUSIVE_LOCKS_REQUIRED(cs);
 
     /** Returns an iterator to the given hash, if found */
     std::optional<txiter> GetIter(const Txid& txid) const EXCLUSIVE_LOCKS_REQUIRED(cs);
@@ -462,6 +521,8 @@ public:
     CFeeRate GetMinFee() const {
         return GetMinFee(m_opts.max_size_bytes);
     }
+    /** Rolling MWEB minimum fee above the base MWEB fee, in satoshis per 1,000 MWEB weight. */
+    CFeeRate GetMWEBMinFee() const;
 
     /** Remove transactions from the mempool until its dynamic size is <= sizelimit.
       *  pvNoSpendsRemaining, if set, will be populated with the list of outpoints
@@ -780,6 +841,8 @@ class CCoinsViewMemPool : public CCoinsViewBacked
     * validation, since we can access transaction outputs without submitting them to mempool.
     */
     std::unordered_map<COutPoint, Coin, SaltedOutpointHasher> m_temp_added;
+    /** MWEB: MWEB outputs made available by package transactions being validated. */
+    std::unordered_map<mw::Hash, Output, SaltedMWHashHasher> m_temp_added_mweb;
 
     /**
      * Set of all coins that have been fetched from mempool or created using PackageAddTransaction
@@ -795,11 +858,14 @@ public:
      * coin is not fetched from base. May populate the base view on cache misses. */
     std::optional<Coin> GetCoin(const COutPoint& outpoint) const override;
     /** Add the coins created by this transaction. These coins are only temporarily stored in
-     * m_temp_added and cannot be flushed to the back end. Only used for package validation. */
+     * m_temp_added (MWEB outputs in m_temp_added_mweb) and cannot be flushed to the back end.
+     * Only used for package validation. */
     void PackageAddTransaction(const CTransactionRef& tx);
+    /** Get an MWEB output from the package being validated, the mempool or the base view. */
+    bool GetMWEBCoin(const mw::Hash& output_id, Output& coin) const override EXCLUSIVE_LOCKS_REQUIRED(mempool.cs);
     /** Get all coins in m_non_base_coins. */
     const std::unordered_set<COutPoint, SaltedOutpointHasher>& GetNonBaseCoins() const { return m_non_base_coins; }
-    /** Clear m_temp_added and m_non_base_coins. */
+    /** Clear m_temp_added, m_temp_added_mweb and m_non_base_coins. */
     void Reset();
 };
 #endif // BITCOIN_TXMEMPOOL_H

@@ -701,10 +701,11 @@ RPCMethod gethdkeys()
                 for (auto* desc_spkm : spkms) {
                     LOCK(desc_spkm->cs_desc_man);
                     std::string desc_str;
-                    bool ok = desc_spkm->GetDescriptorString(desc_str, /*priv=*/false);
-                    CHECK_NONFATAL(ok);
+                    if (!desc_spkm->GetDescriptorString(desc_str, /*priv=*/false)) {
+                        continue;
+                    }
                     wallet_xpubs[xpub].emplace(desc_str, wallet->IsActiveScriptPubKeyMan(*desc_spkm), desc_spkm->HasPrivKey(xpub.pubkey.GetID()));
-                    if (std::optional<CKey> key = priv ? desc_spkm->GetKey(xpub.pubkey.GetID()) : std::nullopt) {
+                    if (std::optional<CKey> key = priv ? desc_spkm->LookupPrivKey(xpub.pubkey.GetID()) : std::nullopt) {
                         wallet_xprvs[xpub] = CExtKey(xpub, *key);
                     }
                 }
@@ -919,7 +920,9 @@ static RPCMethod exportwatchonlywallet()
         "its transactions, and address book data. Descriptors that use hardened derivation will "
         "only have a limited number of derived keys included in the export due to hardened "
         "derivation requiring private keys. Descriptors with unhardened derivation do not have "
-        "this limitation. The watchonly wallet can be imported into another node using 'restorewallet'.",
+        "this limitation. MWEB accounts are exported with their scan secret, so the watchonly wallet "
+        "can see the account's MWEB payments but not spend them. "
+        "The watchonly wallet can be imported into another node using 'restorewallet'.",
         {
             {"destination", RPCArg::Type::STR, RPCArg::Optional::NO, "The path to the filename the exported watchonly wallet will be saved to"},
         },
@@ -1090,6 +1093,9 @@ RPCMethod importprunedfunds();
 RPCMethod removeprunedfunds();
 RPCMethod importdescriptors();
 RPCMethod listdescriptors();
+RPCMethod mwebrescan();
+RPCMethod mwebscanutxoset();
+RPCMethod mwebkeep();
 RPCMethod backupwallet();
 RPCMethod restorewallet();
 
@@ -1127,6 +1133,7 @@ RPCMethod signmessage();
 RPCMethod listreceivedbyaddress();
 RPCMethod listreceivedbylabel();
 RPCMethod listtransactions();
+RPCMethod listwallettransactions();
 RPCMethod listsinceblock();
 RPCMethod gettransaction();
 RPCMethod abandontransaction();
@@ -1161,6 +1168,9 @@ std::span<const CRPCCommand> GetWalletRPCCommands()
         {"wallet", &getbalances},
         {"wallet", &getwalletinfo},
         {"wallet", &importdescriptors},
+        {"wallet", &mwebrescan},
+        {"wallet", &mwebscanutxoset},
+        {"wallet", &mwebkeep},
         {"wallet", &importprunedfunds},
         {"wallet", &keypoolrefill},
         {"wallet", &listaddressgroupings},
@@ -1171,6 +1181,7 @@ std::span<const CRPCCommand> GetWalletRPCCommands()
         {"wallet", &listreceivedbylabel},
         {"wallet", &listsinceblock},
         {"wallet", &listtransactions},
+        {"wallet", &listwallettransactions},
         {"wallet", &listunspent},
         {"wallet", &listwalletdir},
         {"wallet", &listwallets},

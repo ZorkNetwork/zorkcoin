@@ -280,6 +280,16 @@ class Binaries:
         "Return argv array that should be used to invoke bitcoind"
         return self._argv("node", self.paths.bitcoind, **kwargs)
 
+    def with_bitcoind(self, bitcoind_path):
+        """Return a Binaries clone that invokes a different bitcoind path.
+
+        The clone ignores BITCOIN_CMD, which would run the wrapper's bitcoind instead.
+        """
+        paths = types.SimpleNamespace(**vars(self.paths))
+        paths.bitcoind = bitcoind_path
+        paths.bitcoin_cmd = None
+        return Binaries(paths, self.bin_dir, use_valgrind=bool(self.valgrind_cmd))
+
     def rpc_argv(self):
         "Return argv array that should be used to invoke bitcoin-cli"
         # Add -nonamed because "bitcoin rpc" enables -named by default, but bitcoin-cli doesn't
@@ -356,6 +366,34 @@ def get_binary_paths(config):
     # wrapper binary instead of other executables.
     paths.bitcoin_cmd = shlex.split(os.getenv("BITCOIN_CMD", "")) or None
     return paths
+
+
+def resolve_mweb_mine_bitcoind(paths, *, variant):
+    """Resolve bitcoind-mine-max / bitcoind-mine-test beside the normal bitcoind.
+
+    variant: 'max' -> bitcoind-mine-max (env BITCOIND_MINE_MAX)
+             'test' -> bitcoind-mine-test (env BITCOIND_MINE_TEST)
+    Returns absolute path, or None if missing.
+    """
+    if variant == "max":
+        env_name = "BITCOIND_MINE_MAX"
+        basename = "bitcoind-mine-max"
+    elif variant == "test":
+        env_name = "BITCOIND_MINE_TEST"
+        basename = "bitcoind-mine-test"
+    else:
+        raise ValueError(f"unknown mine variant {variant!r}")
+    exeext = ""
+    if getattr(paths, "bitcoind", None) and paths.bitcoind.endswith(".exe"):
+        exeext = ".exe"
+        basename += exeext
+    override = os.getenv(env_name)
+    if override:
+        return override if os.path.isfile(override) else None
+    sibling = os.path.join(os.path.dirname(paths.bitcoind), basename)
+    if os.path.isfile(sibling):
+        return sibling
+    return None
 
 
 def export_env_build_path(config):

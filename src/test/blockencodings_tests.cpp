@@ -124,6 +124,7 @@ public:
     uint64_t nonce;
     std::vector<uint64_t> shorttxids;
     std::vector<PrefilledTransaction> prefilledtxn;
+    MWEB::Block mweb_block; // MWEB
 
     explicit TestHeaderAndShortIDs(const CBlockHeaderAndShortTxIDs& orig) {
         DataStream stream{};
@@ -141,7 +142,12 @@ public:
         return base.GetShortID(txhash);
     }
 
-    SERIALIZE_METHODS(TestHeaderAndShortIDs, obj) { READWRITE(obj.header, obj.nonce, Using<VectorFormatter<CustomUintFormatter<CBlockHeaderAndShortTxIDs::SHORTTXIDS_LENGTH>>>(obj.shorttxids), obj.prefilledtxn); }
+    SERIALIZE_METHODS(TestHeaderAndShortIDs, obj) {
+        READWRITE(obj.header, obj.nonce, Using<VectorFormatter<CustomUintFormatter<CBlockHeaderAndShortTxIDs::SHORTTXIDS_LENGTH>>>(obj.shorttxids), obj.prefilledtxn);
+        if (MwebAllowedInBlockSerialization(s)) { // MWEB
+            READWRITE(obj.mweb_block);
+        }
+    }
 };
 
 struct TestPartiallyDownloadedBlock : PartiallyDownloadedBlock {

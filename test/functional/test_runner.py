@@ -84,9 +84,35 @@ TEST_EXIT_SKIPPED = 77
 
 TEST_FRAMEWORK_UNIT_TESTS = 'feature_framework_unit_tests.py'
 
+MEGA_SCRIPTS = [
+    # These tests are only run when --mega is passed (or when explicitly named),
+    # and are executed serially (one test at a time) after the parallel batch.
+    'mweb_block_packing.py',
+    # Cap-filled / BIP324 size suite (replaces midband/exact/over-envelope trio)
+    'mweb_size_max_cap_accept_v1.py',
+    'mweb_size_oversize_input_pad_reject.py',
+    'mweb_size_max_plus_one_input_reject.py',
+    'mweb_size_max_plus_weight_reject.py',
+    'mweb_size_bip324_edge_v1_v2.py',
+    'mweb_p2p_stress_mega.py',
+    'mweb_p2p_rate_limit_mega.py',
+    'mweb_wallet_spend_scale.py',
+    'mweb_wallet_recipients.py',
+]
+
+MEGA_SERIAL_SCRIPTS = frozenset(MEGA_SCRIPTS)
+
 EXTENDED_SCRIPTS = [
     # These tests are not run by default.
     # Longest test should go first, to favor running tests in parallel
+    'mweb_weight.py',
+    'mweb_node_compatibility.py',
+    'mweb_wallet_upgrade.py',
+    'mweb_p2p_stress.py',
+    'mweb_p2p_assumeutxo_serve.py',
+    'mweb_p2p_serve_peer_rotation.py',
+    'mweb_reorg_undo.py',
+    'mweb_multinode_scale.py',
     'feature_pruning.py',
     'feature_dbcrash.py',
     'feature_index_prune.py',
@@ -97,6 +123,11 @@ EXTENDED_SCRIPTS = [
 TOOL_BENCH_SANITY_CHECK = "tool_bench_sanity_check.py"
 
 BASE_SCRIPTS = [
+    'mweb_wallet_address_lifecycle.py',
+    'mweb_wallet_partial_upgrade.py',
+    'mweb_attached_tx.py',
+    'mweb_activation_late_pegin.py',
+    'mweb_p2p_proof.py',
     # Special scripts that are "expanded" later
     TOOL_BENCH_SANITY_CHECK,
     # Scripts that are run by default.
@@ -110,11 +141,13 @@ BASE_SCRIPTS = [
     'p2p_opportunistic_1p1c.py',
     'p2p_node_network_limited.py --v1transport',
     'p2p_node_network_limited.py --v2transport',
+    'mweb_p2p_node_network_limited.py',
     # vv Tests less than 2m vv
     'mining_getblocktemplate_longpoll.py',
     'p2p_segwit.py',
     'feature_maxuploadtarget.py',
     'feature_assumeutxo.py',
+    'mweb_assumeutxo_fetch.py',
     'mempool_updatefromblock.py',
     'mempool_persist.py',
     # vv Tests less than 60s vv
@@ -171,6 +204,7 @@ BASE_SCRIPTS = [
     'feature_reindex_readonly.py',
     'wallet_labels.py',
     'p2p_compactblocks.py',
+    'mweb_p2p_compactblocks.py',
     'p2p_compactblocks_blocksonly.py',
     'wallet_hd.py',
     'wallet_blank.py',
@@ -298,6 +332,62 @@ BASE_SCRIPTS = [
     'wallet_importdescriptors.py',
     'wallet_crosschain.py',
     'mining_basic.py',
+    'mweb_basic.py',
+    'mweb_consensus.py',
+    'mweb_mining.py',
+    'mweb_mine_test_chain_guard.py',
+    'mweb_reorg.py',
+    'mweb_rewind_activation.py',
+    'mweb_dbcrash.py',
+    'mweb_duplicate_pegin.py',
+    'mweb_orphan_pegin.py',
+    'mweb_p2p.py',
+    'mweb_nowallet_consensus.py',
+    'mweb_nowallet_p2p.py',
+    'mweb_p2p_mutated_block_submitblock.py',
+    'mweb_p2p_mutated_compactblock.py',
+    'mweb_wtxid_recentrejects.py',
+    'mweb_newpowvalidblock.py',
+    'mweb_p2p_rate_limit.py',
+    'mweb_p2p_serve_regression.py',
+    'mweb_pre_activation_hogex_marker.py',
+    'mweb_pre_activation_hogex_marker.py --mweb-defined',
+    'mweb_pegout_all.py',
+    'mweb_pegout_maturity_reorg.py',
+    'mweb_descriptor_wallet.py',
+    'mweb_output_proof.py',
+    'mweb_payment_proof.py',
+    'mweb_wallet_basic.py',
+    'mweb_wallet_address.py',
+    'mweb_wallet_listtransactions.py',
+    'wallet_listwallettransactions.py',
+    'mweb_mempool.py',
+    'mweb_dumptxoutset_rollback.py',
+    'mweb_psbt.py',
+    'mweb_psbt_rpc.py',
+    'mweb_psbt_watchonly_signer.py',
+    'mweb_psbt_interop_vectors.py',
+    'mweb_wallet_signer.py',
+    'mweb_wallet_recovery.py',
+    'mweb_wallet_conflicts.py',
+    'mweb_wallet_history_recovery.py',
+    'mweb_wallet_amounts.py',
+    'mweb_wallet_isolation.py',
+    'mweb_wallet_lookahead.py',
+    'mweb_psbt_seedsigner_interop.py',
+    'mweb_wallet_change.py',
+    'mweb_wallet_coincontrol.py',
+    'mweb_wallet_sendall.py',
+    'mweb_wallet_locked.py',
+    'mweb_wallet_repeated_output_id.py',
+    'mweb_wallet_txbuilder.py',
+    'mweb_mempool_order.py',
+    'mweb_mempool_rpc.py',
+    'mweb_mempool_limit.py',
+    'mweb_replacement.py',
+    'mweb_truc_mempool.py',
+    'mweb_tx_json.py',
+    'mweb_getblock_mweb.py',
     'mining_mainnet.py',
     'feature_signet.py',
     'p2p_mutated_blocks.py',
@@ -316,6 +406,7 @@ BASE_SCRIPTS = [
     'rpc_uptime.py',
     'feature_discover.py',
     'wallet_resendwallettransactions.py',
+    'wallet_timelock_resubmit.py',
     'wallet_fallbackfee.py',
     'rpc_dumptxoutset.py',
     'feature_minchainwork.py',
@@ -339,6 +430,8 @@ BASE_SCRIPTS = [
     'feature_filelock.py',
     'feature_loadblock.py',
     'wallet_assumeutxo.py',
+    'mweb_wallet_assumeutxo.py',
+    'mweb_wallet_utxo_scan.py',
     'p2p_add_connections.py',
     'feature_bind_port_discover.py',
     'p2p_unrequested_blocks.py',
@@ -409,13 +502,15 @@ BASE_SCRIPTS = [
     # Put them in a random line within the section that fits their approximate run-time
 ]
 
-# Place EXTENDED_SCRIPTS first since it has the 3 longest running tests
-ALL_SCRIPTS = EXTENDED_SCRIPTS + BASE_SCRIPTS
+# Place MEGA_SCRIPTS and EXTENDED_SCRIPTS first since they have the longest running tests
+ALL_SCRIPTS = MEGA_SCRIPTS + EXTENDED_SCRIPTS + BASE_SCRIPTS
 
 NON_SCRIPTS = [
     # These are python files that live in the functional tests directory, but are not test scripts.
     "combine_logs.py",
     "create_cache.py",
+    "mweb_generate_assumeutxo_hashes.py",
+    "mweb_generate_fixture.py",
     "test_runner.py",
 ]
 
@@ -432,6 +527,7 @@ def main():
     parser.add_argument('--coverage', action='store_true', help='generate a basic coverage report for the RPC interface')
     parser.add_argument('--exclude', '-x', action='append', help='specify a script to exclude. Can be specified multiple times. The .py extension is optional.')
     parser.add_argument('--extended', action='store_true', help='run the extended test suite in addition to the basic tests')
+    parser.add_argument('--mega', action='store_true', help='run the mega test suite in addition to the extended and basic tests')
     parser.add_argument('--help', '-h', '-?', action='store_true', help='print help text and exit')
     parser.add_argument('--jobs', '-j', type=int, default=4, help='how many test scripts to run in parallel. Default=4.')
     parser.add_argument('--quiet', '-q', action='store_true', help='only print dots, results summary and failure logs')
@@ -489,6 +585,8 @@ def main():
         sys.exit(1)
 
     export_env_build_path(config)
+    if args.mega:
+        os.environ["MEGA_EXTENDED_TEST"] = "1"
 
     # Build tests
     test_list = deque()
@@ -513,9 +611,12 @@ def main():
                 test_list += matching_scripts
             else:
                 print("{}WARNING!{} Test '{}' not found in full test list.".format(BOLD[1], BOLD[0], test))
+    elif args.mega:
+        # Include mega, extended, and base tests
+        test_list += ALL_SCRIPTS
     elif args.extended:
         # Include extended tests
-        test_list += ALL_SCRIPTS
+        test_list += EXTENDED_SCRIPTS + BASE_SCRIPTS
     else:
         # Run base tests only
         test_list += BASE_SCRIPTS
@@ -583,18 +684,43 @@ def main():
     check_script_list(src_dir=config["environment"]["SRCDIR"], fail_on_warn=fail_on_warn)
     check_script_prefixes()
 
-    run_tests(
-        test_list=test_list,
-        build_dir=config["environment"]["BUILDDIR"],
-        tmpdir=tmpdir,
-        jobs=args.jobs,
-        enable_coverage=args.coverage,
-        args=passon_args,
-        combined_logs_len=args.combinedlogslen,
-        failfast=args.failfast,
-        use_term_control=args.ansi,
-        results_filepath=results_filepath,
-    )
+    mega_list = [t for t in test_list if t.split()[0] in MEGA_SERIAL_SCRIPTS]
+    test_list = deque(t for t in test_list if t.split()[0] not in MEGA_SERIAL_SCRIPTS)
+
+    batches = []
+    if test_list:
+        batches.append((test_list, args.jobs))
+    for mega in mega_list:
+        batches.append((deque([mega]), 1))
+
+    all_passed = True
+    all_results = []
+    total_runtime = 0
+    for batch, jobs in batches:
+        if args.failfast and not all_passed:
+            break
+        os.makedirs(tmpdir, exist_ok=True)
+        passed, results, runtime = run_tests(
+            test_list=batch,
+            build_dir=config["environment"]["BUILDDIR"],
+            tmpdir=tmpdir,
+            jobs=jobs,
+            enable_coverage=args.coverage,
+            args=passon_args,
+            combined_logs_len=args.combinedlogslen,
+            failfast=args.failfast,
+            use_term_control=args.ansi,
+            results_filepath=None,
+        )
+        all_passed = passed and all_passed
+        all_results.extend(results)
+        total_runtime += runtime
+
+    if results_filepath:
+        write_results(all_results, results_filepath, total_runtime)
+
+    sys.exit(not all_passed)
+
 
 def run_tests(*, test_list, build_dir, tmpdir, jobs=1, enable_coverage=False, args=None, combined_logs_len=0, failfast=False, use_term_control, results_filepath=None):
     args = args or []
@@ -715,7 +841,7 @@ def run_tests(*, test_list, build_dir, tmpdir, jobs=1, enable_coverage=False, ar
     if not os.getenv("CI_FAILFAST_TEST_LEAVE_DANGLING") and len(job_queue.jobs):
         os.killpg(os.getpgid(0), signal.SIGKILL)
 
-    sys.exit(not all_passed)
+    return all_passed, test_results, runtime
 
 
 def print_results(test_results, max_len_name, runtime):
@@ -875,7 +1001,7 @@ class TestResult():
 def check_script_prefixes():
     """Check that test scripts start with one of the allowed name prefixes."""
 
-    good_prefixes_re = re.compile("^(example|feature|interface|mempool|mining|p2p|rpc|wallet|tool)_")
+    good_prefixes_re = re.compile("^(example|feature|interface|mempool|mining|p2p|rpc|wallet|tool|mweb)_")
     bad_script_names = [script for script in ALL_SCRIPTS if good_prefixes_re.match(script) is None]
 
     if bad_script_names:

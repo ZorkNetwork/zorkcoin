@@ -63,7 +63,8 @@ class WalletFastRescanTest(BitcoinTestFramework):
         for i in range(1, NUM_BLOCKS):
             self.log.debug(f"Block {i+1}/{NUM_BLOCKS}")
             # Get descriptors with updated ranges
-            ranged_descs = [desc for desc in w.listdescriptors()['descriptors'] if 'range' in desc]
+            ranged_descs = [desc for desc in w.listdescriptors()['descriptors']
+                            if 'range' in desc and not desc['desc'].startswith('mweb(')]
             for desc_info in ranged_descs:
                 start_range, end_range = desc_info['range']
                 addr = w.deriveaddresses(desc_info['desc'], [end_range, end_range])[0]

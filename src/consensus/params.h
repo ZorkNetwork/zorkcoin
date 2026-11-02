@@ -37,6 +37,7 @@ constexpr bool ValidDeployment(BuriedDeployment dep) { return dep <= DEPLOYMENT_
 
 enum DeploymentPos : uint16_t {
     DEPLOYMENT_TESTDUMMY,
+    DEPLOYMENT_MWEB, // MWEB: Extension block (LIP-0002/0003/0004 analogue)
     // NOTE: Also add new deployments to VersionBitsDeploymentInfo in deploymentinfo.cpp
     // Removing an entry may require bumping MinBIP9WarningHeight.
     MAX_VERSION_BITS_DEPLOYMENTS
@@ -139,6 +140,27 @@ struct Params {
      */
     bool signet_blocks{false};
     std::vector<uint8_t> signet_challenge;
+
+    /** MWEB: Optional one-block grandfather for the known MWEB input-metadata exploit. */
+    uint256 mweb_input_metadata_grandfather_blockhash;
+
+    /**
+     * MWEB: Kernel lock heights in an MWEB block are enforced only when
+     * the block height is greater than this value. All networks on this
+     * tree use 0 so lock heights are enforced from the first MWEB block.
+     * (libmw still defines KERNEL_LOCK_HEIGHT_GRANDFATHER_HEIGHT for
+     * Litecoin historical reference; it is not the default here.)
+     */
+    int32_t mweb_kernel_lock_height_grandfather{0};
+
+    /** MWEB: Kernels signaling pegouts must contain at least one pegout at and after this height. */
+    int mweb_pegout_feature_activation_height{0};
+
+    /** MWEB: Kernels signaling extra data must contain non-empty extra data at and after this height. */
+    int mweb_extradata_feature_activation_height{0};
+
+    /** MWEB: Frozen MWEB output IDs that may not be spent. */
+    std::vector<uint256> frozen_mweb_output_ids;
 
     int DeploymentHeight(BuriedDeployment dep) const
     {

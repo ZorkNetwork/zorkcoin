@@ -642,6 +642,10 @@ class RawTransactionsTest(BitcoinTestFramework):
         funded_tx = wallet.fundrawtransaction(rawtx, fee_rate=self.fee_rate_sats_per_vb)
         assert_equal(funded_tx["changepos"], -1)
 
+        # Changeless funding must not return an already-issued change address
+        # to the exhausted pool after failing to reserve a new one.
+        assert_raises_rpc_error(-12, "Keypool ran out", wallet.getrawchangeaddress)
+
         # fund a transaction that requires a new key for the change output
         # creating the key must be impossible because the wallet is locked
         outputs = {self.nodes[0].getnewaddress():value - Decimal("0.1")}
@@ -1530,7 +1534,8 @@ class RawTransactionsTest(BitcoinTestFramework):
 
         self.nodes[0].createwallet(wallet_name="grind_watchonly", disable_private_keys=True)
         watchonly = self.nodes[0].get_wallet_rpc("grind_watchonly")
-        assert_equal(watchonly.importdescriptors(wallet.listdescriptors()["descriptors"])[0]["success"], True)
+        descs = [d for d in wallet.listdescriptors()["descriptors"] if not d["desc"].startswith("mweb(")]
+        assert_equal(watchonly.importdescriptors(descs)[0]["success"], True)
 
         # Send to legacy address type so that we will have an ecdsa signature with a measurable effect on the feerate
         default_wallet.sendtoaddress(wallet.getnewaddress(address_type="legacy"), 10)

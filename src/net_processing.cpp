@@ -14,6 +14,7 @@
 #include <chainparams.h>
 #include <common/bloom.h>
 #include <consensus/amount.h>
+#include <consensus/consensus.h>
 #include <consensus/params.h>
 #include <consensus/validation.h>
 #include <core_memusage.h>
@@ -25,6 +26,10 @@
 #include <kernel/types.h>
 #include <logging.h>
 #include <merkleblock.h>
+#include <mw/common/dynamic_bit_set.h> // MWEB
+#include <mw/mmr/segment.h> // MWEB
+#include <mw/models/tx/utxo.h> // MWEB
+#include <mw/node/coins_view.h> // MWEB
 #include <net.h>
 #include <net_permissions.h>
 #include <netaddress.h>
@@ -32,12 +37,18 @@
 #include <netmessagemaker.h>
 #include <node/blockstorage.h>
 #include <node/connection_types.h>
+#include <node/mweb_historical_cache.h>
+#include <node/mweb_p2p_messages.h>
+#include <node/mweb_serve.h>
+#include <node/mweb_serve_coordinator.h>
+#include <node/mweb_serve_scheduling.h>
 #include <node/protocol_version.h>
 #include <node/timeoffsets.h>
 #include <node/txdownloadman.h>
 #include <node/txorphanage.h>
 #include <node/txreconciliation.h>
 #include <node/warnings.h>
+#include <mweb/mweb_node.h>
 #include <policy/feerate.h>
 #include <policy/fees/block_policy_estimator.h>
 #include <policy/packages.h>
@@ -56,6 +67,7 @@
 #include <tinyformat.h>
 #include <txmempool.h>
 #include <uint256.h>
+#include <undo.h>
 #include <util/check.h>
 #include <util/hasher.h>
 #include <util/strencodings.h>
@@ -201,7 +213,6 @@ static constexpr double MAX_ADDR_RATE_PER_SECOND{0.1};
 static constexpr size_t MAX_ADDR_PROCESSING_TOKEN_BUCKET{MAX_ADDR_TO_SEND};
 /** Private broadcast connections must complete within this time. Disconnect the peer if it takes longer. */
 static constexpr auto PRIVATE_BROADCAST_MAX_CONNECTION_LIFETIME{3min};
-
 // Internal stuff
 namespace {
 /** Blocks that are in flight, and that are in the queue to be downloaded. */
@@ -281,6 +292,8 @@ struct Peer {
 
     /** Whether this peer relays txs via wtxid */
     std::atomic<bool> m_wtxid_relay{false};
+    /** MWEB: per-peer capability + serve sidecar (see node/mweb_peer_state.h). */
+    node::PeerMWEBState m_mweb;
     /** The feerate in the most recent BIP133 `feefilter` message sent to the peer.
      *  It is *not* a p2p protocol violation for the peer to send us
      *  transactions with a lower fee rate than this. See BIP133. */
@@ -591,11 +604,14 @@ public:
         EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, !m_most_recent_block_mutex, !m_headers_presync_mutex, g_msgproc_mutex, !m_tx_download_mutex, !m_inv_to_send_mutex);
     bool SendMessages(CNode& node) override
         EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, !m_most_recent_block_mutex, g_msgproc_mutex, !m_tx_download_mutex, !m_inv_to_send_mutex);
+    bool ProcessBackgroundWork() override EXCLUSIVE_LOCKS_REQUIRED(g_msgproc_mutex, !m_peer_mutex);
 
     /** Implement PeerManager */
     void StartScheduledTasks(CScheduler& scheduler) override;
     void CheckForStaleTipAndEvictPeers() override;
     util::Expected<void, std::string> FetchBlock(NodeId peer_id, const CBlockIndex& block_index) override
+        EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
+    util::Expected<void, std::string> FetchBlockFromCapablePeer(const CBlockIndex& block_index) override
         EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
     bool GetNodeStateStats(NodeId nodeid, CNodeStateStats& stats) const override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
     std::vector<node::TxOrphanage::OrphanInfo> GetOrphanTransactions() override EXCLUSIVE_LOCKS_REQUIRED(!m_tx_download_mutex);
@@ -615,6 +631,20 @@ public:
     ServiceFlags GetDesirableServiceFlags(ServiceFlags services) const override;
 
 private:
+    /** Add or remove NODE_MWEB / NODE_MWEB_LIGHT_CLIENT local service bits. */
+    void UpdateLocalMwebServices(const CBlockIndex* pindex);
+
+    bool CanServeMWEBLightClient() const;
+    void MaybeRefreshMwebLightClientServices();
+    bool ProcessOneMWEBServeStep(CNode& node, Peer& peer)
+        EXCLUSIVE_LOCKS_REQUIRED(g_msgproc_mutex);
+    void EnqueueMWEBLeafsetRequest(CNode& pfrom, Peer& peer, const CInv& inv)
+        EXCLUSIVE_LOCKS_REQUIRED(g_msgproc_mutex);
+    void EnqueueMWEBHeaderRequest(CNode& pfrom, Peer& peer, const CInv& inv)
+        EXCLUSIVE_LOCKS_REQUIRED(g_msgproc_mutex);
+    void EnqueueMWEBUTXOsRequest(CNode& pfrom, Peer& peer, const GetMWEBUTXOsMsg& get_utxos)
+        EXCLUSIVE_LOCKS_REQUIRED(g_msgproc_mutex);
+
     void ProcessMessage(Peer& peer, CNode& pfrom, const std::string& msg_type, DataStream& vRecv, NodeClock::time_point time_received,
                         const std::atomic<bool>& interruptMsgProc)
         EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, !m_most_recent_block_mutex, !m_headers_presync_mutex, g_msgproc_mutex, !m_tx_download_mutex, !m_inv_to_send_mutex);
@@ -897,6 +927,9 @@ private:
      */
     std::map<NodeId, PeerRef> m_peer_map GUARDED_BY(m_peer_mutex);
 
+    /** Last peer served by ProcessBackgroundWork MWEB drain. */
+    NodeId m_last_bg_serve_peer GUARDED_BY(m_peer_mutex){node::NO_BACKGROUND_SERVE_PEER};
+
     /** Map maintaining per-node state. */
     std::map<NodeId, CNodeState> m_node_states GUARDED_BY(cs_main);
 
@@ -905,7 +938,9 @@ private:
     /** Get a pointer to a mutable CNodeState. */
     CNodeState* State(NodeId pnode) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
-    uint32_t GetFetchFlags(const Peer& peer) const;
+    uint32_t GetFetchFlags(const Peer& peer, const CBlockIndex* pindex) const EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    uint64_t GetCmpctBlocksVersion() const; // MWEB
+    TransactionSerParams CmpctBlockSerParams() const; // MWEB
 
     std::map<uint64_t, std::chrono::microseconds> m_next_inv_to_inbounds_per_network_key GUARDED_BY(g_msgproc_mutex);
 
@@ -1111,6 +1146,10 @@ private:
     void ProcessGetBlockData(CNode& pfrom, Peer& peer, const CInv& inv)
         EXCLUSIVE_LOCKS_REQUIRED(g_msgproc_mutex, !m_most_recent_block_mutex);
 
+    Mutex m_mweb_replay_mutex;
+    std::atomic<size_t> m_mweb_serve_jobs_global{0};
+    std::unique_ptr<node::MWEBServeEngine> m_mweb_serve_engine;
+
     /**
      * Validation logic for compact filters request handling.
      *
@@ -1268,6 +1307,12 @@ static bool CanServeWitnesses(const Peer& peer)
     return peer.m_their_services & NODE_WITNESS;
 }
 
+/** MWEB: Whether this peer advertised NODE_MWEB in its version message. */
+static bool CanServeMWEB(const Peer& peer)
+{
+    return peer.m_mweb.m_have_mweb;
+}
+
 std::chrono::microseconds PeerManagerImpl::NextInvToInbounds(std::chrono::microseconds now,
                                                              std::chrono::seconds average_interval,
                                                              uint64_t network_key)
@@ -1409,7 +1454,9 @@ void PeerManagerImpl::MaybeSetPeerAsAnnouncingHeaderAndIDs(NodeId nodeid)
     }
     const bool nodeid_was_appended{m_connman.ForNode(nodeid, [this](CNode* pfrom) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
         AssertLockHeld(::cs_main);
-        MakeAndPushMessage(*pfrom, NetMsgType::SENDCMPCT, /*high_bandwidth=*/true, /*version=*/CMPCTBLOCKS_VERSION);
+        PeerRef peer_ref{GetPeerRef(pfrom->GetId())};
+        const uint64_t cmpct_version = GetCmpctBlocksVersion(); // MWEB
+        MakeAndPushMessage(*pfrom, NetMsgType::SENDCMPCT, /*high_bandwidth=*/true, /*version=*/cmpct_version);
         // save BIP152 bandwidth state: we select peer to be high-bandwidth
         pfrom->m_bip152_highbandwidth_to = true;
         lNodesAnnouncingHeaderAndIDs.push_back(pfrom->GetId());
@@ -1418,8 +1465,11 @@ void PeerManagerImpl::MaybeSetPeerAsAnnouncingHeaderAndIDs(NodeId nodeid)
     if (nodeid_was_appended && lNodesAnnouncingHeaderAndIDs.size() > 3) {
         // As per BIP152, we only get 3 of our peers to announce
         // blocks using compact encodings.
-        m_connman.ForNode(lNodesAnnouncingHeaderAndIDs.front(), [this](CNode* pnodeStop) {
-            MakeAndPushMessage(*pnodeStop, NetMsgType::SENDCMPCT, /*high_bandwidth=*/false, /*version=*/CMPCTBLOCKS_VERSION);
+        m_connman.ForNode(lNodesAnnouncingHeaderAndIDs.front(), [this](CNode* pnodeStop) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
+            AssertLockHeld(::cs_main);
+            PeerRef peer_ref{GetPeerRef(pnodeStop->GetId())};
+            const uint64_t cmpct_version = GetCmpctBlocksVersion(); // MWEB
+            MakeAndPushMessage(*pnodeStop, NetMsgType::SENDCMPCT, /*high_bandwidth=*/false, /*version=*/cmpct_version);
             // save BIP152 bandwidth state: we select peer to be low-bandwidth
             pnodeStop->m_bip152_highbandwidth_to = false;
             return true;
@@ -1603,6 +1653,11 @@ void PeerManagerImpl::FindNextBlocks(std::vector<const CBlockIndex*>& vBlocks, c
                 return;
             }
 
+            if (!CanServeMWEB(peer) && DeploymentActiveAt(*pindex, m_chainman, Consensus::DEPLOYMENT_MWEB)) { // MWEB
+                // We wouldn't download this block or its descendants from this peer.
+                return;
+            }
+
             if (pindex->nStatus & BLOCK_HAVE_DATA || (activeChain && activeChain->Contains(*pindex))) {
                 if (activeChain && pindex->HaveNumChainTxs()) {
                     state->pindexLastCommonBlock = pindex;
@@ -1715,6 +1770,10 @@ void PeerManagerImpl::InitializeNode(const CNode& node, ServiceFlags our_service
     }
 
     PeerRef peer = std::make_shared<Peer>(nodeid, our_services, node.IsInboundConn());
+    peer->m_mweb.m_serve_credits = m_opts.mweb_serve_burst;
+    peer->m_mweb.m_serve_credit_timestamp = NodeClock::now();
+    peer->m_mweb.m_credit_denies_rolling = 0;
+    peer->m_mweb.m_credit_deny_window_start = NodeClock::now();
     {
         LOCK(m_peer_mutex);
         m_peer_map.emplace_hint(m_peer_map.end(), nodeid, peer);
@@ -1789,6 +1848,12 @@ void PeerManagerImpl::FinalizeNode(const CNode& node)
         assert(peer != nullptr);
         m_wtxid_relay_peers -= peer->m_wtxid_relay;
         assert(m_wtxid_relay_peers >= 0);
+        // Peer is no longer scheduled on msghand; drop pending LIP-0006 serve work.
+        const size_t mweb_jobs{peer->m_mweb.m_serve_jobs.size()};
+        peer->m_mweb.m_serve_jobs.clear();
+        if (mweb_jobs > 0) {
+            m_mweb_serve_jobs_global -= mweb_jobs;
+        }
     }
     CNodeState *state = State(nodeid);
     assert(state != nullptr);
@@ -1866,13 +1931,62 @@ bool PeerManagerImpl::HasAllDesirableServiceFlags(ServiceFlags services) const
 
 ServiceFlags PeerManagerImpl::GetDesirableServiceFlags(ServiceFlags services) const
 {
+    ServiceFlags result{NODE_NONE};
     if (services & NODE_NETWORK_LIMITED) {
         // Limited peers are desirable when we are close to the tip.
         if (ApproximateBestBlockDepth() < NODE_NETWORK_LIMITED_ALLOW_CONN_BLOCKS) {
-            return ServiceFlags(NODE_NETWORK_LIMITED | NODE_WITNESS);
+            result = ServiceFlags(NODE_NETWORK_LIMITED | NODE_WITNESS);
         }
     }
-    return ServiceFlags(NODE_NETWORK | NODE_WITNESS);
+    if (!result) {
+        result = ServiceFlags(NODE_NETWORK | NODE_WITNESS);
+    }
+
+    if (m_connman.GetLocalServices() & NODE_MWEB) {
+        LOCK(cs_main);
+        const CBlockIndex* pindex{m_chainman.ActiveTip()};
+        if (pindex && DeploymentActiveAt(*pindex, m_chainman, Consensus::DEPLOYMENT_MWEB)) {
+            result = ServiceFlags(static_cast<uint64_t>(result) | NODE_MWEB);
+        }
+    }
+    return result;
+}
+
+void PeerManagerImpl::UpdateLocalMwebServices(const CBlockIndex* pindex)
+{
+    if (!pindex) return;
+
+    if (m_chainman.GetConsensus().vDeployments[Consensus::DEPLOYMENT_MWEB].nStartTime == Consensus::BIP9Deployment::NEVER_ACTIVE) {
+        m_connman.RemoveLocalServices(ServiceFlags(NODE_MWEB | NODE_MWEB_LIGHT_CLIENT));
+        return;
+    }
+
+    // NODE_MWEB is always supported once set at init; never clear it on inactive tips.
+    // Only NODE_MWEB_LIGHT_CLIENT tracks serve policy (-mwebserve, -blocksonly, upload limits).
+    const bool had_mweb{static_cast<bool>(m_connman.GetLocalServices() & NODE_MWEB)};
+    if (!had_mweb) {
+        m_connman.AddLocalServices(NODE_MWEB);
+    }
+
+    const bool mweb_active{
+        DeploymentActiveAt(*pindex, m_chainman, Consensus::DEPLOYMENT_MWEB) ||
+        DeploymentActiveAfter(pindex, m_chainman.GetConsensus(), Consensus::DEPLOYMENT_MWEB,
+                                m_chainman.m_versionbitscache)};
+    if (mweb_active && !had_mweb) {
+        // Peers may have connected before MWEB was advertised; re-announce compact-block support.
+        m_connman.ForEachNode([this](CNode* pnode) {
+            if (pnode->GetCommonVersion() >= SHORT_IDS_BLOCKS_VERSION) {
+                MakeAndPushMessage(*pnode, NetMsgType::SENDCMPCT, /*high_bandwidth=*/false, /*version=*/GetCmpctBlocksVersion());
+            }
+        });
+    }
+
+    const ServiceFlags light{CanServeMWEBLightClient() ? NODE_MWEB_LIGHT_CLIENT : NODE_NONE};
+    if (light) {
+        m_connman.AddLocalServices(NODE_MWEB_LIGHT_CLIENT);
+    } else {
+        m_connman.RemoveLocalServices(NODE_MWEB_LIGHT_CLIENT);
+    }
 }
 
 PeerRef PeerManagerImpl::GetPeerRef(NodeId id) const
@@ -2043,7 +2157,9 @@ void PeerManagerImpl::MaybePunishNodeForBlock(NodeId nodeid, const BlockValidati
     // The node is providing invalid data:
     case BlockValidationResult::BLOCK_CONSENSUS:
     case BlockValidationResult::BLOCK_MUTATED:
-        if (!via_compact_block) {
+        // MWEB: BIP 152 exemption does not cover MWEB bodies (not committed by
+        // the header); see MWEB::Node::IsPunishableCompactBlockReject.
+        if (!via_compact_block || MWEB::Node::IsPunishableCompactBlockReject(state)) {
             if (peer) Misbehaving(*peer, message);
             return;
         }
@@ -2100,6 +2216,11 @@ util::Expected<void, std::string> PeerManagerImpl::FetchBlock(NodeId peer_id, co
     // Ignore pre-segwit peers
     if (!CanServeWitnesses(*peer)) return util::Unexpected{"Pre-SegWit peer"};
 
+    const bool need_mweb{DeploymentActiveAt(block_index, m_chainman, Consensus::DEPLOYMENT_MWEB)};
+    if (need_mweb && !CanServeMWEB(*peer)) {
+        return util::Unexpected{"Peer cannot serve MWEB block data"};
+    }
+
     // Forget about all prior requests
     RemoveBlockRequest(block_index.GetBlockHash(), std::nullopt);
 
@@ -2108,7 +2229,8 @@ util::Expected<void, std::string> PeerManagerImpl::FetchBlock(NodeId peer_id, co
 
     // Construct message to request the block
     const uint256& hash{block_index.GetBlockHash()};
-    std::vector<CInv> invs{CInv(MSG_BLOCK | MSG_WITNESS_FLAG, hash)};
+    const uint32_t fetch_flags{GetFetchFlags(*peer, &block_index)};
+    std::vector<CInv> invs{CInv(MSG_BLOCK | fetch_flags, hash)};
 
     // Send block request message to the peer
     bool success = m_connman.ForNode(peer_id, [this, &invs](CNode* node) {
@@ -2118,9 +2240,51 @@ util::Expected<void, std::string> PeerManagerImpl::FetchBlock(NodeId peer_id, co
 
     if (!success) return util::Unexpected{"Peer not fully connected"};
 
-    LogDebug(BCLog::NET, "Requesting block %s from peer=%d\n",
-                 hash.ToString(), peer_id);
+    LogDebug(BCLog::NET, "Requesting block %s from peer=%d%s\n",
+                 hash.ToString(), peer_id, (fetch_flags & MSG_MWEB_FLAG) ? " (MWEB)" : "");
     return {};
+}
+
+util::Expected<void, std::string> PeerManagerImpl::FetchBlockFromCapablePeer(const CBlockIndex& block_index)
+{
+    if (m_chainman.m_blockman.LoadingBlocks()) return util::Unexpected{"Loading blocks ..."};
+
+    const bool need_mweb{WITH_LOCK(::cs_main, return DeploymentActiveAt(block_index, m_chainman, Consensus::DEPLOYMENT_MWEB))};
+
+    std::vector<NodeId> outbound_ids;
+    std::vector<NodeId> inbound_ids;
+    for (const PeerRef& peer : GetAllPeers()) {
+        if (!CanServeWitnesses(*peer)) continue;
+        if (need_mweb && !CanServeMWEB(*peer)) continue;
+        if (peer->m_is_inbound) {
+            inbound_ids.push_back(peer->m_id);
+        } else {
+            outbound_ids.push_back(peer->m_id);
+        }
+    }
+
+    if (outbound_ids.empty() && inbound_ids.empty()) {
+        if (need_mweb) {
+            return util::Unexpected{"No connected NODE_MWEB peer available to fetch snapshot base block"};
+        }
+        return util::Unexpected{"No connected peer available to fetch block"};
+    }
+
+    std::string last_error;
+    auto try_peers = [&](const std::vector<NodeId>& ids) {
+        for (const NodeId peer_id : ids) {
+            if (const auto res{FetchBlock(peer_id, block_index)}; res) {
+                return true;
+            } else {
+                last_error = res.error();
+            }
+        }
+        return false;
+    };
+    if (try_peers(outbound_ids) || try_peers(inbound_ids)) {
+        return {};
+    }
+    return util::Unexpected{last_error.empty() ? "Unable to fetch block from any capable peer" : last_error};
 }
 
 std::unique_ptr<PeerManager> PeerManager::make(CConnman& connman, AddrMan& addrman,
@@ -2152,6 +2316,38 @@ PeerManagerImpl::PeerManagerImpl(CConnman& connman, AddrMan& addrman,
     if (opts.reconcile_txs) {
         m_txreconciliation = std::make_unique<TxReconciliationTracker>(TXRECONCILIATION_VERSION);
     }
+
+    node::MWEBServeHost mweb_host{
+        m_chainman,
+        m_connman,
+        node::MWEBServePolicy{
+            m_opts.mweb_serve,
+            m_opts.mweb_serve_in_blocksonly,
+            m_opts.ignore_incoming_txs,
+            m_opts.mweb_serve_burst,
+        },
+        m_mweb_serve_jobs_global,
+        m_mweb_replay_mutex,
+        m_opts.mweb_serve_material_budget,
+        m_opts.mweb_serve_material_leaf_ops,
+        m_opts.mweb_serve_credit_deny_disconnect,
+        [this](CNode& node, const std::string& reason) {
+            if (const auto peer = GetPeerRef(node.GetId())) {
+                Misbehaving(*peer, reason);
+            }
+        },
+        [this](CNode& node, MWEBLeafsetMsg msg) {
+            MakeAndPushMessage(node, NetMsgType::MWEBLEAFSET, std::move(msg));
+        },
+        [this](CNode& node, MWEBUTXOsMsg msg) {
+            MakeAndPushMessage(node, NetMsgType::MWEBUTXOS, std::move(msg));
+        },
+        [this](CNode& node, CMerkleBlockWithMWEB msg) {
+            MakeAndPushMessage(node, NetMsgType::MWEBHEADER, std::move(msg));
+        },
+        static_cast<int>(NODE_NETWORK_LIMITED_MIN_BLOCKS) + 2, // same race buffer as ProcessGetBlockData
+    };
+    m_mweb_serve_engine = std::make_unique<node::MWEBServeEngine>(std::move(mweb_host));
 }
 
 void PeerManagerImpl::StartScheduledTasks(CScheduler& scheduler)
@@ -2228,6 +2424,38 @@ void PeerManagerImpl::BlockDisconnected(const std::shared_ptr<const CBlock> &blo
     m_txdownloadman.BlockDisconnected();
 }
 
+/** True when this peer's session is BIP324 v2 (short-id payload max applies to block bodies). */
+static bool PeerTransportIsV2(const CNode& node)
+{
+    return node.m_transport && node.m_transport->GetInfo().transport_type == TransportProtocolType::V2;
+}
+
+/**
+ * MWEB: Whether a block or compact block message fits this peer's transport. Consensus may
+ * accept blocks up to MAX_BLOCK_SERIALIZED_SIZE_WITH_MWEB, and compact blocks carry the whole
+ * MWEB block, but BIP324 payloads cannot exceed MAX_BLOCK_SERIALIZED_SIZE_BIP324. A message
+ * that doesn't fit would stay at the head of the send queue and stall the connection.
+ */
+static bool BlockMessageFitsPeer(const CNode& node, size_t serialized_size)
+{
+    return !PeerTransportIsV2(node) || !ExceedsBip324BlockPayload(serialized_size);
+}
+
+/**
+ * Refuse to send an oversized requested block body on BIP324. Peers must fetch those bodies over v1.
+ * Disconnect the peer, so repeated requests can't make us read the block from disk again and again.
+ */
+static bool CanSendBlockBodyOnPeer(CNode& node, size_t serialized_size, const uint256& hash)
+{
+    if (BlockMessageFitsPeer(node, serialized_size)) {
+        return true;
+    }
+    LogDebug(BCLog::NET, "requested block %s (%u bytes) over BIP324; body exceeds BIP324 limit (%u), request via a v1 peer, %s",
+             hash.ToString(), static_cast<unsigned>(serialized_size), MAX_BLOCK_SERIALIZED_SIZE_BIP324, node.DisconnectMsg());
+    node.fDisconnect = true;
+    return false;
+}
+
 /**
  * Maintain state about the best-seen block and fast-announce a compact block
  * to compatible peers.
@@ -2246,7 +2474,7 @@ void PeerManagerImpl::NewPoWValidBlock(const CBlockIndex *pindex, const std::sha
 
     uint256 hashBlock(pblock->GetHash());
     const std::shared_future<CSerializedNetMsg> lazy_ser{
-        std::async(std::launch::deferred, [&] { return NetMsg::Make(NetMsgType::CMPCTBLOCK, *pcmpctblock); })};
+        std::async(std::launch::deferred, [&] { return NetMsg::Make(NetMsgType::CMPCTBLOCK, CmpctBlockSerParams()(*pcmpctblock)); })}; // MWEB
 
     {
         auto most_recent_block_txs = std::make_unique<std::map<GenTxid, CTransactionRef>>();
@@ -2277,6 +2505,8 @@ void PeerManagerImpl::NewPoWValidBlock(const CBlockIndex *pindex, const std::sha
                     hashBlock.ToString(), pnode->GetId());
 
             const CSerializedNetMsg& ser_cmpctblock{lazy_ser.get()};
+            // MWEB: SendMessages announces it with headers instead.
+            if (!BlockMessageFitsPeer(*pnode, ser_cmpctblock.data.size())) return;
             PushMessage(*pnode, ser_cmpctblock.Copy());
             state.pindexBestHeaderSent = pindex;
         }
@@ -2290,6 +2520,7 @@ void PeerManagerImpl::NewPoWValidBlock(const CBlockIndex *pindex, const std::sha
 void PeerManagerImpl::UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlockIndex *pindexFork, bool fInitialDownload)
 {
     SetBestBlock(pindexNew->nHeight, std::chrono::seconds{pindexNew->GetBlockTime()});
+    UpdateLocalMwebServices(pindexNew);
 
     // Don't relay inventory during initial block download.
     if (fInitialDownload) return;
@@ -2561,6 +2792,51 @@ void PeerManagerImpl::RelayAddress(NodeId originator,
     }
 }
 
+namespace {
+
+node::MWEBServePeerState MWEBPeerState(Peer& peer)
+{
+    return node::MakeMWEBServePeerState(peer.m_mweb);
+}
+
+} // namespace
+
+bool PeerManagerImpl::CanServeMWEBLightClient() const
+{
+    return m_mweb_serve_engine->CanServeLightClient();
+}
+
+void PeerManagerImpl::MaybeRefreshMwebLightClientServices()
+{
+    LOCK(cs_main);
+    const CBlockIndex* tip{m_chainman.ActiveTip()};
+    if (tip) UpdateLocalMwebServices(tip);
+}
+
+bool PeerManagerImpl::ProcessOneMWEBServeStep(CNode& node, Peer& peer)
+{
+    auto mweb_peer{MWEBPeerState(peer)};
+    return m_mweb_serve_engine->ProcessOneStep(node, mweb_peer);
+}
+
+void PeerManagerImpl::EnqueueMWEBLeafsetRequest(CNode& pfrom, Peer& peer, const CInv& inv)
+{
+    auto mweb_peer{MWEBPeerState(peer)};
+    m_mweb_serve_engine->EnqueueLeafset(pfrom, mweb_peer, inv);
+}
+
+void PeerManagerImpl::EnqueueMWEBHeaderRequest(CNode& pfrom, Peer& peer, const CInv& inv)
+{
+    auto mweb_peer{MWEBPeerState(peer)};
+    m_mweb_serve_engine->EnqueueHeader(pfrom, mweb_peer, inv);
+}
+
+void PeerManagerImpl::EnqueueMWEBUTXOsRequest(CNode& pfrom, Peer& peer, const GetMWEBUTXOsMsg& get_utxos)
+{
+    auto mweb_peer{MWEBPeerState(peer)};
+    m_mweb_serve_engine->EnqueueUTXOs(pfrom, mweb_peer, get_utxos);
+}
+
 void PeerManagerImpl::ProcessGetBlockData(CNode& pfrom, Peer& peer, const CInv& inv)
 {
     // First perform the stateless checks:
@@ -2647,10 +2923,11 @@ void PeerManagerImpl::ProcessGetBlockData(CNode& pfrom, Peer& peer, const CInv& 
     std::shared_ptr<const CBlock> pblock;
     if (a_recent_block && a_recent_block->GetHash() == inv.hash) {
         pblock = a_recent_block;
-    } else if (inv.IsMsgWitnessBlk()) {
-        // Fast-path: in this case it is possible to serve the block directly from disk,
-        // as the network format matches the format on disk
+    } else if (inv.IsMsgMWEBBlk()) { // MWEB: fast-path from disk includes extension block data
         if (const auto block_data{m_chainman.m_blockman.ReadRawBlock(block_pos)}) {
+            if (!CanSendBlockBodyOnPeer(pfrom, block_data->size(), inv.hash)) {
+                return;
+            }
             MakeAndPushMessage(pfrom, NetMsgType::BLOCK, std::span{*block_data});
         } else {
             if (WITH_LOCK(m_chainman.GetMutex(), return m_chainman.m_blockman.IsBlockPruned(*pindex))) {
@@ -2662,6 +2939,23 @@ void PeerManagerImpl::ProcessGetBlockData(CNode& pfrom, Peer& peer, const CInv& 
             return;
         }
         // Don't set pblock as we've sent the block
+    } else if (inv.IsMsgWitnessBlk()) {
+        // MWEB: witness blocks on disk include extension block data; read and strip MWEB when requested.
+        std::shared_ptr<CBlock> pblockRead = std::make_shared<CBlock>();
+        if (!m_chainman.m_blockman.ReadBlock(*pblockRead, block_pos, inv.hash)) {
+            if (WITH_LOCK(m_chainman.GetMutex(), return m_chainman.m_blockman.IsBlockPruned(*pindex))) {
+                LogDebug(BCLog::NET, "Block was pruned before it could be read, %s", pfrom.DisconnectMsg());
+            } else {
+                LogError("Cannot load block from disk, %s", pfrom.DisconnectMsg());
+            }
+            pfrom.fDisconnect = true;
+            return;
+        }
+        if (!CanSendBlockBodyOnPeer(pfrom, ::GetSerializeSize(TX_NO_MWEB(*pblockRead)), inv.hash)) {
+            return;
+        }
+        MakeAndPushMessage(pfrom, NetMsgType::BLOCK, TX_NO_MWEB(*pblockRead));
+        return;
     } else {
         // Send block from disk
         std::shared_ptr<CBlock> pblockRead = std::make_shared<CBlock>();
@@ -2678,9 +2972,17 @@ void PeerManagerImpl::ProcessGetBlockData(CNode& pfrom, Peer& peer, const CInv& 
     }
     if (pblock) {
         if (inv.IsMsgBlk()) {
-            MakeAndPushMessage(pfrom, NetMsgType::BLOCK, TX_NO_WITNESS(*pblock));
+            MakeAndPushMessage(pfrom, NetMsgType::BLOCK, TX_NO_WITNESS_NO_MWEB(*pblock)); // MWEB
         } else if (inv.IsMsgWitnessBlk()) {
-            MakeAndPushMessage(pfrom, NetMsgType::BLOCK, TX_WITH_WITNESS(*pblock));
+            if (!CanSendBlockBodyOnPeer(pfrom, ::GetSerializeSize(TX_NO_MWEB(*pblock)), inv.hash)) {
+                return;
+            }
+            MakeAndPushMessage(pfrom, NetMsgType::BLOCK, TX_NO_MWEB(*pblock)); // MWEB
+        } else if (inv.IsMsgMWEBBlk()) {
+            if (!CanSendBlockBodyOnPeer(pfrom, ::GetSerializeSize(TX_WITH_WITNESS(*pblock)), inv.hash)) {
+                return;
+            }
+            MakeAndPushMessage(pfrom, NetMsgType::BLOCK, TX_WITH_WITNESS(*pblock)); // MWEB
         } else if (inv.IsMsgFilteredBlk()) {
             bool sendMerkleBlock = false;
             CMerkleBlock merkleBlock;
@@ -2700,7 +3002,7 @@ void PeerManagerImpl::ProcessGetBlockData(CNode& pfrom, Peer& peer, const CInv& 
                 // Thus, the protocol spec specified allows for us to provide duplicate txn here,
                 // however we MUST always provide at least what the remote peer needs
                 for (const auto& [tx_idx, _] : merkleBlock.vMatchedTxn)
-                    MakeAndPushMessage(pfrom, NetMsgType::TX, TX_NO_WITNESS(*pblock->vtx[tx_idx]));
+                    MakeAndPushMessage(pfrom, NetMsgType::TX, TX_NO_WITNESS_NO_MWEB(*pblock->vtx[tx_idx])); // MWEB
             }
             // else
             // no response
@@ -2711,13 +3013,16 @@ void PeerManagerImpl::ProcessGetBlockData(CNode& pfrom, Peer& peer, const CInv& 
             // instead we respond with the full, non-compact block.
             if (can_direct_fetch && pindex->nHeight >= tip->nHeight - MAX_CMPCTBLOCK_DEPTH) {
                 if (a_recent_compact_block && a_recent_compact_block->header.GetHash() == inv.hash) {
-                    MakeAndPushMessage(pfrom, NetMsgType::CMPCTBLOCK, *a_recent_compact_block);
+                    if (!CanSendBlockBodyOnPeer(pfrom, ::GetSerializeSize(CmpctBlockSerParams()(*a_recent_compact_block)), inv.hash)) return; // MWEB
+                    MakeAndPushMessage(pfrom, NetMsgType::CMPCTBLOCK, CmpctBlockSerParams()(*a_recent_compact_block)); // MWEB
                 } else {
                     CBlockHeaderAndShortTxIDs cmpctblock{*pblock, m_rng.rand64()};
-                    MakeAndPushMessage(pfrom, NetMsgType::CMPCTBLOCK, cmpctblock);
+                    if (!CanSendBlockBodyOnPeer(pfrom, ::GetSerializeSize(CmpctBlockSerParams()(cmpctblock)), inv.hash)) return; // MWEB
+                    MakeAndPushMessage(pfrom, NetMsgType::CMPCTBLOCK, CmpctBlockSerParams()(cmpctblock)); // MWEB
                 }
             } else {
-                MakeAndPushMessage(pfrom, NetMsgType::BLOCK, TX_WITH_WITNESS(*pblock));
+                if (!CanSendBlockBodyOnPeer(pfrom, ::GetSerializeSize(CmpctBlockSerParams()(*pblock)), inv.hash)) return; // MWEB
+                MakeAndPushMessage(pfrom, NetMsgType::BLOCK, CmpctBlockSerParams()(*pblock)); // MWEB
             }
         }
     }
@@ -2789,8 +3094,8 @@ void PeerManagerImpl::ProcessGetData(CNode& pfrom, Peer& peer, const std::atomic
 
         if (auto tx{FindTxForGetData(*tx_relay, ToGenTxid(inv))}) {
             // WTX and WITNESS_TX imply we serialize with witness
-            const auto maybe_with_witness = (inv.IsMsgTx() ? TX_NO_WITNESS : TX_WITH_WITNESS);
-            MakeAndPushMessage(pfrom, NetMsgType::TX, maybe_with_witness(*tx));
+            TransactionSerParams ser_params = inv.IsMsgTx() ? TX_NO_WITNESS_NO_MWEB : (CanServeMWEB(peer) ? TX_WITH_WITNESS : TX_NO_MWEB); // MWEB
+            MakeAndPushMessage(pfrom, NetMsgType::TX, ser_params(*tx));
             m_mempool.RemoveUnbroadcastTx(tx->GetHash());
         } else {
             vNotFound.push_back(inv);
@@ -2801,8 +3106,18 @@ void PeerManagerImpl::ProcessGetData(CNode& pfrom, Peer& peer, const std::atomic
     // expensive to process.
     if (it != peer.m_getdata_requests.end() && !pfrom.fPauseSend) {
         const CInv &inv = *it++;
-        if (inv.IsGenBlkMsg()) {
+        // MSG_MWEB_HEADER is a GenBlkMsg() but must use the MWEB serve queue, not ProcessGetBlockData.
+        if (inv.IsMsgMWEBHeader()) { // MWEB
+            EnqueueMWEBHeaderRequest(pfrom, peer, inv);
+        } else if (inv.IsMsgMWEBLeafset()) { // MWEB
+            EnqueueMWEBLeafsetRequest(pfrom, peer, inv);
+        } else if (inv.IsGenBlkMsg()) {
             ProcessGetBlockData(pfrom, peer, inv);
+        }
+        if (inv.IsMsgMWEBLeafset() || inv.IsMsgMWEBHeader()) {
+            for (unsigned n = 0; n < 32 && !peer.m_mweb.m_serve_jobs.empty(); ++n) {
+                ProcessOneMWEBServeStep(pfrom, peer);
+            }
         }
         // else: If the first item on the queue is an unknown type, we erase it
         // and continue processing the queue on the next call.
@@ -2832,11 +3147,32 @@ void PeerManagerImpl::ProcessGetData(CNode& pfrom, Peer& peer, const std::atomic
     }
 }
 
-uint32_t PeerManagerImpl::GetFetchFlags(const Peer& peer) const
+uint64_t PeerManagerImpl::GetCmpctBlocksVersion() const
 {
+    return (m_connman.GetLocalServices() & NODE_MWEB) ? CMPCTBLOCKS_VERSION_MWEB : CMPCTBLOCKS_VERSION;
+}
+
+TransactionSerParams PeerManagerImpl::CmpctBlockSerParams() const
+{
+    // Version 3 compact blocks carry the MWEB extension block; version 2 must not.
+    return GetCmpctBlocksVersion() == CMPCTBLOCKS_VERSION_MWEB ? TX_WITH_WITNESS : TX_NO_MWEB;
+}
+
+uint32_t PeerManagerImpl::GetFetchFlags(const Peer& peer, const CBlockIndex* pindex) const
+{
+    AssertLockHeld(cs_main);
     uint32_t nFetchFlags = 0;
     if (CanServeWitnesses(peer)) {
         nFetchFlags |= MSG_WITNESS_FLAG;
+    }
+    // Request MWEB payload when the peer can serve it. For a specific block,
+    // only include MSG_MWEB_FLAG if that header is post-activation. Do not
+    // require the local node to have already advertised NODE_MWEB — a
+    // headers-only AssumeUTXO node still has a pre-MWEB validated tip.
+    if (CanServeMWEB(peer)) {
+        if (!pindex || DeploymentActiveAt(*pindex, m_chainman, Consensus::DEPLOYMENT_MWEB)) {
+            nFetchFlags |= MSG_MWEB_FLAG;
+        }
     }
     return nFetchFlags;
 }
@@ -3108,7 +3444,8 @@ void PeerManagerImpl::HeadersDirectFetchBlocks(CNode& pfrom, const Peer& peer, c
         while (pindexWalk && !m_chainman.ActiveChain().Contains(*pindexWalk) && vToFetch.size() <= MAX_BLOCKS_IN_TRANSIT_PER_PEER) {
             if (!(pindexWalk->nStatus & BLOCK_HAVE_DATA) &&
                     !IsBlockRequested(pindexWalk->GetBlockHash()) &&
-                    (!DeploymentActiveAt(*pindexWalk, m_chainman, Consensus::DEPLOYMENT_SEGWIT) || CanServeWitnesses(peer))) {
+                    (!DeploymentActiveAt(*pindexWalk, m_chainman, Consensus::DEPLOYMENT_SEGWIT) || CanServeWitnesses(peer)) &&
+                    (!DeploymentActiveAt(*pindexWalk, m_chainman, Consensus::DEPLOYMENT_MWEB) || CanServeMWEB(peer))) { // MWEB
                 // We don't have this block, and it's not yet in flight.
                 vToFetch.push_back(pindexWalk);
             }
@@ -3131,7 +3468,7 @@ void PeerManagerImpl::HeadersDirectFetchBlocks(CNode& pfrom, const Peer& peer, c
                     // Can't download any more from this peer
                     break;
                 }
-                uint32_t nFetchFlags = GetFetchFlags(peer);
+                uint32_t nFetchFlags = GetFetchFlags(peer, pindex);
                 vGetData.emplace_back(MSG_BLOCK | nFetchFlags, pindex->GetBlockHash());
                 BlockRequested(pfrom.GetId(), *pindex);
                 LogDebug(BCLog::NET, "Requesting block %s from peer=%d",
@@ -3749,7 +4086,8 @@ void PeerManagerImpl::ProcessCompactBlockTxns(CNode& pfrom, Peer& peer, const Bl
                 // peer for the same block. We let the full block download below continue under the same m_downloading_since
                 // timer.
                 std::vector<CInv> invs;
-                invs.emplace_back(MSG_BLOCK | GetFetchFlags(peer), block_transactions.blockhash);
+                const CBlockIndex* req_index{m_chainman.m_blockman.LookupBlockIndex(block_transactions.blockhash)};
+                invs.emplace_back(MSG_BLOCK | GetFetchFlags(peer, req_index), block_transactions.blockhash);
                 MakeAndPushMessage(pfrom, NetMsgType::GETDATA, invs);
             } else {
                 RemoveBlockRequest(block_transactions.blockhash, pfrom.GetId());
@@ -3923,6 +4261,9 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
 
         pfrom.m_has_all_wanted_services = HasAllDesirableServiceFlags(nServices);
         peer.m_their_services = nServices;
+        if (nServices & NODE_MWEB) { // MWEB
+            peer.m_mweb.m_have_mweb = true;
+        }
         pfrom.SetAddrLocal(addrMe);
         {
             LOCK(pfrom.m_subver_mutex);
@@ -4126,12 +4467,7 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
         }
 
         if (pfrom.GetCommonVersion() >= SHORT_IDS_BLOCKS_VERSION) {
-            // Tell our peer we are willing to provide version 2 cmpctblocks.
-            // However, we do not request new block announcements using
-            // cmpctblock messages.
-            // We send this to non-NODE NETWORK peers as well, because
-            // they may wish to request compact blocks from us
-            MakeAndPushMessage(pfrom, NetMsgType::SENDCMPCT, /*high_bandwidth=*/false, /*version=*/CMPCTBLOCKS_VERSION);
+            MakeAndPushMessage(pfrom, NetMsgType::SENDCMPCT, /*high_bandwidth=*/false, /*version=*/GetCmpctBlocksVersion());
         }
 
         if (m_txreconciliation) {
@@ -4175,7 +4511,7 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
         }
 
         // Only support compact block relay with witnesses
-        if (sendcmpct_version != CMPCTBLOCKS_VERSION) return;
+        if (sendcmpct_version != GetCmpctBlocksVersion()) return; // MWEB
 
         LOCK(cs_main);
         CNodeState* nodestate = State(pfrom.GetId());
@@ -4327,6 +4663,16 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
             LogDebug(BCLog::PRIVBROADCAST, "Ignoring incoming message '%s', %s", msg_type, pfrom.LogPeer());
             return;
         }
+    }
+
+    if (msg_type == NetMsgType::GETMWEBUTXOS) { // MWEB
+        GetMWEBUTXOsMsg get_utxos;
+        vRecv >> get_utxos;
+        EnqueueMWEBUTXOsRequest(pfrom, peer, get_utxos);
+        for (unsigned n = 0; n < 32 && !peer.m_mweb.m_serve_jobs.empty(); ++n) {
+            ProcessOneMWEBServeStep(pfrom, peer);
+        }
+        return;
     }
 
     if (msg_type == NetMsgType::ADDR || msg_type == NetMsgType::ADDRV2) {
@@ -4587,6 +4933,7 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
         }
 
         FlatFilePos block_pos{};
+        uint32_t inv_type = MSG_WITNESS_BLOCK;
         {
             LOCK(cs_main);
 
@@ -4598,6 +4945,9 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
 
             if (pindex->nHeight >= m_chainman.ActiveChain().Height() - MAX_BLOCKTXN_DEPTH) {
                 block_pos = pindex->GetBlockPos();
+            } else if (GetCmpctBlocksVersion() == CMPCTBLOCKS_VERSION_MWEB &&
+                       DeploymentActiveAt(*pindex, m_chainman, Consensus::DEPLOYMENT_MWEB)) { // MWEB
+                inv_type = MSG_MWEB_BLOCK;
             }
         }
 
@@ -4620,7 +4970,7 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
         // expensive disk reads, because it will require the peer to
         // actually receive all the data read from disk over the network.
         LogDebug(BCLog::NET, "Peer %d sent us a getblocktxn for a block > %i deep\n", pfrom.GetId(), MAX_BLOCKTXN_DEPTH);
-        CInv inv{MSG_WITNESS_BLOCK, req.blockhash};
+        CInv inv{inv_type, req.blockhash};
         WITH_LOCK(peer.m_getdata_requests_mutex, peer.m_getdata_requests.push_back(inv));
         // The message processing loop will go around again (without pausing) and we'll respond then
         return;
@@ -4802,7 +5152,7 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
         }
 
         CBlockHeaderAndShortTxIDs cmpctblock;
-        vRecv >> cmpctblock;
+        vRecv >> CmpctBlockSerParams()(cmpctblock); // MWEB
 
         bool received_new_header = false;
         const auto blockhash = cmpctblock.header.GetHash();
@@ -4895,7 +5245,7 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
                 // We requested this block for some reason, but our mempool will probably be useless
                 // so we just grab the block via normal getdata
                 std::vector<CInv> vInv(1);
-                vInv[0] = CInv(MSG_BLOCK | GetFetchFlags(peer), blockhash);
+                vInv[0] = CInv(MSG_BLOCK | GetFetchFlags(peer, pindex), blockhash);
                 MakeAndPushMessage(pfrom, NetMsgType::GETDATA, vInv);
             }
             return;
@@ -4932,7 +5282,7 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
                     if (first_in_flight)  {
                         // Duplicate txindexes, the block is now in-flight, so just request it
                         std::vector<CInv> vInv(1);
-                        vInv[0] = CInv(MSG_BLOCK | GetFetchFlags(peer), blockhash);
+                        vInv[0] = CInv(MSG_BLOCK | GetFetchFlags(peer, pindex), blockhash);
                         MakeAndPushMessage(pfrom, NetMsgType::GETDATA, vInv);
                     } else {
                         // Give up for this peer and wait for other peer(s)
@@ -4992,7 +5342,7 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
                 // We requested this block, but its far into the future, so our
                 // mempool will probably be useless - request the block normally
                 std::vector<CInv> vInv(1);
-                vInv[0] = CInv(MSG_BLOCK | GetFetchFlags(peer), blockhash);
+                vInv[0] = CInv(MSG_BLOCK | GetFetchFlags(peer, pindex), blockhash);
                 MakeAndPushMessage(pfrom, NetMsgType::GETDATA, vInv);
                 return;
             } else {
@@ -5416,6 +5766,50 @@ bool PeerManagerImpl::MaybeDisconnectForTxRelayCapacity(CNode& node, const std::
     return true;
 }
 
+bool PeerManagerImpl::ProcessBackgroundWork()
+{
+    AssertLockHeld(g_msgproc_mutex);
+    if (node::GetMWEBHistoricalViewCache().ProcessOneAssumeUTXOWarmStep()) {
+        return true;
+    }
+    // One window-warm step when AssumeUTXO idle (budgeted window warm); do not block serve loop.
+    const bool warmed{node::GetMWEBHistoricalViewCache().ProcessOneWindowWarmStep(m_chainman)};
+    bool did_work{warmed};
+    for (unsigned step = 0; step < 128; ++step) {
+        NodeId target{node::NO_BACKGROUND_SERVE_PEER};
+        {
+            LOCK(m_peer_mutex);
+            std::vector<NodeId> pending;
+            pending.reserve(m_peer_map.size());
+            for (const auto& [nodeid, peer] : m_peer_map) {
+                if (!peer->m_mweb.m_serve_jobs.empty()) {
+                    pending.push_back(nodeid);
+                }
+            }
+            target = node::SelectNextRotatingServePeer(pending, m_last_bg_serve_peer);
+        }
+        if (target == node::NO_BACKGROUND_SERVE_PEER) break;
+        // The step takes cs_main, which must not nest inside ForNode's m_nodes_mutex
+        // (NewPoWValidBlock takes them in the other order), so it runs on a held reference.
+        CNode* pnode{nullptr};
+        m_connman.ForNode(target, [&](CNode* candidate) {
+            if (candidate->fDisconnect) return false;
+            pnode = candidate->AddRef();
+            return true;
+        });
+        if (!pnode) continue;
+        PeerRef pref{GetPeerRef(target)};
+        if (pref && !pref->m_mweb.m_serve_jobs.empty()) {
+            ProcessOneMWEBServeStep(*pnode, *pref);
+            LOCK(m_peer_mutex);
+            m_last_bg_serve_peer = target;
+            did_work = true;
+        }
+        pnode->Release();
+    }
+    return did_work;
+}
+
 bool PeerManagerImpl::ProcessMessages(CNode& node, std::atomic<bool>& interruptMsgProc)
 {
     AssertLockNotHeld(m_tx_download_mutex);
@@ -5428,6 +5822,9 @@ bool PeerManagerImpl::ProcessMessages(CNode& node, std::atomic<bool>& interruptM
     // For outbound connections, ensure that the initial VERSION message
     // has been sent first before processing any incoming messages
     if (!node.IsInboundConn() && !peer.m_outbound_version_message_sent) return false;
+
+    // Re-evaluate NODE_MWEB_LIGHT_CLIENT when upload budget / policy changes.
+    MaybeRefreshMwebLightClientServices();
 
     {
         LOCK(peer.m_getdata_requests_mutex);
@@ -5442,6 +5839,11 @@ bool PeerManagerImpl::ProcessMessages(CNode& node, std::atomic<bool>& interruptM
         return false;
 
     if (processed_orphan) return true;
+
+    if (!peer.m_mweb.m_serve_jobs.empty()) {
+        ProcessOneMWEBServeStep(node, peer);
+        if (!peer.m_mweb.m_serve_jobs.empty()) return true;
+    }
 
     // this maintains the order of responses
     // and prevents m_getdata_requests to grow unbounded
@@ -6249,17 +6651,22 @@ bool PeerManagerImpl::SendMessages(CNode& node)
                     {
                         LOCK(m_most_recent_block_mutex);
                         if (m_most_recent_block_hash == pBestIndex->GetBlockHash()) {
-                            cached_cmpctblock_msg = NetMsg::Make(NetMsgType::CMPCTBLOCK, *m_most_recent_compact_block);
+                            cached_cmpctblock_msg = NetMsg::Make(NetMsgType::CMPCTBLOCK, CmpctBlockSerParams()(*m_most_recent_compact_block)); // MWEB
                         }
                     }
-                    if (cached_cmpctblock_msg.has_value()) {
-                        PushMessage(node, std::move(cached_cmpctblock_msg.value()));
-                    } else {
+                    if (!cached_cmpctblock_msg.has_value()) {
                         CBlock block;
                         const bool ret{m_chainman.m_blockman.ReadBlock(block, *pBestIndex)};
                         assert(ret);
                         CBlockHeaderAndShortTxIDs cmpctblock{block, m_rng.rand64()};
-                        MakeAndPushMessage(node, NetMsgType::CMPCTBLOCK, cmpctblock);
+                        cached_cmpctblock_msg = NetMsg::Make(NetMsgType::CMPCTBLOCK, CmpctBlockSerParams()(cmpctblock)); // MWEB
+                    }
+                    if (BlockMessageFitsPeer(node, cached_cmpctblock_msg->data.size())) { // MWEB
+                        PushMessage(node, std::move(cached_cmpctblock_msg.value()));
+                    } else {
+                        LogDebug(BCLog::NET, "%s: compact block %s exceeds the BIP324 limit, sending header to peer=%d\n", __func__,
+                                vHeaders.front().GetHash().ToString(), node.GetId());
+                        MakeAndPushMessage(node, NetMsgType::HEADERS, TX_WITH_WITNESS(vHeaders));
                     }
                     state.pindexBestHeaderSent = pBestIndex;
                 } else if (peer.m_prefers_headers) {
@@ -6530,7 +6937,7 @@ bool PeerManagerImpl::SendMessages(CNode& node)
                     vToDownload, from_tip, historical_blocks->second);
             }
             for (const CBlockIndex *pindex : vToDownload) {
-                uint32_t nFetchFlags = GetFetchFlags(peer);
+                uint32_t nFetchFlags = GetFetchFlags(peer, pindex);
                 vGetData.emplace_back(MSG_BLOCK | nFetchFlags, pindex->GetBlockHash());
                 BlockRequested(node.GetId(), *pindex);
                 LogDebug(BCLog::NET, "Requesting block %s (%d) peer=%d\n", pindex->GetBlockHash().ToString(),
@@ -6550,7 +6957,7 @@ bool PeerManagerImpl::SendMessages(CNode& node)
         {
             LOCK(m_tx_download_mutex);
             for (const GenTxid& gtxid : m_txdownloadman.GetRequestsToSend(node.GetId(), current_time)) {
-                vGetData.emplace_back(gtxid.IsWtxid() ? MSG_WTX : (MSG_TX | GetFetchFlags(peer)), gtxid.ToUint256());
+                vGetData.emplace_back(gtxid.IsWtxid() ? MSG_WTX : (MSG_TX | GetFetchFlags(peer, nullptr)), gtxid.ToUint256());
                 if (vGetData.size() >= MAX_GETDATA_SZ) {
                     MakeAndPushMessage(node, NetMsgType::GETDATA, vGetData);
                     vGetData.clear();

@@ -15,6 +15,7 @@
 #include <httpserver.h>
 #include <index/blockfilterindex.h>
 #include <index/txindex.h>
+#include <mweb/mweb_rpc_serialization.h>
 #include <node/blockstorage.h>
 #include <node/context.h>
 #include <node/transaction.h>
@@ -469,12 +470,12 @@ static bool rest_block(const std::any& context,
     case RESTResponseFormat::BINARY: {
         req->WriteHeader("Cache-Control", REST_CACHE_IMMUTABLE);
         req->WriteHeader("Content-Type", "application/octet-stream");
-        req->WriteReply(HTTP_OK, *block_data);
+        req->WriteReply(HTTP_OK, block_part ? *block_data : MWEB::RPCRawBlock(*block_data));
         return true;
     }
 
     case RESTResponseFormat::HEX: {
-        const std::string strHex{HexStr(*block_data) + "\n"};
+        const std::string strHex{HexStr(block_part ? *block_data : MWEB::RPCRawBlock(*block_data)) + "\n"};
         req->WriteHeader("Cache-Control", REST_CACHE_IMMUTABLE);
         req->WriteHeader("Content-Type", "text/plain");
         req->WriteReply(HTTP_OK, strHex);
@@ -905,7 +906,11 @@ static bool rest_tx(const std::any& context, HTTPRequest* req, const std::string
     switch (rf) {
     case RESTResponseFormat::BINARY: {
         DataStream ssTx;
-        ssTx << TX_WITH_WITNESS(tx);
+        if (MWEB::RPCSerializeWithMWEB()) {
+            ssTx << TX_WITH_WITNESS(tx);
+        } else {
+            ssTx << TX_NO_MWEB(tx);
+        }
 
         req->WriteHeader("Cache-Control", REST_CACHE_NO_STORE);
         req->WriteHeader("Content-Type", "application/octet-stream");
@@ -915,7 +920,11 @@ static bool rest_tx(const std::any& context, HTTPRequest* req, const std::string
 
     case RESTResponseFormat::HEX: {
         DataStream ssTx;
-        ssTx << TX_WITH_WITNESS(tx);
+        if (MWEB::RPCSerializeWithMWEB()) {
+            ssTx << TX_WITH_WITNESS(tx);
+        } else {
+            ssTx << TX_NO_MWEB(tx);
+        }
 
         std::string strHex = HexStr(ssTx) + "\n";
         req->WriteHeader("Cache-Control", REST_CACHE_NO_STORE);

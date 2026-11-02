@@ -259,6 +259,32 @@ inline constexpr const char* CFCHECKPT{"cfcheckpt"};
  */
 inline constexpr const char* WTXIDRELAY{"wtxidrelay"};
 /**
+ * Contains a CMerkleBlockWithMWEB.
+ * Sent in response to a getdata message which requested a
+ * block using the inventory type MSG_MWEB_HEADER.
+ * @since protocol version 70017 as described by LIP-0006
+ */
+inline constexpr const char* MWEBHEADER{"mwebheader"}; // MWEB
+/**
+ * Contains a block hash and its serialized leafset.
+ * Sent in response to a getdata message which requested
+ * data using the inventory type MSG_MWEB_LEAFSET.
+ * @since protocol version 70017 as described by LIP-0006
+ */
+inline constexpr const char* MWEBLEAFSET{"mwebleafset"}; // MWEB
+/**
+ * getmwebutxos requests a variable number of consecutive
+ * MWEB utxos at the time of the provided block hash.
+ * @since protocol version 70017 as described by LIP-0006
+ */
+inline constexpr const char* GETMWEBUTXOS{"getmwebutxos"}; // MWEB
+/**
+ * Contains a list of MWEB UTXOs that were requested in
+ * a getmwebutxos message.
+ * @since protocol version 70017 as described by LIP-0006
+ */
+inline constexpr const char* MWEBUTXOS{"mwebutxos"}; // MWEB
+/**
  * Contains a 4-byte version number and an 8-byte salt.
  * The salt is used to compute short txids needed for efficient
  * txreconciliation, as described by BIP 330.
@@ -306,6 +332,10 @@ inline const std::array ALL_NET_MESSAGE_TYPES{std::to_array<std::string>({
     NetMsgType::GETCFCHECKPT,
     NetMsgType::CFCHECKPT,
     NetMsgType::WTXIDRELAY,
+    NetMsgType::MWEBHEADER, // MWEB
+    NetMsgType::MWEBLEAFSET, // MWEB
+    NetMsgType::GETMWEBUTXOS, // MWEB
+    NetMsgType::MWEBUTXOS, // MWEB
     NetMsgType::SENDTXRCNCL,
     NetMsgType::FEATURE,
 })};
@@ -341,7 +371,12 @@ enum ServiceFlags : uint64_t {
     // NODE_P2P_V2 means the node supports BIP324 transport
     NODE_P2P_V2 = (1 << 11),
 
-    // Bits 24-31 are reserved for temporary experiments. Just pick a bit that
+    // MWEB: NODE_MWEB_LIGHT_CLIENT indicates that a node can be asked for MWEB light client data.
+    NODE_MWEB_LIGHT_CLIENT = (1 << 23),
+    // MWEB: NODE_MWEB indicates that a node can be asked for blocks and transactions including MWEB data.
+    NODE_MWEB = (1 << 24),
+
+    // Bits 25-31 are reserved for temporary experiments. Just pick a bit that
     // isn't getting used, or one not being used much, and notify the
     // bitcoin-development mailing list. Remember that service bits are just
     // unauthenticated advertisements, so your code must be robust against
@@ -363,7 +398,7 @@ std::vector<std::string> serviceFlagsToStr(uint64_t flags);
  * should be updated appropriately to filter for nodes with
  * desired service flags (compatible with our new flags).
  */
-constexpr ServiceFlags SeedsServiceFlags() { return ServiceFlags(NODE_NETWORK | NODE_WITNESS); }
+constexpr ServiceFlags SeedsServiceFlags() { return ServiceFlags(NODE_NETWORK | NODE_WITNESS | NODE_MWEB); } // MWEB
 
 /**
  * Service flags we assume for addresses obtained from the DNS seeds and the
@@ -488,7 +523,8 @@ public:
 
 /** getdata message type flags */
 inline constexpr uint32_t MSG_WITNESS_FLAG = 1 << 30;
-inline constexpr uint32_t MSG_TYPE_MASK = 0xffffffff >> 2;
+inline constexpr uint32_t MSG_MWEB_FLAG = 1 << 29; // MWEB
+inline constexpr uint32_t MSG_TYPE_MASK = 0xffffffff >> 3;
 
 /** getdata / inv message types.
  * These numbers are defined by the protocol. When adding a new value, be sure
@@ -507,6 +543,10 @@ enum GetDataMsg : uint32_t {
     // MSG_FILTERED_WITNESS_BLOCK is defined in BIP144 as reserved for future
     // use and remains unused.
     // MSG_FILTERED_WITNESS_BLOCK = MSG_FILTERED_BLOCK | MSG_WITNESS_FLAG,
+    MSG_MWEB_BLOCK = MSG_WITNESS_BLOCK | MSG_MWEB_FLAG, //!< MWEB: Defined in LIP-0006
+    MSG_MWEB_TX = MSG_WITNESS_TX | MSG_MWEB_FLAG,       //!< MWEB: Defined in LIP-0006
+    MSG_MWEB_HEADER = 8 | MSG_MWEB_FLAG,                //!< MWEB: Defined in LIP-0006
+    MSG_MWEB_LEAFSET = 9 | MSG_MWEB_FLAG,               //!< MWEB: Defined in LIP-0006
 };
 
 /** inv message data */
@@ -530,15 +570,18 @@ public:
     bool IsMsgFilteredBlk() const { return type == MSG_FILTERED_BLOCK; }
     bool IsMsgCmpctBlk() const { return type == MSG_CMPCT_BLOCK; }
     bool IsMsgWitnessBlk() const { return type == MSG_WITNESS_BLOCK; }
+    bool IsMsgMWEBBlk() const { return type == MSG_MWEB_BLOCK; } // MWEB
+    bool IsMsgMWEBHeader() const { return type == MSG_MWEB_HEADER; } // MWEB
+    bool IsMsgMWEBLeafset() const { return type == MSG_MWEB_LEAFSET; } // MWEB
 
     // Combined-message helper methods
     bool IsGenTxMsg() const
     {
-        return type == MSG_TX || type == MSG_WTX || type == MSG_WITNESS_TX;
+        return type == MSG_TX || type == MSG_WTX || type == MSG_WITNESS_TX || type == MSG_MWEB_TX;
     }
     bool IsGenBlkMsg() const
     {
-        return type == MSG_BLOCK || type == MSG_FILTERED_BLOCK || type == MSG_CMPCT_BLOCK || type == MSG_WITNESS_BLOCK;
+        return type == MSG_BLOCK || type == MSG_FILTERED_BLOCK || type == MSG_CMPCT_BLOCK || type == MSG_WITNESS_BLOCK || type == MSG_MWEB_BLOCK || type == MSG_MWEB_HEADER;
     }
 
     uint32_t type;

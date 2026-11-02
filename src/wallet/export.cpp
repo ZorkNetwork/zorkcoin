@@ -5,6 +5,7 @@
 #include <wallet/export.h>
 
 #include <key_io.h>
+#include <script/mweb_descriptor.h>
 #include <util/fs.h>
 #include <util/expected.h>
 #include <wallet/scriptpubkeyman.h>
@@ -26,11 +27,17 @@ util::Expected<std::vector<WalletDescInfo>, std::string> ExportDescriptors(const
         }
         LOCK(desc_spk_man->cs_desc_man);
         const auto& wallet_descriptor = desc_spk_man->GetWalletDescriptor();
+        const MWEBDescriptorForm mweb_form = GetMWEBForm(*wallet_descriptor.descriptor);
+        // Public listing: MWEB accounts export the watch-only form mweb([origin]<scan WIF>,[origin]<spend pubkey>,*).
         std::string descriptor;
-        if (!Assume(desc_spk_man->GetDescriptorString(descriptor, export_private))) {
+        const std::optional<std::string> mweb_watch_only = !export_private && mweb_form == MWEBDescriptorForm::ACCOUNT
+            ? desc_spk_man->GetMWEBAccountWatchOnlyDescriptor() : std::nullopt;
+        if (mweb_watch_only) {
+            descriptor = *mweb_watch_only;
+        } else if (!Assume(desc_spk_man->GetDescriptorString(descriptor, export_private))) {
             return util::Unexpected{"Can't get descriptor string."};
         }
-        const bool is_range = wallet_descriptor.descriptor->IsRange();
+        const bool is_range = wallet_descriptor.descriptor->IsRange() || mweb_form == MWEBDescriptorForm::ACCOUNT;
         wallet_descriptors.emplace_back(
             descriptor,
             wallet_descriptor.creation_time,
@@ -40,6 +47,22 @@ util::Expected<std::vector<WalletDescInfo>, std::string> ExportDescriptors(const
             wallet_descriptor.GetNext(),
             wallet_descriptor.cache
         );
+
+        // MWEB hooks: account descriptors carry their persisted subaddress records as internal descriptors.
+        if (mweb_form == MWEBDescriptorForm::ACCOUNT || mweb_form == MWEBDescriptorForm::INDEXED ||
+            mweb_form == MWEBDescriptorForm::SINGLE_SUBADDR) {
+            for (const WalletDescriptor* internal_desc : desc_spk_man->GetMWEBInternalWalletDescriptors()) {
+                wallet_descriptors.emplace_back(
+                    internal_desc->descriptor->ToString(),
+                    internal_desc->creation_time,
+                    /*active=*/false,
+                    /*internal=*/std::nullopt,
+                    /*range=*/std::nullopt,
+                    /*next_index=*/0,
+                    internal_desc->cache
+                );
+            }
+        }
     }
     return wallet_descriptors;
 }
@@ -94,7 +117,10 @@ util::Result<std::string> ExportWatchOnlyWallet(const CWallet& wallet, const fs:
             std::string dummy_err;
             std::vector<std::unique_ptr<Descriptor>> descs = Parse(desc_info.descriptor, dummy_keys, dummy_err, /*require_checksum=*/true);
             CHECK_NONFATAL(descs.size() == 1); // All of our descriptors should be valid, and not multipath
-            CHECK_NONFATAL(dummy_keys.keys.size() == 0); // No private keys should be present in our exported descriptors
+            // No private keys should be present in our exported descriptors, except the scan secret of an
+            // MWEB account, which a watch-only wallet needs to find its MWEB outputs.
+            CHECK_NONFATAL(dummy_keys.keys.empty() ||
+                           (GetMWEBForm(*descs.at(0)) == MWEBDescriptorForm::ACCOUNT && dummy_keys.keys.size() == 1));
 
             // Get the range if there is one
             int32_t range_start = 0;
@@ -105,6 +131,9 @@ util::Result<std::string> ExportWatchOnlyWallet(const CWallet& wallet, const fs:
             }
 
             WalletDescriptor w_desc(std::move(descs.at(0)), desc_info.creation_time, range_start, range_end, desc_info.next_index);
+            if (desc_info.range && GetMWEBForm(*w_desc.descriptor) == MWEBDescriptorForm::ACCOUNT) {
+                w_desc.SetMWEBIndices(range_start, desc_info.next_index, range_end);
+            }
 
             // For descriptors that cannot self expand (i.e. needs private keys or cache), set the cache
             if (!w_desc.descriptor->CanSelfExpand()) {

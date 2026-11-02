@@ -200,6 +200,9 @@ public:
     //! List rpc commands.
     virtual std::vector<std::string> listRpcCommands() = 0;
 
+    //! Return whether MWEB is active on the current chain tip.
+    virtual bool isMWEBActive() = 0;
+
     //! Get unspent output associated with a transaction.
     virtual std::optional<Coin> getUnspentOutput(const COutPoint& output) = 0;
 

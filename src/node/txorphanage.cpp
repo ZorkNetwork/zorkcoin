@@ -55,7 +55,7 @@ class TxOrphanageImpl final : public TxOrphanage {
          * m_outpoint_to_orphan_wtxids usage since input data does not get the witness discount, and makes it easier to
          * reason about each peer's limits using well-understood transaction attributes. */
         TxOrphanage::Usage GetMemUsage()  const {
-            return GetTransactionWeight(*m_tx);
+            return OrphanageTxUsage(*m_tx);
         }
 
         /** Get an approximation of how much this transaction contributes to latency in EraseForBlock and EraseForPeer.
@@ -310,7 +310,9 @@ bool TxOrphanageImpl::AddTx(const CTransactionRef& tx, NodeId peer)
     const auto& txid{tx->GetHash()};
 
     // Ignore transactions above max standard size to avoid a send-big-orphans memory exhaustion attack.
-    TxOrphanage::Usage sz = GetTransactionWeight(*tx);
+    // Use OrphanageTxUsage so MWEB extension bytes count (orphanage MWEB size accounting); GetTransactionWeight alone
+    // undercharges MWEB-only / MWEB-heavy txs.
+    TxOrphanage::Usage sz = OrphanageTxUsage(*tx);
     if (sz > MAX_STANDARD_TX_WEIGHT) {
         LogDebug(BCLog::TXPACKAGES, "ignoring large orphan tx (size: %u, txid: %s, wtxid: %s)\n", sz, txid.ToString(), wtxid.ToString());
         return false;

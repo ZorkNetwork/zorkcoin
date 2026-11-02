@@ -50,5 +50,9 @@ BOOST_AUTO_TEST_CASE(deserialize_rejects_mismatched_variant_txid)
     BOOST_CHECK_EXCEPTION(CWalletTx(deserialize, ss, bad_variants), std::runtime_error, HasReason{"variant txid does not match wallet txid"});
 }
 
+
+
+
+
 BOOST_AUTO_TEST_SUITE_END()
 } // namespace wallet

@@ -7,11 +7,16 @@
 #include <chainparams.h>
 #include <common/run_command.h>
 #include <core_io.h>
+#include <outputtype.h>
 #include <psbt.h>
+#include <script/descriptor.h>
+#include <script/signingprovider.h>
 #include <util/strencodings.h>
 #include <util/subprocess.h>
 
 #include <algorithm>
+#include <memory>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -77,6 +82,36 @@ UniValue ExternalSigner::GetDescriptors(const int account)
     return RunCommandParseJSON(Cat(m_command, Cat(Cat({"--fingerprint", m_fingerprint}, NetworkArg()), {"getdescriptors", "--account", strprintf("%d", account)})), "");
 }
 
+//! Whether a key of an MWEB input's address descriptor (PSBT_IN_MWEB_ADDR_DESCRIPTOR) has the given master fingerprint.
+static bool MWEBAddressDescriptorMatchesFingerprint(const std::string& descriptor_str, std::span<const unsigned char> fingerprint)
+{
+    FlatSigningProvider keys;
+    std::string error;
+    const std::vector<std::unique_ptr<Descriptor>> descriptors = Parse(descriptor_str, keys, error, /*require_checksum=*/false);
+    if (descriptors.size() != 1 || descriptors.front()->GetOutputType() != OutputType::MWEB) return false;
+
+    // Single-address MWEB descriptors expand to no scripts, but expanding still records every key's origin.
+    std::vector<CScript> scripts;
+    FlatSigningProvider expanded;
+    if (!descriptors.front()->Expand(0, keys, scripts, expanded)) return false;
+    return std::ranges::any_of(expanded.origins, [&](const auto& entry) { return std::ranges::equal(fingerprint, entry.second.second.fingerprint); });
+}
+
+UniValue ExternalSigner::DisplayMWEBAddress(const std::string& descriptor) const
+{
+    return RunCommandParseJSON(Cat(m_command, Cat({"--stdin", "--fingerprint", m_fingerprint}, NetworkArg())), "displayaddress --desc " + descriptor);
+}
+
+bool ExternalSigner::MatchesMWEBAddressDescriptor(const std::string& descriptor) const
+{
+    return MWEBAddressDescriptorMatchesFingerprint(descriptor, ParseHex(m_fingerprint));
+}
+
+bool ExternalSigner::MatchesMWEBInput(const PSBTInput& input) const
+{
+    return input.mweb_address_descriptor && MatchesMWEBAddressDescriptor(*input.mweb_address_descriptor);
+}
+
 bool ExternalSigner::SignTransaction(PartiallySignedTransaction& psbtx, std::string& error)
 {
     // Serialize the PSBT
@@ -92,11 +127,13 @@ bool ExternalSigner::SignTransaction(PartiallySignedTransaction& psbtx, std::str
         for (const auto& entry : input.m_tap_bip32_paths) {
             if (std::ranges::equal(parsed_m_fingerprint, entry.second.second.fingerprint)) return true;
         }
-        return false;
+        return MatchesMWEBInput(input);
     };
 
     if (!std::any_of(psbtx.inputs.begin(), psbtx.inputs.end(), matches_signer_fingerprint)) {
-        error = "Signer fingerprint " + m_fingerprint + " does not match any of the inputs:\n" + EncodeBase64(ssTx.str());
+        error = "Signer fingerprint " + m_fingerprint + " does not match any of the inputs";
+        // MWEB input address descriptors carry the scan secret, which must not reach the log.
+        if (!psbtx.ContainsMWEBComponents()) error += ":\n" + EncodeBase64(ssTx.str());
         return false;
     }
 

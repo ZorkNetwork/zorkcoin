@@ -12,6 +12,8 @@
 #include <script/signingprovider.h>
 #include <util/fees.h>
 
+#include <mw/models/crypto/hash.h>
+
 #include <algorithm>
 #include <map>
 #include <optional>
@@ -117,6 +119,19 @@ public:
     std::optional<uint32_t> m_locktime;
     //! Caps weight of resulting tx
     std::optional<int> m_max_tx_weight{std::nullopt};
+    //! MWEB: peg-in mode (L1 inputs funding MWEB receive)
+    bool m_mweb_peg_in{false};
+    //! MWEB: peg-out mode (MWEB inputs funding L1 outputs)
+    bool m_mweb_peg_out{false};
+    //! MWEB: include spendable MWEB balance in getAvailableBalance (e.g. MWEB→MWEB)
+    bool m_include_mweb{false};
+    //! MWEB: manually selected MWEB UTXOs (by output ID)
+    std::set<mw::Hash> m_mweb_selected;
+    //! MWEB: minimum total fee, which the kernel pays on top of the fee rate (fee bumps)
+    std::optional<CAmount> m_mweb_min_fee;
+    //! When set (send RPC only): refuse silent L1 peg-in to an MWEB destination.
+    //! Silent peg-in would privacy-link L1 UTXOs into a presumed confidential send.
+    bool m_no_auto_pegin{false};
 
     CCoinControl();
 
@@ -124,6 +139,30 @@ public:
      * Returns true if there are pre-selected inputs.
      */
     bool HasSelected() const;
+    /**
+     * Returns true if there are pre-selected L1 (non-MWEB) inputs.
+     */
+    bool HasL1Selected() const;
+    /**
+     * Returns true if there are pre-selected MWEB inputs.
+     */
+    bool HasMWEBSelected() const;
+    /**
+     * Returns true if the given MWEB output is pre-selected.
+     */
+    bool IsMWEBSelected(const mw::Hash& output_id) const;
+    /**
+     * Lock-in the given MWEB output for spending.
+     */
+    void SelectMWEB(const mw::Hash& output_id);
+    /**
+     * Unselects the given MWEB output.
+     */
+    void UnSelectMWEB(const mw::Hash& output_id);
+    /**
+     * List the selected MWEB outputs.
+     */
+    std::vector<mw::Hash> ListMWEBSelected() const;
     /**
      * Returns true if the given output is pre-selected.
      */

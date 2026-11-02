@@ -12,6 +12,9 @@
 #include <serialize.h>
 #include <uint256.h>
 
+#include <mw/models/block/header.h> // MWEB
+
+#include <cassert> // MWEB
 #include <set>
 #include <vector>
 
@@ -155,6 +158,27 @@ public:
 private:
     // Combined constructor to consolidate code
     CMerkleBlock(const CBlock& block, CBloomFilter* filter, const std::set<Txid>* txids);
+};
+
+/**
+ * MWEB: A CMerkleBlock plus the hogex transaction and MWEB header for light clients.
+ */
+class CMerkleBlockWithMWEB
+{
+private:
+    CMerkleBlock merkle;
+    CTransactionRef hogex;
+    mw::Header::CPtr mweb_header;
+
+public:
+    CMerkleBlockWithMWEB() = default;
+    explicit CMerkleBlockWithMWEB(const CBlock& block);
+
+    SERIALIZE_METHODS(CMerkleBlockWithMWEB, obj)
+    {
+        SER_WRITE(obj, assert(obj.mweb_header != nullptr));
+        READWRITE(obj.merkle, TX_WITH_WITNESS(obj.hogex), obj.mweb_header);
+    }
 };
 
 #endif // BITCOIN_MERKLEBLOCK_H

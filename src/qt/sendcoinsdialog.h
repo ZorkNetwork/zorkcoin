@@ -94,6 +94,8 @@ private:
     bool signWithExternalSigner(PartiallySignedTransaction& psbt, CMutableTransaction& mtx, bool& complete);
     void updateFeeMinimizedLabel();
     void updateCoinControlState();
+    // MWEB: Whether each peg-out still pays the wallet's next address of its type; `take` takes that address.
+    bool checkPegOutAddresses(const QList<SendCoinsRecipient>& recipients, bool take);
 
 private Q_SLOTS:
     void sendButtonClicked(bool checked);
@@ -120,6 +122,7 @@ private Q_SLOTS:
     void updateFeeSectionControls();
     void updateNumberOfBlocks(int count, const QDateTime& blockDate, double nVerificationProgress, SyncType synctype, SynchronizationState sync_state);
     void updateSmartFeeLabel();
+    void onEntryManualPaymentKindChanged(SendCoinsEntry* entry, SendCoinsRecipient::PaymentKind kind);
 
 Q_SIGNALS:
     // Fired when a message should be reported to the user

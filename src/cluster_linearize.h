@@ -18,6 +18,7 @@
 #include <random.h>
 #include <span.h>
 #include <util/feefrac.h>
+#include <util/overflow.h>
 #include <util/vecdeque.h>
 
 namespace cluster_linearize {
@@ -1978,7 +1979,7 @@ void PostLinearize(const DepGraph<SetType>& depgraph, std::span<DepGraphIndex> l
             entries[cur_group].group = SetType::Singleton(idx);
             entries[cur_group].deps = rev ? depgraph.Descendants(idx): depgraph.Ancestors(idx);
             entries[cur_group].feerate = depgraph.FeeRate(idx);
-            if (rev) entries[cur_group].feerate.fee = -entries[cur_group].feerate.fee;
+            if (rev) entries[cur_group].feerate.fee = SaturatingNegate(entries[cur_group].feerate.fee);
             entries[cur_group].prev_tx = NO_PREV_TX; // No previous transaction in group.
             entries[cur_group].first_tx = cur_group; // Transaction itself is first of group.
             // Insert the new group at the back of the groups linked list.

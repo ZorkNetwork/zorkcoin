@@ -7,6 +7,7 @@
 
 #include <attributes.h>
 #include <consensus/amount.h>
+#include <mweb/mweb_wallet_types.h> // MWEB hooks
 #include <primitives/transaction.h>
 #include <tinyformat.h>
 #include <uint256.h>
@@ -19,6 +20,7 @@
 #include <bitset>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -223,6 +225,9 @@ public:
     int64_t nOrderPos; //!< position in ordered transaction list
     std::multimap<int64_t, CWalletTx*>::const_iterator m_it_wtxOrdered;
 
+    std::optional<MWEB::WalletTxInfo> mweb_wtx_info; // MWEB hooks
+    mutable std::optional<Txid> m_mweb_txid; // MWEB hooks: cache for partial MWEB wallet txs
+
     // memory only
     enum AmountType { DEBIT, CREDIT, AMOUNTTYPE_ENUM_ELEMENTS };
     mutable CachableAmount m_amounts[AMOUNTTYPE_ENUM_ELEMENTS];
@@ -284,6 +289,7 @@ public:
         string_values["fromaccount"] = "";
         if (nOrderPos != -1) string_values["n"] = util::ToString(nOrderPos);
         if (nTimeSmart) string_values["timesmart"] = strprintf("%u", nTimeSmart);
+        if (mweb_wtx_info) string_values["mweb_info"] = mweb_wtx_info->ToHex(); // MWEB hooks
 
         std::vector<std::pair<std::string, std::string>> msgs_reqs;
         msgs_reqs.reserve(m_messages.size() + m_payment_requests.size());
@@ -293,7 +299,6 @@ public:
         for (const std::string& req : m_payment_requests) {
             msgs_reqs.emplace_back("PaymentRequest", req);
         }
-
         std::vector<uint8_t> dummy_vector1; // Used to be vMerkleBranch
         std::vector<uint8_t> dummy_vector2; // Used to be vtxPrev
         bool dummy_bool = false; // Used to be fFromMe, and fSpent
@@ -334,6 +339,7 @@ public:
             else if (key == "to") m_comment_to = value;
             else if (key == "replaces_txid") m_replaces_txid = Txid::FromHex(value);
             else if (key == "replaced_by_txid") m_replaced_by_txid = Txid::FromHex(value);
+            else if (key == "mweb_info") mweb_wtx_info = MWEB::WalletTxInfo::FromHex(value); // MWEB hooks
             else {
                 throw std::runtime_error("Unexpected value in CWalletTx strings value map");
             }
@@ -387,11 +393,41 @@ public:
     bool isInactive() const { return state<TxStateInactive>(); }
     bool isUnconfirmed() const { return !isAbandoned() && !isBlockConflicted() && !isMempoolConflicted() && !isConfirmed(); }
     bool isConfirmed() const { return state<TxStateConfirmed>(); }
-    const Txid& GetHash() const LIFETIMEBOUND { return GetTx()->GetHash(); }
+    const Txid& GetHash() const LIFETIMEBOUND
+    {
+        // MWEB: only true placeholders (null L1 body without extension) are keyed by
+        // mweb_wtx_info. Full MWEB-only txs are also IsNull() (empty vin/vout) but must
+        // keep tx->GetHash() — matching Litecoin Core's IsPartialMWEB intent.
+        if (IsMWEBPlaceholder()) {
+            if (!m_mweb_txid) {
+                m_mweb_txid = Txid::FromUint256(mweb_wtx_info->GetHash());
+            }
+            return *m_mweb_txid;
+        }
+        return GetTx()->GetHash();
+    }
     const Wtxid& GetWitnessHash() const LIFETIMEBOUND { return GetTx()->GetWitnessHash(); }
     bool IsCoinBase() const { return GetTx()->IsCoinBase(); }
 
     const std::map<Wtxid, CTransactionRef>& GetTxs() const { return m_txs; }
+
+    /** MWEB: wallet entry for an MWEB output/spend whose L1 transaction is not known (null body, no extension). */
+    bool IsMWEBPlaceholder() const
+    {
+        const CTransactionRef& tx = m_txs.at(m_canonical_wtxid);
+        return mweb_wtx_info && tx->IsNull() && !tx->HasMWEBTx();
+    }
+
+    /** MWEB: replace a placeholder with the full transaction. The txid changes, so all variants are dropped. */
+    void ReplaceMWEBPlaceholder(CTransactionRef tx)
+    {
+        Assert(tx);
+        m_txs.clear();
+        m_canonical_wtxid = tx->GetWitnessHash();
+        m_txs.emplace(m_canonical_wtxid, std::move(tx));
+        m_mweb_txid.reset();
+        MarkDirty();
+    }
 
     // Disable copying of CWalletTx objects to prevent bugs where instances get
     // copied in and out of the mapWallet map, and fields are updated in the
@@ -416,6 +452,8 @@ private:
     {
         m_txs.clear();
         m_canonical_wtxid = Wtxid{};
+        mweb_wtx_info.reset();
+        m_mweb_txid.reset();
         SetDefaults();
     }
 

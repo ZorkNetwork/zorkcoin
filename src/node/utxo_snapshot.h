@@ -36,8 +36,9 @@ namespace node {
 //! before being used. Thus, new fields should be added only if needed.
 class SnapshotMetadata
 {
-    static constexpr uint16_t VERSION{2};
-    const std::set<uint16_t> m_supported_versions{VERSION};
+    // MWEB: Version 3 files may carry the trailing MWEB section; version 2 still loads.
+    static constexpr uint16_t VERSION{3};
+    const std::set<uint16_t> m_supported_versions{2, VERSION};
     const MessageStartChars m_network_magic;
 public:
     //! The hash of the block that reflects the tip of the chain for the

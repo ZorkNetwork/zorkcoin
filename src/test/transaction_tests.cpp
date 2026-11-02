@@ -13,6 +13,7 @@
 #include <consensus/consensus.h>
 #include <consensus/tx_check.h>
 #include <consensus/tx_verify.h>
+#include <chainparams.h>
 #include <consensus/validation.h>
 #include <core_io.h>
 #include <key.h>
@@ -1159,7 +1160,7 @@ BOOST_AUTO_TEST_CASE(checktxinputs_invalid_transactions_test)
 
         TxValidationState state;
         CAmount txfee{0};
-        BOOST_CHECK(!Consensus::CheckTxInputs(CTransaction{mtx}, state, inputs, spend_height, txfee));
+        BOOST_CHECK(!Consensus::CheckTxInputs(CTransaction{mtx}, state, inputs, spend_height, Params().GetConsensus(), txfee));
         BOOST_CHECK(state.IsInvalid());
         BOOST_CHECK_EQUAL(state.GetResult(), expected_result);
         BOOST_CHECK_EQUAL(state.GetRejectReason(), expected_reason);
@@ -1253,8 +1254,8 @@ BOOST_AUTO_TEST_CASE(spends_witness_prog)
     std::vector<std::vector<uint8_t>> sol_dummy;
 
     // CNoDestination, PubKeyDestination, PKHash, ScriptHash, WitnessV0ScriptHash, WitnessV0KeyHash,
-    // WitnessV1Taproot, PayToAnchor, WitnessUnknown.
-    static_assert(std::variant_size_v<CTxDestination> == 9);
+    // WitnessV1Taproot, PayToAnchor, WitnessUnknown, StealthAddress (MWEB).
+    static_assert(std::variant_size_v<CTxDestination> == 10);
 
     // Go through all defined output types and sanity check SpendsNonAnchorWitnessProg.
 
@@ -1375,8 +1376,14 @@ BOOST_AUTO_TEST_CASE(spends_witness_prog)
     // Various undefined version >1 32-byte witness programs.
     const auto program{ToByteVector(XOnlyPubKey{pubkey})};
     for (int i{2}; i <= 16; ++i) {
+        TxoutType expected_type = TxoutType::WITNESS_UNKNOWN;
+        if (i == MWEB_HOG_ADDR_WITNESS_VERSION) {
+            expected_type = TxoutType::WITNESS_MWEB_HOGADDR;
+        } else if (i == MWEB_PEGIN_WITNESS_VERSION) {
+            expected_type = TxoutType::WITNESS_MWEB_PEGIN;
+        }
         tx_create.vout[0].scriptPubKey = GetScriptForDestination(WitnessUnknown{i, program});
-        BOOST_CHECK_EQUAL(Solver(tx_create.vout[0].scriptPubKey, sol_dummy), TxoutType::WITNESS_UNKNOWN);
+        BOOST_CHECK_EQUAL(Solver(tx_create.vout[0].scriptPubKey, sol_dummy), expected_type);
         tx_spend.vin[0].prevout.hash = tx_create.GetHash();
         AddCoins(coins, CTransaction{tx_create}, 0, false);
         BOOST_CHECK(::SpendsNonAnchorWitnessProg(CTransaction{tx_spend}, coins));

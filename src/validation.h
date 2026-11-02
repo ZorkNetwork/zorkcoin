@@ -122,6 +122,7 @@ void PruneBlockFilesManual(Chainstate& active_chainstate, int nManualPruneHeight
 *| wtxid in mempool?         | yes            | no                | no*              | yes            | no                |
 *| m_state                   | yes, IsValid() | yes, IsInvalid()  | yes, IsInvalid() | yes, IsValid() | yes, IsValid()    |
 *| m_vsize                   | yes            | no                | no               | yes            | no                |
+*| m_mweb_weight (MWEB)      | yes            | no                | no               | yes            | no                |
 *| m_base_fees               | yes            | no                | no               | yes            | no                |
 *| m_effective_feerate       | yes            | yes               | no               | no             | no                |
 *| m_wtxids_fee_calculations | yes            | yes               | no               | no             | no                |
@@ -149,6 +150,8 @@ struct MempoolAcceptResult {
     const std::list<CTransactionRef> m_replaced_transactions;
     /** Virtual size as used by the mempool, calculated using serialized size and sigops. */
     const std::optional<int64_t> m_vsize;
+    /** MWEB: MWEB weight of the transaction (0 without MWEB data). */
+    const std::optional<uint64_t> m_mweb_weight;
     /** Raw base fees in satoshis. */
     const std::optional<CAmount> m_base_fees;
     /** The feerate at which this transaction was considered. This includes any fee delta added
@@ -179,15 +182,16 @@ struct MempoolAcceptResult {
 
     static MempoolAcceptResult Success(std::list<CTransactionRef>&& replaced_txns,
                                        int64_t vsize,
+                                       uint64_t mweb_weight, // MWEB
                                        CAmount fees,
                                        CFeeRate effective_feerate,
                                        const std::vector<Wtxid>& wtxids_fee_calculations) {
-        return MempoolAcceptResult(std::move(replaced_txns), vsize, fees,
+        return MempoolAcceptResult(std::move(replaced_txns), vsize, mweb_weight, fees,
                                    effective_feerate, wtxids_fee_calculations);
     }
 
-    static MempoolAcceptResult MempoolTx(int64_t vsize, CAmount fees) {
-        return MempoolAcceptResult(vsize, fees);
+    static MempoolAcceptResult MempoolTx(int64_t vsize, uint64_t mweb_weight, CAmount fees) {
+        return MempoolAcceptResult(vsize, mweb_weight, fees);
     }
 
     static MempoolAcceptResult MempoolTxDifferentWitness(const Wtxid& other_wtxid) {
@@ -205,12 +209,14 @@ private:
     /** Constructor for success case */
     explicit MempoolAcceptResult(std::list<CTransactionRef>&& replaced_txns,
                                  int64_t vsize,
+                                 uint64_t mweb_weight,
                                  CAmount fees,
                                  CFeeRate effective_feerate,
                                  const std::vector<Wtxid>& wtxids_fee_calculations)
         : m_result_type(ResultType::VALID),
         m_replaced_transactions(std::move(replaced_txns)),
         m_vsize{vsize},
+        m_mweb_weight{mweb_weight},
         m_base_fees(fees),
         m_effective_feerate(effective_feerate),
         m_wtxids_fee_calculations(wtxids_fee_calculations) {}
@@ -225,8 +231,8 @@ private:
         m_wtxids_fee_calculations(wtxids_fee_calculations) {}
 
     /** Constructor for already-in-mempool case. It wouldn't replace any transactions. */
-    explicit MempoolAcceptResult(int64_t vsize, CAmount fees)
-        : m_result_type(ResultType::MEMPOOL_ENTRY), m_vsize{vsize}, m_base_fees(fees) {}
+    explicit MempoolAcceptResult(int64_t vsize, uint64_t mweb_weight, CAmount fees)
+        : m_result_type(ResultType::MEMPOOL_ENTRY), m_vsize{vsize}, m_mweb_weight{mweb_weight}, m_base_fees(fees) {}
 
     /** Constructor for witness-swapped case. */
     explicit MempoolAcceptResult(const Wtxid& other_wtxid)
@@ -280,12 +286,15 @@ MempoolAcceptResult AcceptToMemoryPool(Chainstate& active_chainstate, const CTra
 * @param[in]    test_accept         When true, run validation checks but don't submit to mempool.
 * @param[in]    client_maxfeerate    If exceeded by an individual transaction, rest of (sub)package evaluation is aborted.
 *                                   Only for sanity checks against local submission of transactions.
+* @param[in]    client_default_maxfeerate    MWEB: the caller's default maxfeerate; a client_maxfeerate above it
+*                                   scales the MWEB fee allowance (MWEB::MempoolAccept::MaxRawTxFee).
 * @returns a PackageMempoolAcceptResult which includes a MempoolAcceptResult for each transaction.
 * If a transaction fails, validation will exit early and some results may be missing. It is also
 * possible for the package to be partially submitted.
 */
 PackageMempoolAcceptResult ProcessNewPackage(Chainstate& active_chainstate, CTxMemPool& pool,
-                                                   const Package& txns, bool test_accept, const std::optional<CFeeRate>& client_maxfeerate)
+                                                   const Package& txns, bool test_accept, const std::optional<CFeeRate>& client_maxfeerate,
+                                                   const CFeeRate& client_default_maxfeerate = {}) // MWEB
                                                    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
 /* Mempool validation helper functions */
@@ -820,6 +829,13 @@ public:
 
     /** Add a block to the candidate set if it has as much work as the current tip. */
     void TryAddBlockIndexCandidate(CBlockIndex* pindex) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+
+    /**
+     * Discard block data for a block that failed ConnectBlock with BLOCK_MUTATED.
+     * The same block hash may be valid with different non-committed MWEB data.
+     * Validated transaction metadata is kept, so descendants stay linked.
+     */
+    void DiscardFailedConnectBlockData(CBlockIndex* pindex) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
     void PruneBlockIndexCandidates();
 
@@ -1423,5 +1439,12 @@ bool IsBIP30Unspendable(const uint256& block_hash, int block_height);
 
 // Returns the script flags which should be checked for a given block
 script_verify_flags GetBlockScriptFlags(const CBlockIndex& block_index, const ChainstateManager& chainman);
+
+/** Rewind a temporary view to an arbitrary block on the active chain without changing the active tip. */
+bool ActivateArbitraryChain(
+    BlockValidationState& state,
+    CCoinsViewCache& view,
+    Chainstate& chainstate,
+    CBlockIndex* pindex) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
 #endif // BITCOIN_VALIDATION_H

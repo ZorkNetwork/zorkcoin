@@ -630,7 +630,7 @@ void CBlockPolicyEstimator::processTransaction(const NewMempoolTransactionInfo& 
     trackedTxs++;
 
     // Feerates are stored and reported as BTC-per-kb:
-    const CFeeRate feeRate(tx.info.m_fee, tx.info.m_virtual_transaction_size);
+    const CFeeRate feeRate(tx.info.m_fee, tx.info.m_virtual_transaction_size, tx.info.m_tx->mweb_tx.GetMWEBWeight()); // MWEB
 
     mapMemPoolTxs[hash].blockHeight = txHeight;
     unsigned int bucketIndex = feeStats->NewTx(txHeight, static_cast<double>(feeRate.GetFeePerK()));
@@ -661,7 +661,7 @@ bool CBlockPolicyEstimator::processBlockTx(unsigned int nBlockHeight, const Remo
     }
 
     // Feerates are stored and reported as BTC-per-kb:
-    CFeeRate feeRate(tx.info.m_fee, tx.info.m_virtual_transaction_size);
+    CFeeRate feeRate(tx.info.m_fee, tx.info.m_virtual_transaction_size, tx.info.m_tx->mweb_tx.GetMWEBWeight()); // MWEB
 
     feeStats->Record(blocksToConfirm, static_cast<double>(feeRate.GetFeePerK()));
     shortStats->Record(blocksToConfirm, static_cast<double>(feeRate.GetFeePerK()));

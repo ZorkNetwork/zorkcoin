@@ -7,6 +7,7 @@
 
 #include <chain.h>
 #include <consensus/validation.h>
+#include <mweb/mweb_policy.h> // MWEB
 #include <txmempool.h>
 #include <util/log.h>
 #include <validation.h>
@@ -301,7 +302,8 @@ std::optional<PackageToValidate> TxDownloadManagerImpl::Find1P1CPackage(const CT
 {
     const auto& parent_wtxid{ptx->GetWitnessHash()};
 
-    Assume(RecentRejectsReconsiderableFilter().contains(parent_wtxid.ToUint256()));
+    // MWEB: rejections of transactions with uncommitted MWEB data are never cached.
+    Assume(MWEB::Policy::HasUncommittedMWEBPayload(*ptx) || RecentRejectsReconsiderableFilter().contains(parent_wtxid.ToUint256()));
 
     // Only consider children from this peer. This helps prevent censorship attempts in which an attacker
     // sends lots of fake children for the parent, and we (unluckily) keep selecting the fake
@@ -397,30 +399,46 @@ node::RejectedTxTodo TxDownloadManagerImpl::MempoolRejectedTx(const CTransaction
                 std::erase_if(unique_parents, [&](const auto& txid) {
                     return AlreadyHaveTx(txid, /*include_reconsiderable=*/false);
                 });
-                const auto now{GetTime<std::chrono::microseconds>()};
-                const auto& wtxid = ptx->GetWitnessHash();
-                // Potentially flip add_extra_compact_tx to false if tx is already in orphanage, which
-                // means it was already added to vExtraTxnForCompact.
-                add_extra_compact_tx &= !m_orphanage->HaveTx(wtxid);
 
-                // If there is no candidate for orphan resolution, AddTx will not be called. This means
-                // that if a peer is overloading us with invs and orphans, they will eventually not be
-                // able to add any more transactions to the orphanage.
-                //
-                // Search by txid and, if the tx has a witness, wtxid
-                std::vector<NodeId> orphan_resolution_candidates{nodeid};
-                m_txrequest.GetCandidatePeers(ptx->GetHash().ToUint256(), orphan_resolution_candidates);
-                if (ptx->HasWitness()) m_txrequest.GetCandidatePeers(ptx->GetWitnessHash().ToUint256(), orphan_resolution_candidates);
+                // Orphanage indexes only L1 COutPoints. A MWEB tx with no
+                // remaining L1 parents to fetch is never resolved via the orphanage
+                // (MWEB missing inputs are invisible to GetUniqueParents). Storing it
+                // would retain the full mweb_tx body for free under L1 weight accounting.
+                // Litecoin shares the indexing gap but bounds orphans by count/TTL.
+                if (tx.HasMWEBTx() && unique_parents.empty()) {
+                    LogDebug(BCLog::TXPACKAGES,
+                             "not keeping orphan with MWEB payload and no L1 parents %s (wtxid=%s)\n",
+                             tx.GetHash().ToString(),
+                             tx.GetWitnessHash().ToString());
+                    add_extra_compact_tx = false;
+                    m_txrequest.ForgetTxHash(tx.GetHash().ToUint256());
+                    m_txrequest.ForgetTxHash(tx.GetWitnessHash().ToUint256());
+                } else {
+                    const auto now{GetTime<std::chrono::microseconds>()};
+                    const auto& wtxid = ptx->GetWitnessHash();
+                    // Potentially flip add_extra_compact_tx to false if tx is already in orphanage, which
+                    // means it was already added to vExtraTxnForCompact.
+                    add_extra_compact_tx &= !m_orphanage->HaveTx(wtxid);
 
-                for (const auto& nodeid : orphan_resolution_candidates) {
-                    if (MaybeAddOrphanResolutionCandidate(unique_parents, ptx->GetWitnessHash(), nodeid, now)) {
-                        m_orphanage->AddTx(ptx, nodeid);
+                    // If there is no candidate for orphan resolution, AddTx will not be called. This means
+                    // that if a peer is overloading us with invs and orphans, they will eventually not be
+                    // able to add any more transactions to the orphanage.
+                    //
+                    // Search by txid and, if the tx has a witness, wtxid
+                    std::vector<NodeId> orphan_resolution_candidates{nodeid};
+                    m_txrequest.GetCandidatePeers(ptx->GetHash().ToUint256(), orphan_resolution_candidates);
+                    if (ptx->HasWitness()) m_txrequest.GetCandidatePeers(ptx->GetWitnessHash().ToUint256(), orphan_resolution_candidates);
+
+                    for (const auto& nodeid : orphan_resolution_candidates) {
+                        if (MaybeAddOrphanResolutionCandidate(unique_parents, ptx->GetWitnessHash(), nodeid, now)) {
+                            m_orphanage->AddTx(ptx, nodeid);
+                        }
                     }
-                }
 
-                // Once added to the orphan pool, a tx is considered AlreadyHave, and we shouldn't request it anymore.
-                m_txrequest.ForgetTxHash(tx.GetHash().ToUint256());
-                m_txrequest.ForgetTxHash(tx.GetWitnessHash().ToUint256());
+                    // Once added to the orphan pool, a tx is considered AlreadyHave, and we shouldn't request it anymore.
+                    m_txrequest.ForgetTxHash(tx.GetHash().ToUint256());
+                    m_txrequest.ForgetTxHash(tx.GetWitnessHash().ToUint256());
+                } // else: HasMWEBTx with L1 parents, or non-MWEB
             } else {
                 unique_parents.clear();
                 LogDebug(BCLog::MEMPOOL, "not keeping orphan with rejected parents %s (wtxid=%s)\n",
@@ -454,11 +472,14 @@ node::RejectedTxTodo TxDownloadManagerImpl::MempoolRejectedTx(const CTransaction
         // See also comments in https://github.com/bitcoin/bitcoin/pull/18044#discussion_r443419034
         // for concerns around weakening security of unupgraded nodes
         // if we start doing this too early.
+        // MWEB: txid/wtxid do not commit to MWEB data, so caching this rejection
+        // would let an invalid relay variant censor a valid one with the same IDs.
+        const bool cache_reject{!MWEB::Policy::HasUncommittedMWEBPayload(tx)};
         if (state.GetResult() == TxValidationResult::TX_RECONSIDERABLE) {
             // If the result is TX_RECONSIDERABLE, add it to m_lazy_recent_rejects_reconsiderable
             // because we should not download or submit this transaction by itself again, but may
             // submit it as part of a package later.
-            RecentRejectsReconsiderableFilter().insert(ptx->GetWitnessHash().ToUint256());
+            if (cache_reject) RecentRejectsReconsiderableFilter().insert(ptx->GetWitnessHash().ToUint256());
 
             if (first_time_failure) {
                 // When a transaction fails for TX_RECONSIDERABLE, look for a matching child in the
@@ -467,10 +488,10 @@ node::RejectedTxTodo TxDownloadManagerImpl::MempoolRejectedTx(const CTransaction
                          ptx->GetHash().ToString(), ptx->GetWitnessHash().ToString());
                 package_to_validate = Find1P1CPackage(ptx, nodeid);
             }
-        } else {
+        } else if (cache_reject) {
             RecentRejectsFilter().insert(ptx->GetWitnessHash().ToUint256());
         }
-        m_txrequest.ForgetTxHash(ptx->GetWitnessHash().ToUint256());
+        if (cache_reject) m_txrequest.ForgetTxHash(ptx->GetWitnessHash().ToUint256());
         // If the transaction failed for TX_INPUTS_NOT_STANDARD,
         // then we know that the witness was irrelevant to the policy
         // failure, since this check depends only on the txid
@@ -481,7 +502,7 @@ node::RejectedTxTodo TxDownloadManagerImpl::MempoolRejectedTx(const CTransaction
         // parent-fetching by txid via the orphan-handling logic).
         // We only add the txid if it differs from the wtxid, to avoid wasting entries in the
         // rolling bloom filter.
-        if (state.GetResult() == TxValidationResult::TX_INPUTS_NOT_STANDARD && ptx->HasWitness()) {
+        if (cache_reject && state.GetResult() == TxValidationResult::TX_INPUTS_NOT_STANDARD && ptx->HasWitness()) {
             RecentRejectsFilter().insert(ptx->GetHash().ToUint256());
             m_txrequest.ForgetTxHash(ptx->GetHash().ToUint256());
         }
@@ -502,6 +523,8 @@ node::RejectedTxTodo TxDownloadManagerImpl::MempoolRejectedTx(const CTransaction
 
 void TxDownloadManagerImpl::MempoolRejectedPackage(const Package& package)
 {
+    // MWEB: a package hash is built from wtxids, which do not commit to MWEB data.
+    if (std::ranges::any_of(package, [](const auto& tx) { return MWEB::Policy::HasUncommittedMWEBPayload(*tx); })) return;
     RecentRejectsReconsiderableFilter().insert(GetPackageHash(package));
 }
 

@@ -51,6 +51,7 @@ void ReceiveRequestDialog::setInfo(const SendCoinsRecipient &_info)
         connect(ui->btnSaveAs, &QPushButton::clicked, ui->qr_code, &QRImageWidget::saveImage);
     } else {
         ui->btnSaveAs->setEnabled(false);
+        ui->qr_code->hide();
     }
 #else
     ui->btnSaveAs->hide();
@@ -59,6 +60,7 @@ void ReceiveRequestDialog::setInfo(const SendCoinsRecipient &_info)
 
     ui->uri_content->setText("<a href=\"" + uri + "\">" + GUIUtil::HtmlEscape(uri) + "</a>");
     ui->address_content->setText(info.address);
+    ui->address_content->setWordWrap(true);
 
     if (!info.amount) {
         ui->amount_tag->hide();

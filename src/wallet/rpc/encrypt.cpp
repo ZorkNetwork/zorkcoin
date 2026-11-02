@@ -71,6 +71,9 @@ RPCMethod walletpassphrase()
         }
 
         if (!pwallet->Unlock(strWalletPass)) {
+            if (const std::optional<std::string> mweb_error = pwallet->GetMWEBUnlockError()) {
+                throw JSONRPCError(RPC_WALLET_ERROR, "Error: " + *mweb_error);
+            }
             // Check if the passphrase has a null character (see #27067 for details)
             if (strWalletPass.find('\0') == std::string::npos) {
                 throw JSONRPCError(RPC_WALLET_PASSPHRASE_INCORRECT, "Error: The wallet passphrase entered was incorrect.");
@@ -157,6 +160,9 @@ RPCMethod walletpassphrasechange()
     }
 
     if (!pwallet->ChangeWalletPassphrase(strOldWalletPass, strNewWalletPass)) {
+        if (const std::optional<std::string> mweb_error = pwallet->GetMWEBUnlockError()) {
+            throw JSONRPCError(RPC_WALLET_ERROR, "Error: " + *mweb_error);
+        }
         // Check if the old passphrase had a null character (see #27067 for details)
         if (strOldWalletPass.find('\0') == std::string::npos) {
             throw JSONRPCError(RPC_WALLET_PASSPHRASE_INCORRECT, "Error: The wallet passphrase entered was incorrect.");
@@ -275,6 +281,9 @@ RPCMethod encryptwallet()
     }
 
     if (!pwallet->EncryptWallet(strWalletPass)) {
+        if (const std::optional<std::string> mweb_error = pwallet->GetMWEBUnlockError()) {
+            throw JSONRPCError(RPC_WALLET_ENCRYPTION_FAILED, "Error: " + *mweb_error);
+        }
         throw JSONRPCError(RPC_WALLET_ENCRYPTION_FAILED, "Error: Failed to encrypt the wallet.");
     }
 

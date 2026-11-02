@@ -4,7 +4,7 @@
 
 #include <random.h>
 #include <span.h>
-#include <test/fuzz/util.h>
+#include <test/fuzz/fuzz.h>
 #include <util/bitset.h>
 
 #include <bitset>

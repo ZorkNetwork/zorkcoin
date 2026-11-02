@@ -7,6 +7,7 @@
 
 #include <common/types.h>
 #include <musig.h>
+#include <mw/models/tx/mutable_tx.h>
 #include <node/transaction.h>
 #include <policy/feerate.h>
 #include <primitives/transaction.h>
@@ -40,8 +41,23 @@ inline constexpr uint8_t PSBT_GLOBAL_FALLBACK_LOCKTIME = 0x03;
 inline constexpr uint8_t PSBT_GLOBAL_INPUT_COUNT = 0x04;
 inline constexpr uint8_t PSBT_GLOBAL_OUTPUT_COUNT = 0x05;
 inline constexpr uint8_t PSBT_GLOBAL_TX_MODIFIABLE = 0x06;
+inline constexpr uint8_t PSBT_GLOBAL_MWEB_TX_OFFSET = 0x90;
+inline constexpr uint8_t PSBT_GLOBAL_MWEB_TX_STEALTH_OFFSET = 0x91;
+inline constexpr uint8_t PSBT_GLOBAL_MWEB_KERNEL_COUNT = 0x92;
 inline constexpr uint8_t PSBT_GLOBAL_VERSION = 0xFB;
 inline constexpr uint8_t PSBT_GLOBAL_PROPRIETARY = 0xFC;
+
+// MWEB kernel types
+inline constexpr uint8_t PSBT_KERN_EXCESS_COMMIT = 0x00;
+inline constexpr uint8_t PSBT_KERN_STEALTH_COMMIT = 0x01;
+inline constexpr uint8_t PSBT_KERN_FEE = 0x02;
+inline constexpr uint8_t PSBT_KERN_PEGIN_AMOUNT = 0x03;
+inline constexpr uint8_t PSBT_KERN_PEGOUT = 0x04;
+inline constexpr uint8_t PSBT_KERN_LOCK_HEIGHT = 0x05;
+inline constexpr uint8_t PSBT_KERN_FEATURES = 0x06;
+inline constexpr uint8_t PSBT_KERN_EXTRA_DATA = 0x07;
+inline constexpr uint8_t PSBT_KERN_SIG = 0x08;
+inline constexpr uint8_t PSBT_KERN_PROPRIETARY = 0xFC;
 
 // Input types
 inline constexpr uint8_t PSBT_IN_NON_WITNESS_UTXO = 0x00;
@@ -71,6 +87,17 @@ inline constexpr uint8_t PSBT_IN_TAP_MERKLE_ROOT = 0x18;
 inline constexpr uint8_t PSBT_IN_MUSIG2_PARTICIPANT_PUBKEYS = 0x1a;
 inline constexpr uint8_t PSBT_IN_MUSIG2_PUB_NONCE = 0x1b;
 inline constexpr uint8_t PSBT_IN_MUSIG2_PARTIAL_SIG = 0x1c;
+inline constexpr uint8_t PSBT_IN_MWEB_OUTPUT_ID = 0x90;
+inline constexpr uint8_t PSBT_IN_MWEB_COMMIT = 0x91;
+inline constexpr uint8_t PSBT_IN_MWEB_OUTPUT_PUBKEY = 0x92;
+inline constexpr uint8_t PSBT_IN_MWEB_INPUT_PUBKEY = 0x93;
+inline constexpr uint8_t PSBT_IN_MWEB_FEATURES = 0x94;
+inline constexpr uint8_t PSBT_IN_MWEB_INPUT_SIG = 0x95;
+inline constexpr uint8_t PSBT_IN_MWEB_ADDR_DESCRIPTOR = 0x96;
+inline constexpr uint8_t PSBT_IN_MWEB_AMOUNT = 0x97;
+inline constexpr uint8_t PSBT_IN_MWEB_SHARED_SECRET = 0x98;
+inline constexpr uint8_t PSBT_IN_MWEB_KEY_EXCHANGE_PK = 0x99;
+inline constexpr uint8_t PSBT_IN_MWEB_EXTRA_DATA = 0x9C;
 inline constexpr uint8_t PSBT_IN_PROPRIETARY = 0xFC;
 
 // Output types
@@ -83,6 +110,15 @@ inline constexpr uint8_t PSBT_OUT_TAP_INTERNAL_KEY = 0x05;
 inline constexpr uint8_t PSBT_OUT_TAP_TREE = 0x06;
 inline constexpr uint8_t PSBT_OUT_TAP_BIP32_DERIVATION = 0x07;
 inline constexpr uint8_t PSBT_OUT_MUSIG2_PARTICIPANT_PUBKEYS = 0x08;
+inline constexpr uint8_t PSBT_OUT_MWEB_STEALTH_ADDRESS = 0x90;
+inline constexpr uint8_t PSBT_OUT_MWEB_COMMIT = 0x91;
+inline constexpr uint8_t PSBT_OUT_MWEB_FEATURES = 0x92;
+inline constexpr uint8_t PSBT_OUT_MWEB_SENDER_PUBKEY = 0x93;
+inline constexpr uint8_t PSBT_OUT_MWEB_OUTPUT_PUBKEY = 0x94;
+inline constexpr uint8_t PSBT_OUT_MWEB_STANDARD_FIELDS = 0x95;
+inline constexpr uint8_t PSBT_OUT_MWEB_RANGEPROOF = 0x96;
+inline constexpr uint8_t PSBT_OUT_MWEB_SIG = 0x97;
+inline constexpr uint8_t PSBT_OUT_MWEB_EXTRA_DATA = 0x98;
 inline constexpr uint8_t PSBT_OUT_PROPRIETARY = 0xFC;
 
 // The separator is 0x00. Reading this in means that the unserializer can interpret it
@@ -298,7 +334,8 @@ public:
     std::map<uint256, std::vector<unsigned char>> hash256_preimages;
 
     Txid prev_txid;
-    uint32_t prev_out;
+    //! Always set for non-MWEB inputs. MWEB inputs carry it only if it was provided.
+    std::optional<uint32_t> prev_out;
     std::optional<uint32_t> sequence;
     std::optional<uint32_t> time_locktime;
     std::optional<uint32_t> height_locktime;
@@ -318,10 +355,24 @@ public:
     // Key is the aggregate pubkey and the script leaf hash, value is a map of participant pubkey to partial_sig
     std::map<std::pair<CPubKey, uint256>, std::map<CPubKey, uint256>> m_musig2_partial_sigs;
 
+    // MWEB fields. An input is an MWEB input iff mweb_output_id is set.
+    std::optional<mw::Hash> mweb_output_id;
+    std::optional<Commitment> mweb_output_commit;
+    std::optional<PublicKey> mweb_output_pubkey;
+    std::optional<PublicKey> mweb_input_pubkey;
+    std::optional<uint8_t> mweb_features;
+    std::optional<Signature> mweb_sig;
+    std::optional<CAmount> mweb_amount;
+    std::optional<SecretKey> mweb_shared_secret;
+    std::optional<PublicKey> mweb_key_exchange_pubkey;
+    std::vector<uint8_t> mweb_extra_data;
+    std::optional<std::string> mweb_address_descriptor;
+
     std::map<std::vector<unsigned char>, std::vector<unsigned char>> unknown;
     std::set<PSBTProprietary> m_proprietary;
     std::optional<int> sighash_type;
 
+    bool IsMWEB() const noexcept { return mweb_output_id.has_value(); }
     void FillSignatureData(SignatureData& sigdata) const;
     void FromSignatureData(const SignatureData& sigdata);
     void Merge(const PSBTInput& input);
@@ -343,6 +394,14 @@ public:
         sequence(sequence)
     {
         assert(m_psbt_version == 0 || m_psbt_version == 2);
+    }
+
+    //! Construct an MWEB input spending the given output. MWEB inputs require PSBTv2.
+    explicit PSBTInput(uint32_t psbt_version, const mw::Hash& output_id)
+        : m_psbt_version(psbt_version),
+        mweb_output_id(output_id)
+    {
+        assert(m_psbt_version == 2);
     }
 
     // Construct a PSBTInput when the previous txid and output index are expected to be serialized
@@ -518,12 +577,17 @@ public:
 
         // Write PSBTv2 fields
         if (m_psbt_version >= 2) {
-            // Write prev txid, vout, sequence, and lock times
-            SerializeToVector(s, CompactSizeWriter(PSBT_IN_PREVIOUS_TXID));
-            SerializeToVector(s, prev_txid);
+            // Write prev txid, vout, sequence, and lock times.
+            // MWEB inputs only carry the previous outpoint fields that were provided.
+            if (!IsMWEB() || !prev_txid.IsNull()) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_PREVIOUS_TXID));
+                SerializeToVector(s, prev_txid);
+            }
 
-            SerializeToVector(s, CompactSizeWriter(PSBT_IN_OUTPUT_INDEX));
-            SerializeToVector(s, prev_out);
+            if (!IsMWEB() || prev_out.has_value()) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_OUTPUT_INDEX));
+                SerializeToVector(s, prev_out.value_or(0));
+            }
 
             if (sequence != std::nullopt) {
                 SerializeToVector(s, CompactSizeWriter(PSBT_IN_SEQUENCE));
@@ -536,6 +600,52 @@ public:
             if (height_locktime != std::nullopt) {
                 SerializeToVector(s, CompactSizeWriter(PSBT_IN_REQUIRED_HEIGHT_LOCKTIME));
                 SerializeToVector(s, *height_locktime);
+            }
+
+            // Write MWEB fields
+            if (mweb_output_id != std::nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_MWEB_OUTPUT_ID));
+                SerializeToVector(s, *mweb_output_id);
+            }
+            if (mweb_output_commit != std::nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_MWEB_COMMIT));
+                SerializeToVector(s, *mweb_output_commit);
+            }
+            if (mweb_output_pubkey != std::nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_MWEB_OUTPUT_PUBKEY));
+                SerializeToVector(s, *mweb_output_pubkey);
+            }
+            if (mweb_input_pubkey != std::nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_MWEB_INPUT_PUBKEY));
+                SerializeToVector(s, *mweb_input_pubkey);
+            }
+            if (mweb_features != std::nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_MWEB_FEATURES));
+                SerializeToVector(s, *mweb_features);
+            }
+            if (!mweb_extra_data.empty()) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_MWEB_EXTRA_DATA));
+                s << mweb_extra_data;
+            }
+            if (mweb_sig != std::nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_MWEB_INPUT_SIG));
+                SerializeToVector(s, *mweb_sig);
+            }
+            if (mweb_address_descriptor != std::nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_MWEB_ADDR_DESCRIPTOR));
+                s << std::vector<unsigned char>(mweb_address_descriptor->begin(), mweb_address_descriptor->end());
+            }
+            if (mweb_amount != std::nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_MWEB_AMOUNT));
+                SerializeToVector(s, *mweb_amount);
+            }
+            if (mweb_shared_secret != std::nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_MWEB_SHARED_SECRET));
+                SerializeToVector(s, *mweb_shared_secret);
+            }
+            if (mweb_key_exchange_pubkey != std::nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_IN_MWEB_KEY_EXCHANGE_PK));
+                SerializeToVector(s, *mweb_key_exchange_pubkey);
             }
         }
 
@@ -594,7 +704,7 @@ public:
                 case PSBT_IN_NON_WITNESS_UTXO:
                 {
                     ExpectedKeySize("Input Non-witness UTXO", key, 1);
-                    // Set the stream to unserialize with witness since this is always a valid network transaction
+                    // Set the stream to unserialize with witness and MWEB data since this is always a valid network transaction
                     UnserializeFromVector(s, TX_WITH_WITNESS(non_witness_utxo));
                     break;
                 }
@@ -738,7 +848,8 @@ public:
                     if (m_psbt_version < 2) {
                         throw std::ios_base::failure("Previous output's index is not allowed in PSBTv0");
                     }
-                    UnserializeFromVector(s, prev_out);
+                    prev_out.emplace();
+                    UnserializeFromVector(s, *prev_out);
                     found_prev_out = true;
                     break;
                 }
@@ -897,6 +1008,125 @@ public:
                     m_musig2_partial_sigs[std::make_pair(agg_pub, leaf_hash)].emplace(part_pub, partial_sig);
                     break;
                 }
+                case PSBT_IN_MWEB_OUTPUT_ID:
+                {
+                    ExpectedKeySize("Input MWEB Output ID", key, 1);
+                    if (m_psbt_version < 2) {
+                        throw std::ios_base::failure("MWEB output ID is not allowed in PSBTv0");
+                    }
+                    mweb_output_id.emplace();
+                    UnserializeFromVector(s, *mweb_output_id);
+                    break;
+                }
+                case PSBT_IN_MWEB_COMMIT:
+                {
+                    ExpectedKeySize("Input MWEB Commitment", key, 1);
+                    if (m_psbt_version < 2) {
+                        throw std::ios_base::failure("MWEB commitment is not allowed in PSBTv0");
+                    }
+                    mweb_output_commit.emplace();
+                    UnserializeFromVector(s, *mweb_output_commit);
+                    break;
+                }
+                case PSBT_IN_MWEB_OUTPUT_PUBKEY:
+                {
+                    ExpectedKeySize("Input MWEB Output Public Key", key, 1);
+                    if (m_psbt_version < 2) {
+                        throw std::ios_base::failure("MWEB output public key is not allowed in PSBTv0");
+                    }
+                    mweb_output_pubkey.emplace();
+                    UnserializeFromVector(s, *mweb_output_pubkey);
+                    break;
+                }
+                case PSBT_IN_MWEB_INPUT_PUBKEY:
+                {
+                    ExpectedKeySize("Input MWEB Input Public Key", key, 1);
+                    if (m_psbt_version < 2) {
+                        throw std::ios_base::failure("MWEB input public key is not allowed in PSBTv0");
+                    }
+                    mweb_input_pubkey.emplace();
+                    UnserializeFromVector(s, *mweb_input_pubkey);
+                    break;
+                }
+                case PSBT_IN_MWEB_FEATURES:
+                {
+                    ExpectedKeySize("Input MWEB Features", key, 1);
+                    if (m_psbt_version < 2) {
+                        throw std::ios_base::failure("MWEB features is not allowed in PSBTv0");
+                    }
+                    mweb_features.emplace();
+                    UnserializeFromVector(s, *mweb_features);
+                    break;
+                }
+                case PSBT_IN_MWEB_EXTRA_DATA:
+                {
+                    ExpectedKeySize("Input MWEB Extra Data", key, 1);
+                    if (m_psbt_version < 2) {
+                        throw std::ios_base::failure("MWEB extra data is not allowed in PSBTv0");
+                    }
+                    s >> mweb_extra_data;
+                    break;
+                }
+                case PSBT_IN_MWEB_INPUT_SIG:
+                {
+                    ExpectedKeySize("Input MWEB Signature", key, 1);
+                    if (m_psbt_version < 2) {
+                        throw std::ios_base::failure("MWEB signature is not allowed in PSBTv0");
+                    }
+                    mweb_sig.emplace();
+                    UnserializeFromVector(s, *mweb_sig);
+                    break;
+                }
+                case PSBT_IN_MWEB_ADDR_DESCRIPTOR:
+                {
+                    ExpectedKeySize("Input MWEB Address Descriptor", key, 1);
+                    if (m_psbt_version < 2) {
+                        throw std::ios_base::failure("MWEB address descriptor is not allowed in PSBTv0");
+                    }
+                    std::vector<unsigned char> v;
+                    s >> v;
+                    // A 4-byte value is the legacy address index form, which carries nothing a signer can use.
+                    if (v.size() == sizeof(uint32_t)) {
+                        break;
+                    }
+                    const bool is_ascii = std::all_of(v.begin(), v.end(), [](unsigned char c) { return c >= 0x20 && c <= 0x7e; });
+                    std::string descriptor(v.begin(), v.end());
+                    if (!is_ascii || !descriptor.starts_with("mweb(")) {
+                        throw std::ios_base::failure("MWEB address descriptor must be an ASCII mweb() descriptor");
+                    }
+                    mweb_address_descriptor = std::move(descriptor);
+                    break;
+                }
+                case PSBT_IN_MWEB_AMOUNT:
+                {
+                    ExpectedKeySize("Input MWEB Amount", key, 1);
+                    if (m_psbt_version < 2) {
+                        throw std::ios_base::failure("MWEB amount is not allowed in PSBTv0");
+                    }
+                    mweb_amount.emplace();
+                    UnserializeFromVector(s, *mweb_amount);
+                    break;
+                }
+                case PSBT_IN_MWEB_SHARED_SECRET:
+                {
+                    ExpectedKeySize("Input MWEB Shared Secret", key, 1);
+                    if (m_psbt_version < 2) {
+                        throw std::ios_base::failure("MWEB shared secret is not allowed in PSBTv0");
+                    }
+                    mweb_shared_secret.emplace();
+                    UnserializeFromVector(s, *mweb_shared_secret);
+                    break;
+                }
+                case PSBT_IN_MWEB_KEY_EXCHANGE_PK:
+                {
+                    ExpectedKeySize("Input MWEB Key Exchange Public Key", key, 1);
+                    if (m_psbt_version < 2) {
+                        throw std::ios_base::failure("MWEB key exchange public key is not allowed in PSBTv0");
+                    }
+                    mweb_key_exchange_pubkey.emplace();
+                    UnserializeFromVector(s, *mweb_key_exchange_pubkey);
+                    break;
+                }
                 case PSBT_IN_PROPRIETARY:
                 {
                     PSBTProprietary this_prop;
@@ -922,8 +1152,8 @@ public:
             throw std::ios_base::failure("Separator is missing at the end of an input map");
         }
 
-        // Make sure required PSBTv2 fields are present
-        if (m_psbt_version >= 2) {
+        // Make sure required PSBTv2 fields are present. MWEB inputs are identified by their output ID instead.
+        if (m_psbt_version >= 2 && !IsMWEB()) {
             if (!found_prev_txid) {
                 throw std::ios_base::failure("Previous TXID is required in PSBTv2");
             }
@@ -955,7 +1185,21 @@ public:
 
     CAmount amount;
     CScript script;
+    //! Whether PSBT_OUT_SCRIPT is present. Always true for non-MWEB outputs; MWEB outputs carry it only if provided.
+    bool m_has_script{true};
 
+    // MWEB fields. An output is an MWEB output iff it has a stealth address or a commitment.
+    std::optional<StealthAddress> mweb_stealth_address;
+    std::optional<Commitment> mweb_commit;
+    std::optional<uint8_t> mweb_features;
+    std::optional<PublicKey> mweb_sender_pubkey;
+    std::optional<PublicKey> mweb_output_pubkey;
+    std::optional<OutputStandardFields> mweb_standard_fields;
+    std::optional<RangeProof> mweb_rangeproof;
+    std::optional<Signature> mweb_sig;
+    std::vector<uint8_t> mweb_extra_data;
+
+    bool IsMWEB() const noexcept { return mweb_stealth_address.has_value() || mweb_commit.has_value(); }
     void FillSignatureData(SignatureData& sigdata) const;
     void FromSignatureData(const SignatureData& sigdata);
     void Merge(const PSBTOutput& output);
@@ -969,10 +1213,21 @@ public:
         assert(m_psbt_version == 0 || m_psbt_version == 2);
     }
 
+    //! Construct an MWEB output paying amount to address. MWEB outputs require PSBTv2.
+    explicit PSBTOutput(uint32_t psbt_version, CAmount amount, const StealthAddress& address)
+        : m_psbt_version(psbt_version),
+        amount(amount),
+        m_has_script(false),
+        mweb_stealth_address(address)
+    {
+        assert(m_psbt_version == 2);
+    }
+
     // Construct a PSBTOutput when the amount and script are expected to be serialized
     template <typename Stream>
     explicit PSBTOutput(deserialize_type, Stream& s, uint32_t psbt_version)
-        : m_psbt_version(psbt_version)
+        : m_psbt_version(psbt_version),
+        m_has_script(false)
     {
         assert(m_psbt_version == 2);
         Unserialize(s);
@@ -1002,8 +1257,10 @@ public:
             SerializeToVector(s, CompactSizeWriter(PSBT_OUT_AMOUNT));
             SerializeToVector(s, amount);
 
-            SerializeToVector(s, CompactSizeWriter(PSBT_OUT_SCRIPT));
-            s << script;
+            if (!IsMWEB() || m_has_script) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_OUT_SCRIPT));
+                s << script;
+            }
         }
 
         // Write proprietary things
@@ -1051,6 +1308,46 @@ public:
                 s_value << std::span{pk};
             }
             s << value;
+        }
+
+        // Write MWEB fields
+        if (m_psbt_version >= 2) {
+            if (mweb_stealth_address != std::nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_OUT_MWEB_STEALTH_ADDRESS));
+                SerializeToVector(s, *mweb_stealth_address);
+            }
+            if (mweb_commit != std::nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_OUT_MWEB_COMMIT));
+                SerializeToVector(s, *mweb_commit);
+            }
+            if (mweb_features != std::nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_OUT_MWEB_FEATURES));
+                SerializeToVector(s, *mweb_features);
+            }
+            if (mweb_sender_pubkey != std::nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_OUT_MWEB_SENDER_PUBKEY));
+                SerializeToVector(s, *mweb_sender_pubkey);
+            }
+            if (mweb_output_pubkey != std::nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_OUT_MWEB_OUTPUT_PUBKEY));
+                SerializeToVector(s, *mweb_output_pubkey);
+            }
+            if (!mweb_extra_data.empty()) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_OUT_MWEB_EXTRA_DATA));
+                s << mweb_extra_data;
+            }
+            if (mweb_standard_fields != std::nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_OUT_MWEB_STANDARD_FIELDS));
+                SerializeToVector(s, *mweb_standard_fields);
+            }
+            if (mweb_rangeproof != std::nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_OUT_MWEB_RANGEPROOF));
+                SerializeToVector(s, *mweb_rangeproof);
+            }
+            if (mweb_sig != std::nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_OUT_MWEB_SIG));
+                SerializeToVector(s, *mweb_sig);
+            }
         }
 
         // Write unknown things
@@ -1134,6 +1431,7 @@ public:
                     }
                     s >> script;
                     found_script = true;
+                    m_has_script = true;
                     break;
                 }
                 case PSBT_OUT_TAP_INTERNAL_KEY:
@@ -1196,6 +1494,95 @@ public:
                     DeserializeMuSig2ParticipantPubkeys(s, skey, m_musig2_participants, std::string{"Output"});
                     break;
                 }
+                case PSBT_OUT_MWEB_STEALTH_ADDRESS:
+                {
+                    ExpectedKeySize("Output MWEB Stealth Address", key, 1);
+                    if (m_psbt_version < 2) {
+                        throw std::ios_base::failure("MWEB stealth address is not allowed in PSBTv0");
+                    }
+                    mweb_stealth_address.emplace();
+                    UnserializeFromVector(s, *mweb_stealth_address);
+                    break;
+                }
+                case PSBT_OUT_MWEB_COMMIT:
+                {
+                    ExpectedKeySize("Output MWEB Commitment", key, 1);
+                    if (m_psbt_version < 2) {
+                        throw std::ios_base::failure("MWEB commitment is not allowed in PSBTv0");
+                    }
+                    mweb_commit.emplace();
+                    UnserializeFromVector(s, *mweb_commit);
+                    break;
+                }
+                case PSBT_OUT_MWEB_FEATURES:
+                {
+                    ExpectedKeySize("Output MWEB Features", key, 1);
+                    if (m_psbt_version < 2) {
+                        throw std::ios_base::failure("MWEB features is not allowed in PSBTv0");
+                    }
+                    mweb_features.emplace();
+                    UnserializeFromVector(s, *mweb_features);
+                    break;
+                }
+                case PSBT_OUT_MWEB_SENDER_PUBKEY:
+                {
+                    ExpectedKeySize("Output MWEB Sender Public Key", key, 1);
+                    if (m_psbt_version < 2) {
+                        throw std::ios_base::failure("MWEB sender pubkey is not allowed in PSBTv0");
+                    }
+                    mweb_sender_pubkey.emplace();
+                    UnserializeFromVector(s, *mweb_sender_pubkey);
+                    break;
+                }
+                case PSBT_OUT_MWEB_OUTPUT_PUBKEY:
+                {
+                    ExpectedKeySize("Output MWEB Output Public Key", key, 1);
+                    if (m_psbt_version < 2) {
+                        throw std::ios_base::failure("MWEB output pubkey is not allowed in PSBTv0");
+                    }
+                    mweb_output_pubkey.emplace();
+                    UnserializeFromVector(s, *mweb_output_pubkey);
+                    break;
+                }
+                case PSBT_OUT_MWEB_EXTRA_DATA:
+                {
+                    ExpectedKeySize("Output MWEB Extra Data", key, 1);
+                    if (m_psbt_version < 2) {
+                        throw std::ios_base::failure("MWEB extra data is not allowed in PSBTv0");
+                    }
+                    s >> mweb_extra_data;
+                    break;
+                }
+                case PSBT_OUT_MWEB_STANDARD_FIELDS:
+                {
+                    ExpectedKeySize("Output MWEB Standard Fields", key, 1);
+                    if (m_psbt_version < 2) {
+                        throw std::ios_base::failure("MWEB standard fields are not allowed in PSBTv0");
+                    }
+                    mweb_standard_fields.emplace();
+                    UnserializeFromVector(s, *mweb_standard_fields);
+                    break;
+                }
+                case PSBT_OUT_MWEB_RANGEPROOF:
+                {
+                    ExpectedKeySize("Output MWEB Range Proof", key, 1);
+                    if (m_psbt_version < 2) {
+                        throw std::ios_base::failure("MWEB rangeproof is not allowed in PSBTv0");
+                    }
+                    mweb_rangeproof.emplace();
+                    UnserializeFromVector(s, *mweb_rangeproof);
+                    break;
+                }
+                case PSBT_OUT_MWEB_SIG:
+                {
+                    ExpectedKeySize("Output MWEB Signature", key, 1);
+                    if (m_psbt_version < 2) {
+                        throw std::ios_base::failure("MWEB signature is not allowed in PSBTv0");
+                    }
+                    mweb_sig.emplace();
+                    UnserializeFromVector(s, *mweb_sig);
+                    break;
+                }
                 case PSBT_OUT_PROPRIETARY:
                 {
                     PSBTProprietary this_prop;
@@ -1227,12 +1614,226 @@ public:
             if (!found_amount) {
                 throw std::ios_base::failure("Output amount is required in PSBTv2");
             }
-            if (!found_script) {
+            if (!found_script && !IsMWEB()) {
                 throw std::ios_base::failure("Output script is required in PSBTv2");
             }
         }
     }
 };
+
+/** A structure for PSBTs which contains per MWEB kernel information */
+struct PSBTKernel
+{
+    std::optional<uint8_t> features;
+    std::optional<Commitment> commit;
+    std::optional<PublicKey> stealth_commit;
+    std::optional<CAmount> fee;
+    std::optional<CAmount> pegin_amount;
+    std::vector<PegOutCoin> pegouts;
+    std::optional<int32_t> lock_height;
+    std::vector<uint8_t> extra_data;
+    std::optional<Signature> sig;
+
+    std::map<std::vector<unsigned char>, std::vector<unsigned char>> unknown;
+
+    PSBTKernel() = default;
+
+    template <typename Stream>
+    explicit PSBTKernel(deserialize_type, Stream& s)
+    {
+        Unserialize(s);
+    }
+
+    bool operator==(const PSBTKernel&) const = default;
+
+    template <typename Stream>
+    inline void Serialize(Stream& s) const {
+        if (features != std::nullopt) {
+            SerializeToVector(s, CompactSizeWriter(PSBT_KERN_FEATURES));
+            SerializeToVector(s, *features);
+        }
+        if (commit != std::nullopt) {
+            SerializeToVector(s, CompactSizeWriter(PSBT_KERN_EXCESS_COMMIT));
+            SerializeToVector(s, *commit);
+        }
+        if (stealth_commit != std::nullopt) {
+            SerializeToVector(s, CompactSizeWriter(PSBT_KERN_STEALTH_COMMIT));
+            SerializeToVector(s, *stealth_commit);
+        }
+        if (fee != std::nullopt) {
+            SerializeToVector(s, CompactSizeWriter(PSBT_KERN_FEE));
+            SerializeToVector(s, *fee);
+        }
+        if (pegin_amount != std::nullopt) {
+            SerializeToVector(s, CompactSizeWriter(PSBT_KERN_PEGIN_AMOUNT));
+            SerializeToVector(s, *pegin_amount);
+        }
+        for (size_t i = 0; i < pegouts.size(); ++i) {
+            SerializeToVector(s, CompactSizeWriter(PSBT_KERN_PEGOUT), CompactSizeWriter(i));
+            SerializeToVector(s, pegouts[i].GetAmount(), pegouts[i].GetScriptPubKey());
+        }
+        if (lock_height != std::nullopt) {
+            SerializeToVector(s, CompactSizeWriter(PSBT_KERN_LOCK_HEIGHT));
+            SerializeToVector(s, *lock_height);
+        }
+        if (!extra_data.empty()) {
+            SerializeToVector(s, CompactSizeWriter(PSBT_KERN_EXTRA_DATA));
+            s << extra_data;
+        }
+        if (sig != std::nullopt) {
+            SerializeToVector(s, CompactSizeWriter(PSBT_KERN_SIG));
+            SerializeToVector(s, *sig);
+        }
+
+        // Write unknown things
+        for (const auto& entry : unknown) {
+            s << entry.first;
+            s << entry.second;
+        }
+
+        s << PSBT_SEPARATOR;
+    }
+
+    template <typename Stream>
+    inline void Unserialize(Stream& s) {
+        // Used for duplicate key detection
+        std::set<std::vector<unsigned char>> key_lookup;
+        std::map<uint64_t, PegOutCoin> indexed_pegouts;
+
+        // Read loop
+        bool found_sep = false;
+        while (!s.empty()) {
+            // Read the key of format "<keylen><keytype><keydata>" after which
+            // "key" will contain "<keytype><keydata>"
+            std::vector<unsigned char> key;
+            s >> key;
+
+            // the key is empty if that was actually a separator byte
+            // This is a special case for key lengths 0 as those are not allowed (except for separator)
+            if (key.empty()) {
+                found_sep = true;
+                break;
+            }
+
+            // Duplicate keys are not permitted
+            if (!key_lookup.emplace(key).second) {
+                throw std::ios_base::failure(tfm::format("Duplicate Key, kernel key \"%s\" already provided", HexStr(key)));
+            }
+
+            // Kernel key types are a single byte, so 0xfd..0xff are ordinary (unknown) types rather than
+            // compact size prefixes.
+            const uint8_t type = key[0];
+
+            switch (type) {
+                case PSBT_KERN_FEATURES:
+                {
+                    ExpectedKeySize("Kernel Features", key, 1);
+                    features.emplace();
+                    UnserializeFromVector(s, *features);
+                    break;
+                }
+                case PSBT_KERN_EXCESS_COMMIT:
+                {
+                    ExpectedKeySize("Kernel Excess Commitment", key, 1);
+                    commit.emplace();
+                    UnserializeFromVector(s, *commit);
+                    break;
+                }
+                case PSBT_KERN_STEALTH_COMMIT:
+                {
+                    ExpectedKeySize("Kernel Stealth Commitment", key, 1);
+                    stealth_commit.emplace();
+                    UnserializeFromVector(s, *stealth_commit);
+                    break;
+                }
+                case PSBT_KERN_FEE:
+                {
+                    ExpectedKeySize("Kernel Fee", key, 1);
+                    fee.emplace();
+                    UnserializeFromVector(s, *fee);
+                    break;
+                }
+                case PSBT_KERN_PEGIN_AMOUNT:
+                {
+                    ExpectedKeySize("Kernel Peg-in Amount", key, 1);
+                    pegin_amount.emplace();
+                    UnserializeFromVector(s, *pegin_amount);
+                    break;
+                }
+                case PSBT_KERN_PEGOUT:
+                {
+                    if (key.size() == 1) {
+                        throw std::ios_base::failure("Kernel pegout key is missing index");
+                    }
+                    SpanReader s_key{std::span{key}.subspan(1)};
+                    const uint64_t index = ReadCompactSize(s_key);
+                    if (!s_key.empty()) {
+                        throw std::ios_base::failure("Kernel pegout key has unexpected data after index");
+                    }
+
+                    CAmount amount;
+                    CScript script;
+                    UnserializeFromVector(s, amount, script);
+                    // An empty pegout script could never be part of a relayable transaction.
+                    if (script.empty()) {
+                        throw std::ios_base::failure("Pegout scriptPubKey must not be empty");
+                    }
+                    if (!indexed_pegouts.emplace(index, PegOutCoin(amount, std::move(script))).second) {
+                        throw std::ios_base::failure("Duplicate Key, pegout index is already provided");
+                    }
+                    break;
+                }
+                case PSBT_KERN_LOCK_HEIGHT:
+                {
+                    ExpectedKeySize("Kernel Lock Height", key, 1);
+                    lock_height.emplace();
+                    UnserializeFromVector(s, *lock_height);
+                    if (*lock_height < 0) {
+                        throw std::ios_base::failure("Kernel lock height must not be negative");
+                    }
+                    break;
+                }
+                case PSBT_KERN_EXTRA_DATA:
+                {
+                    ExpectedKeySize("Kernel Extra Data", key, 1);
+                    s >> extra_data;
+                    break;
+                }
+                case PSBT_KERN_SIG:
+                {
+                    ExpectedKeySize("Kernel Signature", key, 1);
+                    sig.emplace();
+                    UnserializeFromVector(s, *sig);
+                    break;
+                }
+                // Unknown stuff
+                default: {
+                    // Read in the value
+                    std::vector<unsigned char> val_bytes;
+                    s >> val_bytes;
+                    unknown.emplace(std::move(key), std::move(val_bytes));
+                    break;
+                }
+            }
+        }
+
+        if (!found_sep) {
+            throw std::ios_base::failure("Separator is missing at the end of a kernel map");
+        }
+
+        uint64_t expected_index = 0;
+        for (auto& [index, pegout] : indexed_pegouts) {
+            if (index != expected_index) {
+                throw std::ios_base::failure("Kernel pegout indexes must be contiguous");
+            }
+            pegouts.push_back(std::move(pegout));
+            ++expected_index;
+        }
+    }
+};
+
+/** MWEB: The kernel feature bits implied by the fields present. */
+uint8_t CalculateKernelFeatures(const PSBTKernel& kernel);
 
 /** A version of CTransaction with the PSBT format*/
 class PartiallySignedTransaction
@@ -1253,10 +1854,21 @@ public:
     uint32_t tx_version;
     std::optional<uint32_t> fallback_locktime;
 
+    // MWEB fields
+    std::optional<BlindingFactor> mweb_tx_offset;
+    std::optional<BlindingFactor> mweb_stealth_offset;
+    std::vector<PSBTKernel> kernels;
+
     uint32_t GetVersion() const;
+    //! Whether any MWEB input, output, kernel or offset is present.
+    bool ContainsMWEBComponents() const noexcept;
+    //! Whether every MWEB field needed to extract the transaction is present and every input is signed.
+    bool IsComplete() const noexcept;
 
     /** Merge psbt into this. The two psbts must have the same underlying CTransaction (i.e. the
-      * same actual Bitcoin transaction.) Returns true if the merge succeeded, false otherwise. */
+      * same actual Bitcoin transaction.) Returns true if the merge succeeded, false otherwise.
+      * PSBTs with MWEB components must also agree on every MWEB field that both set, and are
+      * left unchanged if the merge fails. */
     [[nodiscard]] bool Merge(const PartiallySignedTransaction& psbt);
     /** Merge the global xpubs of psbt into this, keeping the existing origin for an xpub
       * seen again with a different one, as the serialized records are keyed by xpub. */
@@ -1270,6 +1882,9 @@ public:
 
     template <typename Stream>
     inline void Serialize(Stream& s) const {
+        if (GetVersion() < 2 && ContainsMWEBComponents()) {
+            throw std::ios_base::failure("MWEB fields are not allowed in PSBTv0");
+        }
 
         // magic bytes
         s << PSBT_MAGIC_BYTES;
@@ -1279,7 +1894,7 @@ public:
             SerializeToVector(s, CompactSizeWriter(PSBT_GLOBAL_UNSIGNED_TX));
 
             // Write serialized tx to a stream
-            SerializeToVector(s, TX_NO_WITNESS(*GetUnsignedTx()));
+            SerializeToVector(s, TX_NO_WITNESS_NO_MWEB(*GetUnsignedTx()));
         }
 
         // Write xpubs
@@ -1312,6 +1927,20 @@ public:
                 SerializeToVector(s, CompactSizeWriter(PSBT_GLOBAL_TX_MODIFIABLE));
                 SerializeToVector(s, static_cast<uint8_t>(m_tx_modifiable->to_ulong()));
             }
+
+            // Write MWEB fields
+            if (!kernels.empty()) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_GLOBAL_MWEB_KERNEL_COUNT));
+                SerializeToVector(s, CompactSizeWriter(kernels.size()));
+            }
+            if (mweb_tx_offset != std::nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_GLOBAL_MWEB_TX_OFFSET));
+                SerializeToVector(s, *mweb_tx_offset);
+            }
+            if (mweb_stealth_offset != std::nullopt) {
+                SerializeToVector(s, CompactSizeWriter(PSBT_GLOBAL_MWEB_TX_STEALTH_OFFSET));
+                SerializeToVector(s, *mweb_stealth_offset);
+            }
         }
 
         // PSBT version
@@ -1343,6 +1972,12 @@ public:
         for (const PSBTOutput& output : outputs) {
             s << output;
         }
+        // Write kernels
+        if (GetVersion() >= 2) {
+            for (const PSBTKernel& kernel : kernels) {
+                s << kernel;
+            }
+        }
     }
 
 
@@ -1363,8 +1998,10 @@ public:
         std::optional<CMutableTransaction> tx;
         uint64_t input_count = 0;
         uint64_t output_count = 0;
+        uint64_t kernel_count = 0;
         bool found_input_count = false;
         bool found_output_count = false;
+        bool found_kernel_count = false;
         bool found_tx_version = false;
         bool found_fallback_locktime = false;
         while(!s.empty()) {
@@ -1398,7 +2035,7 @@ public:
                     ExpectedKeySize("Global Unsigned TX", key, 1);
                     // Set the stream to serialize with non-witness since this should always be non-witness
                     tx.emplace();
-                    UnserializeFromVector(s, TX_NO_WITNESS(*tx));
+                    UnserializeFromVector(s, TX_NO_WITNESS_NO_MWEB(*tx));
                     // Make sure that all scriptSigs and scriptWitnesses are empty
                     for (const CTxIn& txin : tx->vin) {
                         if (!txin.scriptSig.empty() || !txin.scriptWitness.IsNull()) {
@@ -1449,6 +2086,28 @@ public:
                     uint8_t tx_mod;
                     UnserializeFromVector(s, tx_mod);
                     m_tx_modifiable.emplace(tx_mod);
+                    break;
+                }
+                case PSBT_GLOBAL_MWEB_KERNEL_COUNT:
+                {
+                    ExpectedKeySize("Global MWEB Kernel Count", key, 1);
+                    CompactSizeReader reader(kernel_count);
+                    UnserializeFromVector(s, reader);
+                    found_kernel_count = true;
+                    break;
+                }
+                case PSBT_GLOBAL_MWEB_TX_OFFSET:
+                {
+                    ExpectedKeySize("Global MWEB TX Offset", key, 1);
+                    mweb_tx_offset.emplace();
+                    UnserializeFromVector(s, *mweb_tx_offset);
+                    break;
+                }
+                case PSBT_GLOBAL_MWEB_TX_STEALTH_OFFSET:
+                {
+                    ExpectedKeySize("Global MWEB Stealth Offset", key, 1);
+                    mweb_stealth_offset.emplace();
+                    UnserializeFromVector(s, *mweb_stealth_offset);
                     break;
                 }
                 case PSBT_GLOBAL_XPUB:
@@ -1535,6 +2194,15 @@ public:
             if (m_tx_modifiable != std::nullopt) {
                 throw std::ios_base::failure("PSBT_GLOBAL_TX_MODIFIABLE is not allowed in PSBTv0");
             }
+            if (found_kernel_count) {
+                throw std::ios_base::failure("PSBT_GLOBAL_MWEB_KERNEL_COUNT is not allowed in PSBTv0");
+            }
+            if (mweb_tx_offset != std::nullopt) {
+                throw std::ios_base::failure("PSBT_GLOBAL_MWEB_TX_OFFSET is not allowed in PSBTv0");
+            }
+            if (mweb_stealth_offset != std::nullopt) {
+                throw std::ios_base::failure("PSBT_GLOBAL_MWEB_TX_STEALTH_OFFSET is not allowed in PSBTv0");
+            }
         }
         // Disallow v1
         if (psbt_ver == 1) {
@@ -1561,6 +2229,7 @@ public:
         }
 
         // Read input data
+        bool mweb_inputs = false;
         unsigned int i = 0;
         while (!s.empty() && i < input_count) {
             if (psbt_ver < 2) {
@@ -1570,9 +2239,14 @@ public:
                 inputs.emplace_back(deserialize, s, psbt_ver);
             }
 
-            // Make sure the non-witness utxo matches the outpoint
             const PSBTInput& input = inputs.back();
-            if (input.non_witness_utxo) {
+            if (mweb_inputs && !input.IsMWEB()) {
+                throw std::ios_base::failure("MWEB inputs must be last");
+            }
+            mweb_inputs = input.IsMWEB();
+
+            // Make sure the non-witness utxo matches the outpoint
+            if (input.non_witness_utxo && !input.IsMWEB()) {
                 if (psbt_ver < 2) {
                     if (input.non_witness_utxo->GetHash() != tx->vin[i].prevout.hash) {
                         throw std::ios_base::failure("Non-witness UTXO does not match outpoint hash");
@@ -1584,7 +2258,7 @@ public:
                     if (input.non_witness_utxo->GetHash() != input.prev_txid) {
                         throw std::ios_base::failure("Non-witness UTXO does not match outpoint hash");
                     }
-                    if (input.prev_out >= input.non_witness_utxo->vout.size()) {
+                    if (*input.prev_out >= input.non_witness_utxo->vout.size()) {
                         throw std::ios_base::failure("Input specifies output index that does not exist");
                     }
                 }
@@ -1597,6 +2271,7 @@ public:
         }
 
         // Read output data
+        bool mweb_outputs = false;
         i = 0;
         while (!s.empty() && i < output_count) {
             if (psbt_ver < 2) {
@@ -1605,11 +2280,26 @@ public:
             } else {
                 outputs.emplace_back(deserialize, s, psbt_ver);
             }
+            if (mweb_outputs && !outputs.back().IsMWEB()) {
+                throw std::ios_base::failure("MWEB outputs must be last");
+            }
+            mweb_outputs = outputs.back().IsMWEB();
             ++i;
         }
         // Make sure that the number of outputs matches the number of outputs in the transaction
         if (outputs.size() != output_count) {
             throw std::ios_base::failure("Outputs provided does not match the number of outputs in transaction.");
+        }
+
+        // Read kernel data
+        i = 0;
+        while (!s.empty() && i < kernel_count) {
+            kernels.emplace_back(deserialize, s);
+            ++i;
+        }
+        // Make sure that the number of kernels matches the number of kernels in the transaction
+        if (kernels.size() != kernel_count) {
+            throw std::ios_base::failure("Kernels provided does not match the number of kernels in transaction.");
         }
     }
 
@@ -1681,6 +2371,14 @@ bool FinalizeAndExtractPSBT(PartiallySignedTransaction& psbtx, CMutableTransacti
  * @return     The combined PSBT or std::nullopt if the PSBTs cannot be combined
  */
 [[nodiscard]] std::optional<PartiallySignedTransaction> CombinePSBTs(const std::vector<PartiallySignedTransaction>& psbtxs);
+
+/**
+ * Checks that peg-in outputs match the peg-in kernels, pairing them in order.
+ *
+ * A peg-in output's amount must equal its kernel's peg-in amount, and a final peg-in script must commit to its
+ * kernel's ID. With require_final, every peg-in output must have a final script and a matching kernel.
+ */
+bool VerifyPeginOutputs(const PartiallySignedTransaction& psbt, bool require_final);
 
 //! Decode a base64ed PSBT into a PartiallySignedTransaction
 [[nodiscard]] util::Result<PartiallySignedTransaction> DecodeBase64PSBT(const std::string& base64_tx);

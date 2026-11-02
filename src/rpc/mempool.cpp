@@ -4,13 +4,20 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <rpc/mempool.h>
-#include <rpc/register.h> // IWYU pragma: associated
 
 #include <common/args.h>
 #include <consensus/amount.h>
 #include <consensus/validation.h>
 #include <core_io.h>
+#include <crypto/hex_base.h>
 #include <index/txospenderindex.h>
+#include <mw/models/crypto/hash.h>
+#include <mw/models/tx/peg_in_coin.h>
+#include <mw/models/tx/peg_out_coin.h>
+#include <mweb/mweb_mempool_accept.h>
+#include <mweb/mweb_mempool_markets.h>
+#include <mweb/mweb_models.h>
+#include <mweb/mweb_rpc_serialization.h>
 #include <net.h>
 #include <net_processing.h>
 #include <netaddress.h>
@@ -26,11 +33,13 @@
 #include <policy/rbf.h>
 #include <primitives/transaction.h>
 #include <rpc/protocol.h>
+#include <rpc/register.h> // IWYU pragma: associated
 #include <rpc/request.h>
 #include <rpc/server.h>
 #include <rpc/server_util.h>
 #include <rpc/util.h>
 #include <script/script.h>
+#include <serialize.h>
 #include <sync.h>
 #include <tinyformat.h>
 #include <txgraph.h>
@@ -57,6 +66,7 @@
 #include <optional>
 #include <ranges>
 #include <set>
+#include <span>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -105,7 +115,8 @@ static RPCMethod sendrawtransaction()
             {"hexstring", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The hex string of the raw transaction"},
             {"maxfeerate", RPCArg::Type::AMOUNT, RPCArg::Default{FormatMoney(DEFAULT_MAX_RAW_TX_FEE_RATE.GetFeePerK())},
              "Reject transactions whose fee rate is higher than the specified value, expressed in " + CURRENCY_UNIT +
-                 "/kvB.\nFee rates larger than 1BTC/kvB are rejected.\nSet to 0 to accept any fee rate."},
+                 "/kvB.\nFee rates larger than 1BTC/kvB are rejected.\nSet to 0 to accept any fee rate.\n"
+                 "MWEB fees are allowed up to the base MWEB fee plus one output's MWEB fee, scaled up in proportion to a maxfeerate above the default."},
             {"maxburnamount", RPCArg::Type::AMOUNT, RPCArg::Default{FormatMoney(DEFAULT_MAX_BURN_AMOUNT)},
              "Reject transactions with provably unspendable outputs (e.g. 'datacarrier' outputs that use the OP_RETURN opcode) greater than the specified value, expressed in " + CURRENCY_UNIT + ".\n"
              "If burning funds through unspendable outputs is desired, increase this value.\n"
@@ -144,7 +155,7 @@ static RPCMethod sendrawtransaction()
             const CFeeRate max_raw_tx_fee_rate{ParseFeeRate(self.Arg<UniValue>("maxfeerate"))};
 
             int64_t virtual_size = GetVirtualTransactionSize(*tx);
-            CAmount max_raw_tx_fee = max_raw_tx_fee_rate.GetFee(virtual_size);
+            CAmount max_raw_tx_fee = MWEB::MempoolAccept::MaxRawTxFee(max_raw_tx_fee_rate, DEFAULT_MAX_RAW_TX_FEE_RATE, virtual_size, tx->mweb_tx.GetMWEBWeight()); // MWEB
 
             std::string err_string;
             AssertLockNotHeld(cs_main);
@@ -329,7 +340,8 @@ static RPCMethod testmempoolaccept()
             },
             {"maxfeerate", RPCArg::Type::AMOUNT, RPCArg::Default{FormatMoney(DEFAULT_MAX_RAW_TX_FEE_RATE.GetFeePerK())},
              "Reject transactions whose fee rate is higher than the specified value, expressed in " + CURRENCY_UNIT +
-                 "/kvB.\nFee rates larger than 1BTC/kvB are rejected.\nSet to 0 to accept any fee rate."},
+                 "/kvB.\nFee rates larger than 1BTC/kvB are rejected.\nSet to 0 to accept any fee rate.\n"
+                 "MWEB fees are allowed up to the base MWEB fee plus one output's MWEB fee, scaled up in proportion to a maxfeerate above the default."},
         },
         RPCResult{
             RPCResult::Type::ARR, "", "The result of the mempool acceptance test for each raw transaction in the input array.\n"
@@ -348,10 +360,12 @@ static RPCMethod testmempoolaccept()
                                                                 "Use vsize_bip141 to actually get that behavior or switch to the explicit vsize_adjusted for retained behavior."},
                     {RPCResult::Type::NUM, "vsize_bip141", /*optional=*/true, "Virtual transaction size as defined in BIP 141.\n"
                                                                        "This is different from actual serialized size for witness transactions as witness data is discounted (only present when 'allowed' is true)."},
+                    {RPCResult::Type::NUM, "mweb_weight", /*optional=*/true, "The MWEB weight of the transaction (only present when 'allowed' is true and the transaction has an MWEB body)"},
                     {RPCResult::Type::OBJ, "fees", /*optional=*/true, "Transaction fees (only present if 'allowed' is true)",
                     {
                         {RPCResult::Type::STR_AMOUNT, "base", "transaction fee in " + CURRENCY_UNIT},
-                        {RPCResult::Type::STR_AMOUNT, "effective-feerate", /*optional=*/false, "the effective feerate in " + CURRENCY_UNIT + " per KvB. May differ from the base feerate if, for example, there are modified fees from prioritisetransaction or a package feerate was used."},
+                        {RPCResult::Type::STR_AMOUNT, "effective-feerate", /*optional=*/false, "the effective feerate in " + CURRENCY_UNIT + " per KvB. May differ from the base feerate if, for example, there are modified fees from prioritisetransaction or a package feerate was used.\n"
+                                                                                               "With MWEB weight, the fee is rated over the sigop-adjusted L1 weight plus the MWEB weight, divided by 4."},
                         {RPCResult::Type::ARR, "effective-includes", /*optional=*/false, "transactions whose fees and vsizes are included in effective-feerate.",
                             {RPCResult{RPCResult::Type::STR_HEX, "", "transaction wtxid in hex"},
                         }},
@@ -429,7 +443,7 @@ static RPCMethod testmempoolaccept()
                     const CAmount fee = tx_result.m_base_fees.value();
                     // Check that fee does not exceed maximum fee
                     const int64_t virtual_size = tx_result.m_vsize.value();
-                    const CAmount max_raw_tx_fee = max_raw_tx_fee_rate.GetFee(virtual_size);
+                    const CAmount max_raw_tx_fee = MWEB::MempoolAccept::MaxRawTxFee(max_raw_tx_fee_rate, DEFAULT_MAX_RAW_TX_FEE_RATE, virtual_size, tx->mweb_tx.GetMWEBWeight()); // MWEB
                     if (max_raw_tx_fee && fee > max_raw_tx_fee) {
                         result_inner.pushKV("allowed", false);
                         result_inner.pushKV("reject-reason", "max-fee-exceeded");
@@ -441,6 +455,7 @@ static RPCMethod testmempoolaccept()
                         result_inner.pushKV("vsize_adjusted", virtual_size);
                         result_inner.pushKV("vsize", virtual_size);
                         result_inner.pushKV("vsize_bip141", GetVirtualTransactionSize(*tx));
+                        if (tx_result.m_mweb_weight.value() > 0) result_inner.pushKV("mweb_weight", tx_result.m_mweb_weight.value()); // MWEB
                         UniValue fees(UniValue::VOBJ);
                         fees.pushKV("base", ValueFromAmount(fee));
                         fees.pushKV("effective-feerate", ValueFromAmount(tx_result.m_effective_feerate.value().GetFeePerK()));
@@ -495,12 +510,15 @@ static std::vector<RPCResult> MempoolEntryDescription()
         "This is different from actual serialized size for witness transactions as witness data is discounted."},
         {RPCResult::Type::NUM, "vsize_adjusted", "Maximum of sigop-adjusted size (-bytespersigop) and virtual transaction size as defined in BIP 141."},
         RPCResult{RPCResult::Type::NUM, "weight", "transaction weight as defined in BIP 141."},
+        RPCResult{RPCResult::Type::NUM, "mwebweight", "MWEB weight of this transaction (0 if it has no MWEB body)"},
         RPCResult{RPCResult::Type::NUM_TIME, "time", "local time transaction entered pool in seconds since 1 Jan 1970 GMT"},
         RPCResult{RPCResult::Type::NUM, "height", "block height when transaction entered pool"},
         RPCResult{RPCResult::Type::NUM, "descendantcount", "number of in-mempool descendant transactions (including this one)"},
         RPCResult{RPCResult::Type::NUM, "descendantsize", "virtual transaction size of in-mempool descendants (including this one)"},
+        RPCResult{RPCResult::Type::NUM, "descendantmwebweight", "sum of MWEB weights of in-mempool descendants (including this one)"},
         RPCResult{RPCResult::Type::NUM, "ancestorcount", "number of in-mempool ancestor transactions (including this one)"},
         RPCResult{RPCResult::Type::NUM, "ancestorsize", "virtual transaction size of in-mempool ancestors (including this one)"},
+        RPCResult{RPCResult::Type::NUM, "ancestormwebweight", "sum of MWEB weights of in-mempool ancestors (including this one)"},
         RPCResult{RPCResult::Type::NUM, "chunkweight", "sigops-adjusted weight (as defined in BIP 141 and modified by '-bytespersigop') of this transaction's chunk"},
         RPCResult{RPCResult::Type::STR_HEX, "wtxid", "hash of serialized transaction, including witness data"},
         RPCResult{RPCResult::Type::OBJ, "fees", "",
@@ -511,7 +529,36 @@ static std::vector<RPCResult> MempoolEntryDescription()
                 RPCResult{RPCResult::Type::STR_AMOUNT, "descendant", "transaction fees of in-mempool descendants (including this one) with fee deltas used for mining priority, denominated in " + CURRENCY_UNIT},
                 RPCResult{RPCResult::Type::STR_AMOUNT, "chunk", "transaction fees of chunk, denominated in " + CURRENCY_UNIT},
             }},
-        RPCResult{RPCResult::Type::ARR, "depends", "unconfirmed transactions used as inputs for this transaction",
+        RPCResult{RPCResult::Type::OBJ, "mweb", /*optional=*/true, "MWEB extension-body details (only present when the transaction has an MWEB body)",
+            {
+                {RPCResult::Type::OBJ, "weight", "",
+                    {
+                        {RPCResult::Type::NUM, "base", "MWEB weight of this transaction"},
+                        {RPCResult::Type::NUM, "ancestor", "sum of MWEB weights of in-mempool ancestors (including this one)"},
+                        {RPCResult::Type::NUM, "descendant", "sum of MWEB weights of in-mempool descendants (including this one)"},
+                    }},
+                {RPCResult::Type::STR_AMOUNT, "fee", /*optional=*/true, "MWEB fee denominated in " + CURRENCY_UNIT + " (null if unavailable)"},
+                {RPCResult::Type::NUM, "lock_height", "MWEB lock height"},
+                {RPCResult::Type::ARR, "pegins", "",
+                    {{RPCResult::Type::OBJ, "", "",
+                         {
+                             {RPCResult::Type::NUM, "amount", "Peg-in amount in " + CURRENCY_ATOM},
+                             {RPCResult::Type::STR_HEX, "kernel_id", "Peg-in kernel id"},
+                         }},
+                    }},
+                {RPCResult::Type::ARR, "pegouts", "",
+                    {{RPCResult::Type::OBJ, "", "",
+                         {
+                             {RPCResult::Type::NUM, "amount", "Peg-out amount in " + CURRENCY_ATOM},
+                             {RPCResult::Type::STR_HEX, "scriptpubkey", "Peg-out scriptPubKey (hex)"},
+                         }},
+                    }},
+                {RPCResult::Type::ARR, "inputs", "Spent MWEB output ids",
+                    {{RPCResult::Type::STR_HEX, "output_id", "MWEB output id"}}},
+                {RPCResult::Type::ARR, "outputs", "Created MWEB output ids",
+                    {{RPCResult::Type::STR_HEX, "output_id", "MWEB output id"}}},
+            }},
+        RPCResult{RPCResult::Type::ARR, "depends", "unconfirmed transactions used as inputs for this transaction (including MWEB spent-output parents)",
             {RPCResult{RPCResult::Type::STR_HEX, "transactionid", "parent transaction id"}}},
         RPCResult{RPCResult::Type::ARR, "spentby", "unconfirmed transactions spending outputs from this transaction",
             {RPCResult{RPCResult::Type::STR_HEX, "transactionid", "child transaction id"}}},
@@ -576,17 +623,22 @@ static void entryToJSON(const CTxMemPool& pool, UniValue& info, const CTxMemPool
 
     auto [ancestor_count, ancestor_size, ancestor_fees] = pool.CalculateAncestorData(e);
     auto [descendant_count, descendant_size, descendant_fees] = pool.CalculateDescendantData(e);
+    const uint64_t ancestor_mweb_weight = pool.CalculateAncestorMWEBWeight(e);
+    const uint64_t descendant_mweb_weight = pool.CalculateDescendantMWEBWeight(e);
 
     info.pushKV("vsize_adjusted", e.GetTxSize());
     info.pushKV("vsize", e.GetTxSize());
     info.pushKV("vsize_bip141", GetVirtualTransactionSize(e.GetTx()));
     info.pushKV("weight", e.GetTxWeight());
+    info.pushKV("mwebweight", e.GetMWEBWeight());
     info.pushKV("time", count_seconds(e.GetTime()));
     info.pushKV("height", e.GetHeight());
     info.pushKV("descendantcount", descendant_count);
     info.pushKV("descendantsize", descendant_size);
+    info.pushKV("descendantmwebweight", descendant_mweb_weight);
     info.pushKV("ancestorcount", ancestor_count);
     info.pushKV("ancestorsize", ancestor_size);
+    info.pushKV("ancestormwebweight", ancestor_mweb_weight);
     info.pushKV("wtxid", e.GetTx().GetWitnessHash().ToString());
     auto feerate = pool.GetMainChunkFeerate(e);
     info.pushKV("chunkweight", feerate.size);
@@ -600,16 +652,66 @@ static void entryToJSON(const CTxMemPool& pool, UniValue& info, const CTxMemPool
     info.pushKV("fees", std::move(fees));
 
     const CTransaction& tx = e.GetTx();
+    if (tx.HasMWEBTx()) {
+        UniValue mweb_info(UniValue::VOBJ);
+
+        UniValue mweb_weight(UniValue::VOBJ);
+        mweb_weight.pushKV("base", e.GetMWEBWeight());
+        mweb_weight.pushKV("ancestor", ancestor_mweb_weight);
+        mweb_weight.pushKV("descendant", descendant_mweb_weight);
+        mweb_info.pushKV("weight", std::move(mweb_weight));
+
+        const auto mweb_fee = tx.mweb_tx.GetFee();
+        mweb_info.pushKV("fee", mweb_fee ? ValueFromAmount(*mweb_fee) : UniValue(UniValue::VNULL));
+        mweb_info.pushKV("lock_height", tx.mweb_tx.GetLockHeight());
+
+        UniValue pegins(UniValue::VARR);
+        for (const PegInCoin& pegin : tx.mweb_tx.GetPegIns()) {
+            UniValue pegin_uni(UniValue::VOBJ);
+            pegin_uni.pushKV("amount", pegin.GetAmount());
+            pegin_uni.pushKV("kernel_id", pegin.GetKernelID().ToHex());
+            pegins.push_back(std::move(pegin_uni));
+        }
+        mweb_info.pushKV("pegins", std::move(pegins));
+
+        UniValue pegouts(UniValue::VARR);
+        for (const PegOutCoin& pegout : tx.mweb_tx.GetPegOuts()) {
+            UniValue pegout_uni(UniValue::VOBJ);
+            pegout_uni.pushKV("amount", pegout.GetAmount());
+            pegout_uni.pushKV("scriptpubkey", HexStr(pegout.GetScriptPubKey()));
+            pegouts.push_back(std::move(pegout_uni));
+        }
+        mweb_info.pushKV("pegouts", std::move(pegouts));
+
+        UniValue spent_ids(UniValue::VARR);
+        for (const mw::Hash& spent_id : tx.mweb_tx.GetSpentIDs()) {
+            spent_ids.push_back(spent_id.ToHex());
+        }
+        mweb_info.pushKV("inputs", std::move(spent_ids));
+
+        UniValue output_ids(UniValue::VARR);
+        for (const mw::Hash& output_id : tx.mweb_tx.GetOutputIDs()) {
+            output_ids.push_back(output_id.ToHex());
+        }
+        mweb_info.pushKV("outputs", std::move(output_ids));
+
+        info.pushKV("mweb", std::move(mweb_info));
+    }
+
     std::set<std::string> setDepends;
-    for (const CTxIn& txin : tx.vin)
-    {
-        if (pool.exists(txin.prevout.hash))
+    for (const CTxIn& txin : tx.vin) {
+        if (pool.exists(txin.prevout.hash)) {
             setDepends.insert(txin.prevout.hash.ToString());
+        }
+    }
+    for (const mw::Hash& spent_id : tx.mweb_tx.GetSpentIDs()) {
+        if (const CTransaction* creator = pool.GetMWEBOutputTx(spent_id)) {
+            setDepends.insert(creator->GetHash().ToString());
+        }
     }
 
     UniValue depends(UniValue::VARR);
-    for (const std::string& dep : setDepends)
-    {
+    for (const std::string& dep : setDepends) {
         depends.push_back(dep);
     }
 
@@ -954,6 +1056,9 @@ static RPCMethod getmempoolentry()
     if (entry == nullptr) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Transaction not in mempool");
     }
+    if (!MWEB::RPCSerializeWithMWEB() && entry->GetTx().IsMWEBOnly()) { // MWEB: Litecoin's error
+        throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "MWEB-only transaction not serializable for rpcserialversion<2");
+    }
 
     UniValue info(UniValue::VOBJ);
     entryToJSON(mempool, info, *entry);
@@ -1114,9 +1219,14 @@ UniValue MempoolInfoToJSON(const CTxMemPool& pool)
     ret.pushKV("size", pool.size());
     ret.pushKV("bytes", pool.GetTotalTxSize());
     ret.pushKV("usage", pool.DynamicMemoryUsage());
+    const size_t mweb_cap{MWEBMempoolMarkets::MWEBCap(
+        static_cast<size_t>(std::max<int64_t>(pool.m_opts.max_size_bytes, 0)), pool.m_opts.max_mempool_mweb_pct)};
+    ret.pushKV("mwebusage", pool.m_mweb_markets->GetUsage(MempoolMarket::MWEB));
     ret.pushKV("total_fee", ValueFromAmount(pool.GetTotalFee()));
     ret.pushKV("maxmempool", pool.m_opts.max_size_bytes);
+    ret.pushKV("maxmempoolmweb", mweb_cap);
     ret.pushKV("mempoolminfee", ValueFromAmount(std::max(pool.GetMinFee(), pool.m_opts.min_relay_feerate).GetFeePerK()));
+    ret.pushKV("mwebminfee", ValueFromAmount(pool.GetMWEBMinFee().GetFeePerK()));
     ret.pushKV("minrelaytxfee", ValueFromAmount(pool.m_opts.min_relay_feerate.GetFeePerK()));
     ret.pushKV("incrementalrelayfee", ValueFromAmount(pool.m_opts.incremental_relay_feerate.GetFeePerK()));
     ret.pushKV("unbroadcastcount", pool.GetUnbroadcastTxs().size());
@@ -1144,9 +1254,12 @@ static RPCMethod getmempoolinfo()
                     {RPCResult::Type::NUM, "size", "Current tx count"},
                     {RPCResult::Type::NUM, "bytes", "Sum of all virtual transaction sizes as defined in BIP 141. Differs from actual serialized size because witness data is discounted"},
                     {RPCResult::Type::NUM, "usage", "Total memory usage for the mempool"},
+                    {RPCResult::Type::NUM, "mwebusage", "Memory usage counted toward the MWEB mempool market"},
                     {RPCResult::Type::STR_AMOUNT, "total_fee", "Total fees for the mempool in " + CURRENCY_UNIT + ", ignoring modified fees through prioritisetransaction"},
                     {RPCResult::Type::NUM, "maxmempool", "Maximum memory usage for the mempool"},
+                    {RPCResult::Type::NUM, "maxmempoolmweb", "Maximum memory for the MWEB market (share of maxmempool from -maxmempoolmweb)"},
                     {RPCResult::Type::STR_AMOUNT, "mempoolminfee", "Minimum fee rate in " + CURRENCY_UNIT + "/kvB for tx to be accepted. Is the maximum of minrelaytxfee and minimum mempool fee"},
+                    {RPCResult::Type::STR_AMOUNT, "mwebminfee", "Additional MWEB minimum fee in " + CURRENCY_UNIT + " per 1000 MWEB weight, above the base MWEB fee"},
                     {RPCResult::Type::STR_AMOUNT, "minrelaytxfee", "Current minimum relay fee for transactions"},
                     {RPCResult::Type::STR_AMOUNT, "incrementalrelayfee", "minimum fee rate increment for mempool limiting or replacement in " + CURRENCY_UNIT + "/kvB"},
                     {RPCResult::Type::NUM, "unbroadcastcount", "Current number of transactions that haven't passed initial broadcast yet"},
@@ -1393,7 +1506,8 @@ static RPCMethod submitpackage()
             },
             {"maxfeerate", RPCArg::Type::AMOUNT, RPCArg::Default{FormatMoney(DEFAULT_MAX_RAW_TX_FEE_RATE.GetFeePerK())},
              "Reject transactions whose fee rate is higher than the specified value, expressed in " + CURRENCY_UNIT +
-                 "/kvB.\nFee rates larger than 1BTC/kvB are rejected.\nSet to 0 to accept any fee rate."},
+                 "/kvB.\nFee rates larger than 1BTC/kvB are rejected.\nSet to 0 to accept any fee rate.\n"
+                 "MWEB fees are allowed up to the base MWEB fee plus one output's MWEB fee, scaled up in proportion to a maxfeerate above the default."},
             {"maxburnamount", RPCArg::Type::AMOUNT, RPCArg::Default{FormatMoney(DEFAULT_MAX_BURN_AMOUNT)},
              "Reject transactions with provably unspendable outputs (e.g. 'datacarrier' outputs that use the OP_RETURN opcode) greater than the specified value, expressed in " + CURRENCY_UNIT + ".\n"
              "If burning funds through unspendable outputs is desired, increase this value.\n"
@@ -1413,9 +1527,11 @@ static RPCMethod submitpackage()
                         {RPCResult::Type::NUM, "vsize", /*optional=*/true, "(DEPRECATED) Was previously erroneously described as the BIP 141 vsize, but is actually sigops-adjusted vsize.\n"
                                                                     "Use vsize_bip141 to actually get that behavior or switch to the explicit vsize_adjusted for retained behavior."},
                         {RPCResult::Type::NUM, "vsize_bip141", /*optional=*/true, "Virtual transaction size as defined in BIP 141."},
+                        {RPCResult::Type::NUM, "mweb_weight", /*optional=*/true, "The MWEB weight of the transaction (only present when the transaction has an MWEB body)"},
                         {RPCResult::Type::OBJ, "fees", /*optional=*/true, "Transaction fees", {
                             {RPCResult::Type::STR_AMOUNT, "base", "transaction fee in " + CURRENCY_UNIT},
-                            {RPCResult::Type::STR_AMOUNT, "effective-feerate", /*optional=*/true, "if the transaction was not already in the mempool, the effective feerate in " + CURRENCY_UNIT + " per KvB. For example, the package feerate and/or feerate with modified fees from prioritisetransaction."},
+                            {RPCResult::Type::STR_AMOUNT, "effective-feerate", /*optional=*/true, "if the transaction was not already in the mempool, the effective feerate in " + CURRENCY_UNIT + " per KvB. For example, the package feerate and/or feerate with modified fees from prioritisetransaction.\n"
+                                                                                                  "With MWEB weight, the fee is rated over the sigop-adjusted L1 weight plus the MWEB weight, divided by 4."},
                             {RPCResult::Type::ARR, "effective-includes", /*optional=*/true, "if effective-feerate is provided, the wtxids of the transactions whose fees and vsizes are included in effective-feerate.",
                                 {{RPCResult::Type::STR_HEX, "", "transaction wtxid in hex"},
                             }},
@@ -1477,7 +1593,7 @@ static RPCMethod submitpackage()
             NodeContext& node = EnsureAnyNodeContext(request.context);
             CTxMemPool& mempool = EnsureMemPool(node);
             Chainstate& chainstate = EnsureChainman(node).ActiveChainstate();
-            const auto package_result = WITH_LOCK(::cs_main, return ProcessNewPackage(chainstate, mempool, txns, /*test_accept=*/ false, client_maxfeerate));
+            const auto package_result = WITH_LOCK(::cs_main, return ProcessNewPackage(chainstate, mempool, txns, /*test_accept=*/ false, client_maxfeerate, DEFAULT_MAX_RAW_TX_FEE_RATE)); // MWEB
 
             std::string package_msg = "success";
 
@@ -1563,6 +1679,7 @@ static RPCMethod submitpackage()
                     result_inner.pushKV("vsize_adjusted", it->second.m_vsize.value());
                     result_inner.pushKV("vsize", it->second.m_vsize.value());
                     result_inner.pushKV("vsize_bip141", GetVirtualTransactionSize(*tx));
+                    if (it->second.m_mweb_weight.value() > 0) result_inner.pushKV("mweb_weight", it->second.m_mweb_weight.value()); // MWEB
                     UniValue fees(UniValue::VOBJ);
                     fees.pushKV("base", ValueFromAmount(it->second.m_base_fees.value()));
                     if (tx_result.m_result_type == MempoolAcceptResult::ResultType::VALID) {

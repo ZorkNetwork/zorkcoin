@@ -58,6 +58,8 @@ bool operator<(const CInv& a, const CInv& b)
 std::string CInv::GetMessageType() const
 {
     std::string cmd;
+    if (type & MSG_MWEB_FLAG) // MWEB
+        cmd.append("mweb-");
     if (type & MSG_WITNESS_FLAG)
         cmd.append("witness-");
     int masked = type & MSG_TYPE_MASK;
@@ -69,6 +71,8 @@ std::string CInv::GetMessageType() const
     case MSG_BLOCK:          return cmd.append(NetMsgType::BLOCK);
     case MSG_FILTERED_BLOCK: return cmd.append(NetMsgType::MERKLEBLOCK);
     case MSG_CMPCT_BLOCK:    return cmd.append(NetMsgType::CMPCTBLOCK);
+    case MSG_MWEB_HEADER:    return cmd.append(NetMsgType::MWEBHEADER); // MWEB
+    case MSG_MWEB_LEAFSET:   return cmd.append(NetMsgType::MWEBLEAFSET); // MWEB
     default:
         throw std::out_of_range(strprintf("CInv::GetMessageType(): type=%d unknown type", type));
     }
@@ -99,6 +103,8 @@ static std::string serviceFlagToStr(size_t bit)
     case NODE_COMPACT_FILTERS: return "COMPACT_FILTERS";
     case NODE_NETWORK_LIMITED: return "NETWORK_LIMITED";
     case NODE_P2P_V2:          return "P2P_V2";
+    case NODE_MWEB:              return "MWEB"; // MWEB
+    case NODE_MWEB_LIGHT_CLIENT: return "MWEB_LIGHT_CLIENT"; // MWEB
     // Not using default, so we get warned when a case is missing
     }
 

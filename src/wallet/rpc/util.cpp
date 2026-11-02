@@ -7,6 +7,7 @@
 #include <common/url.h>
 #include <rpc/util.h>
 #include <util/any.h>
+#include <util/strencodings.h>
 #include <util/translation.h>
 #include <wallet/context.h>
 #include <wallet/wallet.h>
@@ -107,6 +108,14 @@ std::string LabelFromValue(const UniValue& value)
     if (label == "*")
         throw JSONRPCError(RPC_WALLET_INVALID_LABEL_NAME, "Invalid label name");
     return label;
+}
+
+mw::Hash ParseMWEBOutputID(const UniValue& value)
+{
+    if (!value.isStr() || value.get_str().size() != 64 || !IsHex(value.get_str())) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, mweb_out must be a 64-character hexadecimal string");
+    }
+    return mw::Hash::FromHex(value.get_str());
 }
 
 void PushParentDescriptors(const CWallet& wallet, const CScript& script_pubkey, UniValue& entry)

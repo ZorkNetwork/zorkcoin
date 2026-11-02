@@ -103,6 +103,7 @@ FUZZ_TARGET(scriptpubkeyman, .init = initialize_spkm)
         wallet.SetWalletFlag(WALLET_FLAG_DESCRIPTORS);
         wallet.SetLastBlockProcessed(chainstate.m_chain.Height(), chainstate.m_chain.Tip()->GetBlockHash());
         wallet.m_keypool_size = 1;
+        wallet.m_mweb_keypool_size = 1;
     }
 
     auto wallet_desc{CreateWalletDescriptor(fuzzed_data_provider)};
@@ -225,6 +226,7 @@ FUZZ_TARGET(spkm_migration, .init = initialize_spkm_migration)
     std::unique_ptr<CWallet> wallet_ptr{std::make_unique<CWallet>(node.chain.get(), "", CreateMockableWalletDatabase())};
     CWallet& wallet{*wallet_ptr};
     wallet.m_keypool_size = 1;
+    wallet.m_mweb_keypool_size = 1;
     {
         LOCK(wallet.cs_wallet);
         wallet.UnsetWalletFlag(WALLET_FLAG_DESCRIPTORS);

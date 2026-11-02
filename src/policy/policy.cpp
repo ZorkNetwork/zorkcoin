@@ -11,6 +11,7 @@
 #include <consensus/amount.h>
 #include <consensus/consensus.h>
 #include <consensus/validation.h>
+#include <mweb/mweb_policy.h> // MWEB
 #include <policy/feerate.h>
 #include <primitives/transaction.h>
 #include <script/interpreter.h>
@@ -136,7 +137,14 @@ bool IsStandardTx(const CTransaction& tx, const std::optional<unsigned>& max_dat
 
     unsigned int datacarrier_bytes_left = max_datacarrier_bytes.value_or(0);
     TxoutType whichType;
-    for (const CTxOut& txout : tx.vout) {
+
+    // MWEB: Also check pegout scripts
+    std::vector<CTxOut> txouts = tx.vout;
+    for (const PegOutCoin& pegout : tx.mweb_tx.GetPegOuts()) {
+        txouts.emplace_back(pegout.GetAmount(), pegout.GetScriptPubKey());
+    }
+
+    for (const CTxOut& txout : txouts) {
         if (!::IsStandard(txout.scriptPubKey, whichType)) {
             reason = "scriptpubkey";
             return false;
@@ -158,6 +166,19 @@ bool IsStandardTx(const CTransaction& tx, const std::optional<unsigned>& max_dat
     // Only MAX_DUST_OUTPUTS_PER_TX dust is permitted(on otherwise valid ephemeral dust)
     if (GetDust(tx, dust_relay_fee).size() > MAX_DUST_OUTPUTS_PER_TX) {
         reason = "dust";
+        return false;
+    }
+
+    // MWEB: Peg-outs are paid by the HogEx, so they cannot be ephemeral dust
+    for (size_t i{tx.vout.size()}; i < txouts.size(); ++i) {
+        if (IsDust(txouts[i], dust_relay_fee)) {
+            reason = "dust";
+            return false;
+        }
+    }
+
+    // MWEB: Check MWEB standard transaction policies
+    if (!MWEB::Policy::IsStandardTx(tx, reason)) {
         return false;
     }
 

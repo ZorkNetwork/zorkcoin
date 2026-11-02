@@ -55,6 +55,24 @@ FUZZ_TARGET(psbt)
     }
 
     (void)psbt.GetUnsignedTx();
+    (void)psbt.IsComplete();
+    (void)VerifyPeginOutputs(psbt, /*require_final=*/false);
+    (void)VerifyPeginOutputs(psbt, /*require_final=*/true);
+    const bool contains_mweb{psbt.ContainsMWEBComponents()};
+    if (contains_mweb) {
+        // MWEB components are only representable in PSBTv2, with MWEB entries last.
+        Assert(psbt_version == 2);
+        bool seen_mweb{false};
+        for (const PSBTInput& input : psbt.inputs) {
+            Assert(!seen_mweb || input.IsMWEB());
+            seen_mweb = input.IsMWEB();
+        }
+        seen_mweb = false;
+        for (const PSBTOutput& output : psbt.outputs) {
+            Assert(!seen_mweb || output.IsMWEB());
+            seen_mweb = output.IsMWEB();
+        }
+    }
 
     for (const PSBTInput& input : psbt.inputs) {
         (void)PSBTInputSigned(input);
@@ -65,7 +83,8 @@ FUZZ_TARGET(psbt)
             (void)tx_out.ToString();
         }
         // A PSBT input must roundtrip to signature data.
-        PSBTInput input_fill{psbt_version, input_mod.prev_txid, input_mod.prev_out, input_mod.sequence};
+        PSBTInput input_fill{psbt_version, input_mod.prev_txid, input_mod.prev_out.value_or(0), input_mod.sequence};
+        input_fill.prev_out = input_mod.prev_out;
         SignatureData sig_data;
         input_mod.FillSignatureData(sig_data);
         input_fill.FromSignatureData(sig_data);
@@ -87,6 +106,18 @@ FUZZ_TARGET(psbt)
             input_mod.m_proprietary.clear();
             // Unknown fields are not included in SignatureData
             input_mod.unknown.clear();
+            // MWEB fields are not included in SignatureData
+            input_mod.mweb_output_id.reset();
+            input_mod.mweb_output_commit.reset();
+            input_mod.mweb_output_pubkey.reset();
+            input_mod.mweb_input_pubkey.reset();
+            input_mod.mweb_features.reset();
+            input_mod.mweb_sig.reset();
+            input_mod.mweb_amount.reset();
+            input_mod.mweb_shared_secret.reset();
+            input_mod.mweb_key_exchange_pubkey.reset();
+            input_mod.mweb_extra_data.clear();
+            input_mod.mweb_address_descriptor.reset();
 
             Assert(input_mod == input_fill);
         }
@@ -97,6 +128,7 @@ FUZZ_TARGET(psbt)
         PSBTOutput output_mod = output;
         // A PSBT output must roundtrip to signature data.
         PSBTOutput output_fill{psbt_version, output_mod.amount, output_mod.script};
+        output_fill.m_has_script = output_mod.m_has_script;
         SignatureData sig_data;
         output_mod.FillSignatureData(sig_data);
         output_fill.FromSignatureData(sig_data);
@@ -114,6 +146,16 @@ FUZZ_TARGET(psbt)
         output_mod.m_proprietary.clear();
         // Unknown fields are not included in SignatureData
         output_mod.unknown.clear();
+        // MWEB fields are not included in SignatureData
+        output_mod.mweb_stealth_address.reset();
+        output_mod.mweb_commit.reset();
+        output_mod.mweb_features.reset();
+        output_mod.mweb_sender_pubkey.reset();
+        output_mod.mweb_output_pubkey.reset();
+        output_mod.mweb_standard_fields.reset();
+        output_mod.mweb_rangeproof.reset();
+        output_mod.mweb_sig.reset();
+        output_mod.mweb_extra_data.clear();
 
         Assert(output_mod.m_tap_internal_key == output_fill.m_tap_internal_key);
         Assert(output_mod == output_fill);
@@ -135,7 +177,13 @@ FUZZ_TARGET(psbt)
         psbt_merge = *psbt_merge_res;
     }
     psbt_mut = psbt;
-    (void)psbt_mut.Merge(psbt_merge);
+    const bool merged{psbt_mut.Merge(psbt_merge)};
+    if (!merged && (contains_mweb || psbt_merge.ContainsMWEBComponents())) {
+        // A failed MWEB merge leaves the PSBT unchanged.
+        std::vector<uint8_t> failed_merge_ser;
+        VectorWriter{failed_merge_ser, 0, psbt_mut};
+        Assert(failed_merge_ser == psbt_ser);
+    }
     psbt_mut = psbt;
     std::optional<PartiallySignedTransaction> comb_res = CombinePSBTs({psbt_mut, psbt_merge});
     if (comb_res) {

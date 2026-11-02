@@ -73,6 +73,7 @@ private:
     const CTransactionRef tx;
     const CAmount nFee;             //!< Cached to avoid expensive parent-transaction lookups
     const int32_t nTxWeight;         //!< ... and avoid recomputing tx weight (also used for GetTxSize())
+    const uint64_t mweb_weight;     //!< MWEB: cached extension-block weight
     const size_t nUsageSize;        //!< ... and total memory usage
     const int64_t nTime;            //!< Local time when entering the mempool
     const uint64_t entry_sequence;  //!< Sequence number used to determine whether this transaction is too recent for relay
@@ -91,6 +92,7 @@ public:
         : tx{tx},
           nFee{fee},
           nTxWeight{GetTransactionWeight(*tx)},
+          mweb_weight{tx->mweb_tx.GetMWEBWeight()},
           nUsageSize{RecursiveDynamicUsage(tx)},
           nTime{time},
           entry_sequence{entry_sequence},
@@ -111,8 +113,17 @@ public:
     {
         return GetVirtualTransactionSize(nTxWeight, sigOpCost, ::nBytesPerSigOp);
     }
-    int32_t GetAdjustedWeight() const { return GetSigOpsAdjustedWeight(nTxWeight, sigOpCost, ::nBytesPerSigOp); }
+    int32_t GetAdjustedWeight() const
+    {
+        const int64_t base = GetSigOpsAdjustedWeight(nTxWeight, sigOpCost, ::nBytesPerSigOp);
+        const int64_t combined = base + static_cast<int64_t>(mweb_weight);
+        if (combined > std::numeric_limits<int32_t>::max()) {
+            return std::numeric_limits<int32_t>::max();
+        }
+        return static_cast<int32_t>(combined);
+    }
     int32_t GetTxWeight() const { return nTxWeight; }
+    uint64_t GetMWEBWeight() const { return mweb_weight; }
     std::chrono::seconds GetTime() const { return std::chrono::seconds{nTime}; }
     unsigned int GetHeight() const { return entryHeight; }
     uint64_t GetSequence() const { return entry_sequence; }

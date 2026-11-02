@@ -107,7 +107,7 @@ FUZZ_TARGET(txorphan, .init = initialize_orphanage)
             NodeId peer_id = fuzzed_data_provider.ConsumeIntegral<NodeId>();
             const auto total_bytes_start{orphanage->TotalOrphanUsage()};
             const auto total_peer_bytes_start{orphanage->UsageByPeer(peer_id)};
-            const auto tx_weight{GetTransactionWeight(*tx)};
+            const auto tx_weight{node::OrphanageTxUsage(*tx)};
 
             CallOneOf(
                 fuzzed_data_provider,
@@ -304,7 +304,7 @@ FUZZ_TARGET(txorphan_protected, .init = initialize_orphanage)
         // orphanage functions
         LIMITED_WHILE (fuzzed_data_provider.remaining_bytes(), 10 * global_latency_score_limit) {
             NodeId peer_id = fuzzed_data_provider.ConsumeIntegralInRange<NodeId>(0, num_peers - 1);
-            const auto tx_weight{GetTransactionWeight(*tx)};
+            const auto tx_weight{node::OrphanageTxUsage(*tx)};
 
             // This protected peer will never send orphans that would
             // exceed their own personal allotment, so is never evicted.
@@ -464,9 +464,9 @@ FUZZ_TARGET(txorphanage_sim)
         // Convert to CTransactionRef.
         txn[txorder[t]] = MakeTransactionRef(std::move(tx));
         wtxids.insert(txn[txorder[t]]->GetWitnessHash());
-        auto weight = GetTransactionWeight(*txn[txorder[t]]);
+        auto weight = node::OrphanageTxUsage(*txn[txorder[t]]);
         assert(weight < MAX_STANDARD_TX_WEIGHT);
-        total_usage += GetTransactionWeight(*txn[txorder[t]]);
+        total_usage += node::OrphanageTxUsage(*txn[txorder[t]]);
     }
 
     //
@@ -555,7 +555,7 @@ FUZZ_TARGET(txorphanage_sim)
         for (auto& ann : sim_announcements) {
             if (ann.announcer != peer) continue;
             count += 1 + (txn[ann.tx]->vin.size() / 10);
-            usage += GetTransactionWeight(*txn[ann.tx]);
+            usage += node::OrphanageTxUsage(*txn[ann.tx]);
         }
         return std::max<ByRatioNegSize<FeeFrac>>(FeeFrac{count, max_count}, FeeFrac{usage, max_usage});
     };
@@ -694,7 +694,7 @@ FUZZ_TARGET(txorphanage_sim)
             node::TxOrphanage::Count total_latency_score = sim_announcements.size();
             for (unsigned tx = 0; tx < NUM_TX; ++tx) {
                 if (have_tx_fn(tx)) {
-                    total_usage += GetTransactionWeight(*txn[tx]);
+                    total_usage += node::OrphanageTxUsage(*txn[tx]);
                     total_latency_score += txn[tx]->vin.size() / 10;
                 }
             }
@@ -751,7 +751,7 @@ FUZZ_TARGET(txorphanage_sim)
     for (unsigned tx = 0; tx < NUM_TX; ++tx) {
         bool sim_have_tx = have_tx_fn(tx);
         if (sim_have_tx) {
-            orphan_usage += GetTransactionWeight(*txn[tx]);
+            orphan_usage += node::OrphanageTxUsage(*txn[tx]);
             total_latency_score += txn[tx]->vin.size() / 10;
         }
         unique_orphans += sim_have_tx;
@@ -769,7 +769,7 @@ FUZZ_TARGET(txorphanage_sim)
         for (NodeId peer = 0; peer < NUM_PEERS; ++peer) {
             auto it_sim_ann = find_announce_fn(tx, peer);
             bool sim_have_ann = it_sim_ann != sim_announcements.end();
-            if (sim_have_ann) usage_by_peer[peer] += GetTransactionWeight(*txn[tx]);
+            if (sim_have_ann) usage_by_peer[peer] += node::OrphanageTxUsage(*txn[tx]);
             count_by_peer[peer] += sim_have_ann;
             // GetOrphanTransactions (announcers presence)
             if (sim_have_ann) assert(sim_have_tx);

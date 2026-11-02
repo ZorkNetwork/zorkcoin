@@ -182,3 +182,14 @@ uint256 CPartialMerkleTree::ExtractMatches(std::vector<Txid> &vMatch, std::vecto
         return uint256();
     return hashMerkleRoot;
 }
+
+CMerkleBlockWithMWEB::CMerkleBlockWithMWEB(const CBlock& block)
+{
+    hogex = block.GetHogEx();
+    assert(hogex != nullptr);
+
+    mweb_header = block.mweb_block.GetMWEBHeader();
+    assert(mweb_header != nullptr);
+
+    merkle = CMerkleBlock(block, std::set<Txid>{hogex->GetHash()});
+}

@@ -7,6 +7,7 @@
 
 #include <consensus/amount.h>
 #include <consensus/consensus.h>
+#include <mw/models/wallet/coin.h> // MWEB hooks
 #include <outputtype.h>
 #include <policy/feerate.h>
 #include <primitives/transaction.h>
@@ -16,9 +17,10 @@
 #include <util/result.h>
 
 #include <optional>
-
+#include <variant>
 
 namespace wallet {
+class CWalletTx;
 //! lower bound for randomly-chosen target change amount
 inline constexpr CAmount CHANGE_LOWER{50'000};
 //! upper bound for randomly-chosen target change amount
@@ -128,6 +130,13 @@ public:
     bool HasEffectiveValue() const { return effective_value.has_value(); }
 };
 
+enum class InputPreference {
+    ANY,
+    BTC_ONLY, // MWEB hooks
+    MWEB_ONLY,
+    MIXED,
+};
+
 /** Parameters for one iteration of Coin Selection. */
 struct CoinSelectionParams {
     /** Randomness to use in the context of coin selection. */
@@ -172,6 +181,11 @@ struct CoinSelectionParams {
     uint32_t m_version{CTransaction::CURRENT_VERSION};
     /** The maximum weight for this transaction. */
     std::optional<int> m_max_tx_weight{std::nullopt};
+
+    // MWEB hooks
+    size_t mweb_change_output_weight{0};
+    size_t mweb_nochange_weight{0};
+    InputPreference input_preference{InputPreference::ANY};
 
     CoinSelectionParams(FastRandomContext& rng_fast, int change_output_size, int change_spend_size,
                         CAmount min_change_target, CFeeRate effective_feerate,
@@ -472,6 +486,70 @@ util::Result<SelectionResult> SelectCoinsSRD(const std::vector<OutputGroup>& utx
 // Original coin selection algorithm as a fallback
 util::Result<SelectionResult> KnapsackSolver(std::vector<OutputGroup>& groups, const CAmount& nTargetValue,
                                              CAmount change_target, FastRandomContext& rng, int max_selection_weight);
+
+// MWEB hooks: coin selection types for MWEB UTXOs
+struct MWOutput {
+    mw::Coin coin;
+    int nDepth;
+    StealthAddress address;
+    const CWalletTx* wtx;
+};
+
+class CInputCoin {
+public:
+    CInputCoin(const CTransactionRef& tx, unsigned int i)
+        : m_output(std::make_pair(COutPoint(tx->GetHash(), i), tx->vout.at(i))) {}
+    explicit CInputCoin(const mw::Coin& coin) : m_output(coin) {}
+
+    bool IsMWEB() const noexcept { return std::holds_alternative<mw::Coin>(m_output); }
+    CAmount GetAmount() const noexcept
+    {
+        if (IsMWEB()) return std::get<mw::Coin>(m_output).amount;
+        return std::get<std::pair<COutPoint, CTxOut>>(m_output).second.nValue;
+    }
+    mw::Coin GetMWEBCoin() const noexcept
+    {
+        assert(IsMWEB());
+        return std::get<mw::Coin>(m_output);
+    }
+
+    friend bool operator<(const CInputCoin& a, const CInputCoin& b) noexcept
+    {
+        if (a.IsMWEB() != b.IsMWEB()) {
+            return a.IsMWEB() < b.IsMWEB();
+        }
+        if (a.IsMWEB()) {
+            return a.GetMWEBCoin().output_id < b.GetMWEBCoin().output_id;
+        }
+        const auto& a_out = std::get<std::pair<COutPoint, CTxOut>>(a.m_output).first;
+        const auto& b_out = std::get<std::pair<COutPoint, CTxOut>>(b.m_output).first;
+        return std::tie(a_out.hash, a_out.n) < std::tie(b_out.hash, b_out.n);
+    }
+
+private:
+    std::variant<std::pair<COutPoint, CTxOut>, mw::Coin> m_output;
+};
+
+struct COutputCoin {
+    explicit COutputCoin(const MWOutput& out) : m_mweb_output(out) {}
+
+    bool IsMWEB() const noexcept { return m_mweb_output.has_value(); }
+    bool IsSpendable() const { return IsMWEB() || true; }
+    CAmount GetValue() const
+    {
+        assert(m_mweb_output);
+        return m_mweb_output->coin.amount;
+    }
+    CInputCoin GetInputCoin() const
+    {
+        assert(m_mweb_output);
+        return CInputCoin(m_mweb_output->coin);
+    }
+
+private:
+    std::optional<MWOutput> m_mweb_output;
+};
+
 } // namespace wallet
 
 #endif // BITCOIN_WALLET_COINSELECTION_H

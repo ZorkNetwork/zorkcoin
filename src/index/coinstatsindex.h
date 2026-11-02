@@ -49,6 +49,10 @@ private:
 
     [[nodiscard]] bool RevertBlock(const interfaces::BlockInfo& block);
 
+    void ResetMuhashState();
+    [[nodiscard]] bool ApplyBlockToMuhashState(const interfaces::BlockInfo& block);
+    [[nodiscard]] bool ReplayMuhashToHeight(int target_height);
+
     bool AllowPrune() const override { return true; }
 
 protected:

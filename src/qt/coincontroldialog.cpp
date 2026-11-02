@@ -14,6 +14,9 @@
 
 #include <interfaces/node.h>
 #include <key_io.h>
+#include <mweb/mweb_spend.h>
+#include <mweb/mweb_transact.h>
+#include <mw/models/wallet/coin.h>
 #include <policy/policy.h>
 #include <wallet/coincontrol.h>
 #include <wallet/coinselection.h>
@@ -28,9 +31,14 @@
 #include <QSettings>
 #include <QTreeWidget>
 
+#include <algorithm>
+#include <vector>
+
 using wallet::CCoinControl;
+using wallet::CRecipient;
 
 QList<CAmount> CoinControlDialog::payAmounts;
+QList<QString> CoinControlDialog::payAddresses;
 bool CoinControlDialog::fSubtractFeeFromAmount = false;
 
 bool CCoinControlWidgetItem::operator<(const QTreeWidgetItem &other) const {
@@ -175,14 +183,21 @@ void CoinControlDialog::showMenu(const QPoint &point)
 
         // disable some items (like Copy Transaction ID, lock, unlock) for tree roots in context menu
         auto txid{Txid::FromHex(item->data(COLUMN_ADDRESS, TxHashRole).toString().toStdString())};
-        if (txid) { // a valid txid means this is a child node, and not a parent node in tree mode
-            m_copy_transaction_outpoint_action->setEnabled(true);
-            if (model->wallet().isLockedCoin(COutPoint(*txid, item->data(COLUMN_ADDRESS, VOutRole).toUInt()))) {
+        const bool is_mweb = IsMWEB(item);
+        if (txid || is_mweb) { // child node in tree mode
+            if (is_mweb) {
+                m_copy_transaction_outpoint_action->setEnabled(false);
                 lockAction->setEnabled(false);
-                unlockAction->setEnabled(true);
-            } else {
-                lockAction->setEnabled(true);
                 unlockAction->setEnabled(false);
+            } else {
+                m_copy_transaction_outpoint_action->setEnabled(true);
+                if (model->wallet().isLockedCoin(COutPoint(*txid, item->data(COLUMN_ADDRESS, VOutRole).toUInt()))) {
+                    lockAction->setEnabled(false);
+                    unlockAction->setEnabled(true);
+                } else {
+                    lockAction->setEnabled(true);
+                    unlockAction->setEnabled(false);
+                }
             }
         } else { // this means click on parent node in tree mode -> disable all
             m_copy_transaction_outpoint_action->setEnabled(false);
@@ -336,6 +351,19 @@ void CoinControlDialog::radioListMode(bool checked)
 void CoinControlDialog::viewItemChanged(QTreeWidgetItem* item, int column)
 {
     if (column != COLUMN_CHECKBOX) return;
+    if (IsMWEB(item)) {
+        const mw::Hash output_id = mw::Hash::FromHex(item->data(COLUMN_ADDRESS, MWEBOutRole).toString().toStdString());
+        if (item->checkState(COLUMN_CHECKBOX) == Qt::Unchecked)
+            m_coin_control.UnSelectMWEB(output_id);
+        else if (item->isDisabled())
+            item->setCheckState(COLUMN_CHECKBOX, Qt::Unchecked);
+        else
+            m_coin_control.SelectMWEB(output_id);
+
+        if (ui->treeWidget->isEnabled())
+            CoinControlDialog::updateLabels(m_coin_control, model, this);
+        return;
+    }
     auto txid{Txid::FromHex(item->data(COLUMN_ADDRESS, TxHashRole).toString().toStdString())};
     if (txid) { // a valid txid means this is a child node, and not a parent node in tree mode
         COutPoint outpt(*txid, item->data(COLUMN_ADDRESS, VOutRole).toUInt());
@@ -384,7 +412,9 @@ void CoinControlDialog::updateLabels(CCoinControl& m_coin_control, WalletModel *
     unsigned int nBytes         = 0;
     unsigned int nBytesInputs   = 0;
     unsigned int nQuantity      = 0;
+    unsigned int nL1Quantity    = 0;
     bool fWitness               = false;
+    bool has_mweb_inputs        = false;
 
     auto vCoinControl{m_coin_control.ListSelected()};
 
@@ -403,6 +433,7 @@ void CoinControlDialog::updateLabels(CCoinControl& m_coin_control, WalletModel *
 
         // Quantity
         nQuantity++;
+        nL1Quantity++;
 
         // Amount
         nAmount += out.txout.nValue;
@@ -442,10 +473,22 @@ void CoinControlDialog::updateLabels(CCoinControl& m_coin_control, WalletModel *
         else nBytesInputs += 148;
     }
 
+    // MWEB: selected extension-block inputs (weight charged via mweb_weight, not L1 bytes)
+    for (const mw::Hash& output_id : m_coin_control.ListMWEBSelected()) {
+        mw::Coin coin;
+        if (!model->wallet().findCoin(output_id, coin)) {
+            m_coin_control.UnSelectMWEB(output_id);
+            continue;
+        }
+        nQuantity++;
+        nAmount += coin.amount;
+        has_mweb_inputs = true;
+    }
+
     // calculation
     if (nQuantity > 0)
     {
-        // Bytes
+        // L1 byte skeleton (ignored for pure MWEB_TO_MWEB after EstimateCoinControlFeeParams)
         nBytes = nBytesInputs + ((CoinControlDialog::payAmounts.size() > 0 ? CoinControlDialog::payAmounts.size() + 1 : 2) * 34) + 10; // always assume +1 output for change here
         if (fWitness)
         {
@@ -453,7 +496,7 @@ void CoinControlDialog::updateLabels(CCoinControl& m_coin_control, WalletModel *
             // usually, the result will be an overestimate within a couple of satoshis so that the confirmation dialog ends up displaying a slightly smaller fee.
             // also, the witness stack size value is a variable sized integer. usually, the number of stack items will be well under the single byte var int limit.
             nBytes += 2; // account for the serialized marker and flag bytes
-            nBytes += nQuantity; // account for the witness byte that holds the number of stack items for each input.
+            nBytes += nL1Quantity; // witness item-count bytes for L1 inputs only
         }
 
         // in the subtract fee from amount case, we can tell if zero change already and subtract the bytes, so that fee calculation afterwards is accurate
@@ -461,8 +504,40 @@ void CoinControlDialog::updateLabels(CCoinControl& m_coin_control, WalletModel *
             if (nAmount - nPayAmount == 0)
                 nBytes -= 34;
 
+        std::vector<CRecipient> recipients;
+        const int n_pay = std::min(CoinControlDialog::payAmounts.size(), CoinControlDialog::payAddresses.size());
+        for (int idx = 0; idx < n_pay; ++idx) {
+            const CTxDestination dest = DecodeDestination(CoinControlDialog::payAddresses.at(idx).toStdString());
+            if (!IsValidDestination(dest)) continue;
+            CRecipient recipient;
+            recipient.dest = dest;
+            recipient.nAmount = CoinControlDialog::payAmounts.at(idx);
+            recipient.fSubtractFeeFromAmount = CoinControlDialog::fSubtractFeeFromAmount;
+            recipients.push_back(std::move(recipient));
+        }
+        // Amounts without addresses (partial form): still count stealth placeholders when
+        // MWEB inputs are selected so weight is not left at zero.
+        for (int idx = n_pay; idx < CoinControlDialog::payAmounts.size(); ++idx) {
+            if (!has_mweb_inputs) break;
+            CRecipient recipient;
+            recipient.dest = StealthAddress{};
+            recipient.nAmount = CoinControlDialog::payAmounts.at(idx);
+            recipient.fSubtractFeeFromAmount = CoinControlDialog::fSubtractFeeFromAmount;
+            recipients.push_back(std::move(recipient));
+        }
+
+        const MWEB::CoinControlFeeParams mweb_fee_params = MWEB::EstimateCoinControlFeeParams(
+            /*has_l1_inputs=*/nL1Quantity > 0,
+            has_mweb_inputs,
+            recipients,
+            m_coin_control.destChange,
+            static_cast<int32_t>(nBytes));
+        if (mweb_fee_params.uses_mweb) {
+            nBytes = static_cast<unsigned int>(std::max(mweb_fee_params.l1_vsize, 0));
+        }
+
         // Fee
-        nPayFee = model->wallet().getMinimumFee(nBytes, m_coin_control, /*returned_target=*/nullptr, /*reason=*/nullptr);
+        nPayFee = model->wallet().getMinimumFee(nBytes, mweb_fee_params.mweb_weight, m_coin_control, /*returned_target=*/nullptr, /*reason=*/nullptr);
 
         if (nPayAmount > 0)
         {
@@ -478,12 +553,12 @@ void CoinControlDialog::updateLabels(CCoinControl& m_coin_control, WalletModel *
                 {
                     nPayFee += nChange;
                     nChange = 0;
-                    if (CoinControlDialog::fSubtractFeeFromAmount)
+                    if (CoinControlDialog::fSubtractFeeFromAmount && !mweb_fee_params.uses_mweb)
                         nBytes -= 34; // we didn't detect lack of change above
                 }
             }
 
-            if (nChange == 0 && !CoinControlDialog::fSubtractFeeFromAmount)
+            if (nChange == 0 && !CoinControlDialog::fSubtractFeeFromAmount && !mweb_fee_params.uses_mweb)
                 nBytes -= 34;
         }
 
@@ -668,6 +743,56 @@ void CoinControlDialog::updateView()
         }
     }
 
+    // MWEB: list spendable MWEB UTXOs when wallet supports MWEB
+    if (model->wallet().mwebEnabled()) {
+        CCoinControlWidgetItem* itemMWEB{nullptr};
+        const QString sMWEBLabel = tr("MWEB");
+        if (treeMode) {
+            itemMWEB = new CCoinControlWidgetItem(ui->treeWidget);
+            itemMWEB->setFlags(flgTristate);
+            itemMWEB->setCheckState(COLUMN_CHECKBOX, Qt::Unchecked);
+            itemMWEB->setText(COLUMN_LABEL, sMWEBLabel);
+            itemMWEB->setText(COLUMN_ADDRESS, sMWEBLabel);
+        }
+
+        CAmount nMWEBSum = 0;
+        int nMWEBChildren = 0;
+        for (const auto& entry : model->wallet().listMWEBUnspent()) {
+            nMWEBSum += entry.amount;
+            nMWEBChildren++;
+
+            CCoinControlWidgetItem* itemOutput;
+            if (treeMode) itemOutput = new CCoinControlWidgetItem(itemMWEB);
+            else itemOutput = new CCoinControlWidgetItem(ui->treeWidget);
+            itemOutput->setFlags(flgCheckbox);
+            itemOutput->setCheckState(COLUMN_CHECKBOX, Qt::Unchecked);
+
+            const QString sAddress = QString::fromStdString(EncodeDestination(entry.address));
+            itemOutput->setText(COLUMN_ADDRESS, sAddress);
+            if (!treeMode) {
+                itemOutput->setText(COLUMN_LABEL, sMWEBLabel);
+            }
+
+            itemOutput->setText(COLUMN_AMOUNT, BitcoinUnits::format(nDisplayUnit, entry.amount));
+            itemOutput->setData(COLUMN_AMOUNT, Qt::UserRole, QVariant(static_cast<qlonglong>(entry.amount)));
+            itemOutput->setText(COLUMN_DATE, QString());
+            itemOutput->setData(COLUMN_DATE, Qt::UserRole, QVariant(static_cast<qlonglong>(0)));
+            itemOutput->setText(COLUMN_CONFIRMATIONS, QString::number(entry.depth));
+            itemOutput->setData(COLUMN_CONFIRMATIONS, Qt::UserRole, QVariant(static_cast<qlonglong>(entry.depth)));
+            itemOutput->setData(COLUMN_ADDRESS, MWEBOutRole, QString::fromStdString(entry.output_id.ToHex()));
+
+            if (m_coin_control.IsMWEBSelected(entry.output_id)) {
+                itemOutput->setCheckState(COLUMN_CHECKBOX, Qt::Checked);
+            }
+        }
+
+        if (treeMode && itemMWEB && nMWEBChildren > 0) {
+            itemMWEB->setText(COLUMN_CHECKBOX, "(" + QString::number(nMWEBChildren) + ")");
+            itemMWEB->setText(COLUMN_AMOUNT, BitcoinUnits::format(nDisplayUnit, nMWEBSum));
+            itemMWEB->setData(COLUMN_AMOUNT, Qt::UserRole, QVariant(static_cast<qlonglong>(nMWEBSum)));
+        }
+    }
+
     // expand all partially selected
     if (treeMode)
     {
@@ -679,4 +804,9 @@ void CoinControlDialog::updateView()
     // sort view
     sortView(sortColumn, sortOrder);
     ui->treeWidget->setEnabled(true);
+}
+
+bool CoinControlDialog::IsMWEB(QTreeWidgetItem* item)
+{
+    return item && item->data(COLUMN_ADDRESS, MWEBOutRole).toString().length() == 64;
 }

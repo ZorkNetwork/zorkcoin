@@ -171,6 +171,7 @@ void StartWallets(WalletContext& context)
     }
 
     context.scheduler->scheduleEvery([&context] { MaybeResendWalletTxs(context); }, 1min);
+    context.scheduler->scheduleEvery([&context] { MaybePruneMWEBDescriptors(context); }, 24h);
 }
 
 void UnloadWallets(WalletContext& context)

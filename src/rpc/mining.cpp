@@ -22,6 +22,9 @@
 #include <crypto/hex_base.h>
 #include <interfaces/types.h>
 #include <key_io.h>
+#include <mw/models/block/block.h>
+#include <mweb/mweb_models.h>
+#include <mweb/mweb_rpc_serialization.h>
 #include <net.h>
 #include <netbase.h>
 #include <node/blockstorage.h>
@@ -30,6 +33,7 @@
 #include <node/mining_args.h>
 #include <node/mining_types.h>
 #include <node/warnings.h>
+#include <outputtype.h>
 #include <policy/feerate.h>
 #include <policy/policy.h>
 #include <pow.h>
@@ -75,7 +79,10 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
+
+class StealthAddress;
 
 using interfaces::BlockRef;
 using interfaces::BlockTemplate;
@@ -224,6 +231,10 @@ static bool getScriptFromDescriptor(std::string_view descriptor, CScript& script
     if (desc->IsRange()) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Ranged descriptor not accepted. Maybe pass through deriveaddresses first?");
     }
+    // MWEB: A coinbase cannot pay an MWEB address; its script would be empty.
+    if (desc->GetOutputType() == OutputType::MWEB) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Cannot mine to an MWEB address");
+    }
 
     FlatSigningProvider provider;
     std::vector<CScript> scripts;
@@ -321,6 +332,9 @@ static RPCMethod generatetoaddress()
     if (!IsValidDestination(destination)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Error: Invalid address");
     }
+    if (std::holds_alternative<StealthAddress>(destination)) { // MWEB: Litecoin's error for an address a coinbase can't pay
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Error: Invalid address");
+    }
 
     NodeContext& node = EnsureAnyNodeContext(request.context);
     Mining& miner = EnsureMining(node);
@@ -342,7 +356,8 @@ static RPCMethod generateblock()
             {"output", RPCArg::Type::STR, RPCArg::Optional::NO, "The address or descriptor to send the newly generated bitcoin to."},
             {"transactions", RPCArg::Type::ARR, RPCArg::Optional::NO, "An array of hex strings which are either txids or raw transactions.\n"
                 "Txids must reference transactions currently in the mempool.\n"
-                "All transactions must be valid and in valid order, otherwise the block will be rejected.",
+                "All transactions must be valid and in valid order, otherwise the block will be rejected.\n"
+                "Transactions with MWEB data are not supported.", // MWEB
                 {
                     {"rawtx/txid", RPCArg::Type::STR_HEX, RPCArg::Optional::OMITTED, ""},
                 },
@@ -370,6 +385,9 @@ static RPCMethod generateblock()
         const auto destination = DecodeDestination(address_or_descriptor);
         if (!IsValidDestination(destination)) {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Error: Invalid address or descriptor");
+        }
+        if (std::holds_alternative<StealthAddress>(destination)) { // MWEB
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Cannot mine to an MWEB address");
         }
 
         coinbase_output_script = GetScriptForDestination(destination);
@@ -399,6 +417,10 @@ static RPCMethod generateblock()
         } else {
             throw JSONRPCError(RPC_DESERIALIZATION_ERROR, strprintf("Transaction decode failed for %s. Make sure the tx has at least one input.", str));
         }
+        // MWEB: The template's extension block is built without these transactions.
+        if (txs.back()->HasMWEBTx()) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Transaction %s has MWEB data, which generateblock cannot include.", str));
+        }
     }
 
     const bool process_new_block{request.params[2].isNull() ? true : request.params[2].get_bool()};
@@ -414,10 +436,12 @@ static RPCMethod generateblock()
             block = block_template->getBlock();
         }
 
-        CHECK_NONFATAL(block.vtx.size() == 1);
+        // MWEB: After activation the template also holds the HogEx, which must stay last.
+        const bool has_hogex{block.vtx.size() == 2 && block.vtx.back()->IsHogEx()};
+        CHECK_NONFATAL(block.vtx.size() == (has_hogex ? 2 : 1));
 
         // Add transactions
-        block.vtx.insert(block.vtx.end(), txs.begin(), txs.end());
+        block.vtx.insert(block.vtx.end() - (has_hogex ? 1 : 0), txs.begin(), txs.end());
         RegenerateCommitments(block, chainman);
 
         if (BlockValidationState state{TestBlockValidity(chainman.ActiveChainstate(), block, /*check_pow=*/false, /*check_merkle_root=*/false)}; !state.IsValid()) {
@@ -436,7 +460,11 @@ static RPCMethod generateblock()
     obj.pushKV("hash", block_out->GetHash().GetHex());
     if (!process_new_block) {
         DataStream block_ser;
-        block_ser << TX_WITH_WITNESS(*block_out);
+        if (MWEB::RPCSerializeWithMWEB()) {
+            block_ser << TX_WITH_WITNESS(*block_out);
+        } else {
+            block_ser << TX_NO_MWEB(*block_out);
+        }
         obj.pushKV("hex", HexStr(block_ser));
     }
     return obj;
@@ -456,6 +484,7 @@ static RPCMethod getmininginfo()
                         {RPCResult::Type::NUM, "blocks", "The current block"},
                         {RPCResult::Type::NUM, "currentblockweight", /*optional=*/true, "The block weight (including reserved weight for block header, txs count and coinbase tx) of the last assembled block (only present if a block was ever assembled)"},
                         {RPCResult::Type::NUM, "currentblocktx", /*optional=*/true, "The number of block transactions (excluding coinbase) of the last assembled block (only present if a block was ever assembled)"},
+                        {RPCResult::Type::NUM, "currentblockmwebweight", /*optional=*/true, "The MWEB weight of the last assembled block (only present if a block was ever assembled and included MWEB data)"},
                         {RPCResult::Type::STR_HEX, "bits", "The current nBits, compact representation of the block difficulty target"},
                         {RPCResult::Type::NUM, "difficulty", "The current difficulty"},
                         {RPCResult::Type::STR_HEX, "target", "The current target"},
@@ -497,6 +526,7 @@ static RPCMethod getmininginfo()
     obj.pushKV("blocks", active_chain.Height());
     if (BlockAssembler::m_last_block_weight) obj.pushKV("currentblockweight", *BlockAssembler::m_last_block_weight);
     if (BlockAssembler::m_last_block_num_txs) obj.pushKV("currentblocktx", *BlockAssembler::m_last_block_num_txs);
+    if (BlockAssembler::m_last_block_mweb_weight) obj.pushKV("currentblockmwebweight", *BlockAssembler::m_last_block_mweb_weight); // MWEB hooks
     obj.pushKV("bits", strprintf("%08x", tip.nBits));
     obj.pushKV("difficulty", GetDifficulty(tip));
     obj.pushKV("target", GetTarget(tip, chainman.GetConsensus().powLimit).GetHex());
@@ -665,6 +695,7 @@ static RPCMethod getblocktemplate()
                 {"rules", RPCArg::Type::ARR, RPCArg::Optional::NO, "A list of strings",
                 {
                     {"segwit", RPCArg::Type::STR, RPCArg::Optional::NO, "(literal) indicates client side segwit support"},
+                    {"mweb", RPCArg::Type::STR, RPCArg::Optional::NO, "(literal) indicates client side MWEB support"}, // MWEB hooks
                     {"str", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "other client side supported softfork deployment"},
                 }},
                 {"longpollid", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "delay processing request until the result would vary significantly from the \"longpollid\" of a prior template"},
@@ -729,6 +760,7 @@ static RPCMethod getblocktemplate()
                 {RPCResult::Type::NUM, "height", "The height of the next block"},
                 {RPCResult::Type::STR_HEX, "signet_challenge", /*optional=*/true, "Only on signet"},
                 {RPCResult::Type::STR_HEX, "default_witness_commitment", /*optional=*/true, "a valid witness commitment for the unmodified block template"},
+                {RPCResult::Type::STR_HEX, "mweb", /*optional=*/true, "serialized MWEB block data for the next block (only present when MWEB is active)"},
             }},
         },
         RPCExamples{
@@ -886,14 +918,20 @@ static RPCMethod getblocktemplate()
     if (!setClientRules.contains("segwit")) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "getblocktemplate must be called with the segwit rule set (call with {\"rules\": [\"segwit\"]})");
     }
+    // MWEB: Litecoin GBT handshake only when the deployment can activate (not NEVER_ACTIVE).
+    if (DeploymentEnabled(consensusParams, Consensus::DEPLOYMENT_MWEB) &&
+        !setClientRules.contains("mweb")) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "getblocktemplate must be called with the segwit & mweb rule sets (call with {\"rules\": [\"mweb\", \"segwit\"]})");
+    }
 
     // Update block
     static CBlockIndex* pindexPrev;
     static int64_t time_start;
     static std::unique_ptr<BlockTemplate> block_template;
+    const bool mempool_changed{mempool.GetTransactionsUpdated() != nTransactionsUpdatedLast};
     if (!pindexPrev || pindexPrev->GetBlockHash() != tip ||
-        (mempool.GetTransactionsUpdated() != nTransactionsUpdatedLast && GetTime() - time_start > 5))
-    {
+        (mempool_changed && (GetTime() - time_start > 5 ||
+         DeploymentActiveAfter(chainman.ActiveTip(), chainman, Consensus::DEPLOYMENT_MWEB)))) {
         // Clear pindexPrev so future calls make a new block, despite any failures from here on
         pindexPrev = nullptr;
 
@@ -1021,6 +1059,24 @@ static RPCMethod getblocktemplate()
         }
     }
 
+    // MWEB: report the rule when the template block will include an extension block,
+    // including the activation boundary where IsActiveAfter is true but GBTStatus
+    // has not yet moved the deployment to "active".
+    if (DeploymentActiveAfter(pindexPrev, chainman, Consensus::DEPLOYMENT_MWEB)) {
+        bool has_mweb_rule{false};
+        for (unsigned i = 0; i < aRules.size(); ++i) {
+            const std::string& rule{aRules[i].get_str()};
+            if (rule == "mweb" || rule == "!mweb") {
+                has_mweb_rule = true;
+                break;
+            }
+        }
+        if (!has_mweb_rule) {
+            // MWEB: GBT echo — advertise mweb rule in template
+            aRules.push_back("mweb");
+        }
+    }
+
     result.pushKV("version", block.nVersion);
     result.pushKV("rules", std::move(aRules));
     result.pushKV("vbavailable", std::move(vbavailable));
@@ -1059,6 +1115,12 @@ static RPCMethod getblocktemplate()
     if (auto coinbase{block_template->getCoinbaseTx()}; coinbase.required_outputs.size() > 0) {
         CHECK_NONFATAL(coinbase.required_outputs.size() == 1); // Only one output is currently expected
         result.pushKV("default_witness_commitment", HexStr(coinbase.required_outputs[0].scriptPubKey));
+    }
+
+    // MWEB hooks
+    if (!block.mweb_block.IsNull()) {
+        // MWEB: GBT embed — serialized extension body
+        result.pushKV("mweb", HexStr(block.mweb_block.m_block->Serialized()));
     }
 
     return result;

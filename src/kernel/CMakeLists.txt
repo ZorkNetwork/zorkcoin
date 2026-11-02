@@ -33,7 +33,16 @@ add_library(bitcoinkernel
   ../logging.cpp
   ../node/blockstorage.cpp
   ../node/chainstate.cpp
+  ../node/mweb_historical_cache.cpp
+  ../node/mweb_leafdb_sync.cpp
+  ../node/mweb_serve_coordinator.cpp
+  ../node/mweb_utxo_enumerate.cpp
+  ../node/mweb_snapshot.cpp
   ../node/utxo_snapshot.cpp
+  ../mweb/mweb_coins_lifecycle.cpp
+  ../mweb/mweb_mempool_accept.cpp
+  ../mweb/mweb_mempool_markets.cpp
+  ../mweb/mweb_node.cpp
   ../policy/ephemeral_policy.cpp
   ../policy/feerate.cpp
   ../policy/packages.cpp
@@ -103,6 +112,8 @@ target_link_libraries(bitcoinkernel
     core_interface
     kernel_warn_interface
     secp256k1_objs
+    libmw
+    mweb_consensus
     $<$<PLATFORM_ID:Windows>:bcrypt>
     $<TARGET_NAME_IF_EXISTS:USDT::headers>
     Boost::headers

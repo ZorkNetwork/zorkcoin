@@ -37,6 +37,10 @@ struct AssumeutxoData {
     //! The expected hash of the deserialized UTXO set.
     AssumeutxoHash hash_serialized;
 
+    //! The expected hash of the MWEB chainstate at this snapshot height.
+    //! Required (non-null) when MWEB is active at this height (snapshot content-hash pin); unset otherwise.
+    std::optional<AssumeutxoHash> mweb_hash_serialized{};
+
     //! Used to populate the m_chain_tx_count value, which is used during BlockManager::LoadBlockIndex().
     //!
     //! We need to hardcode the value here because this is computed cumulatively using block data,
@@ -113,6 +117,9 @@ public:
     const std::vector<std::string>& DNSSeeds() const { return vSeeds; }
     const std::vector<unsigned char>& Base58Prefix(Base58Type type) const { return base58Prefixes[type]; }
     const std::string& Bech32HRP() const { return bech32_hrp; }
+    const std::string& MWEB_HRP() const { return mweb_hrp; } // MWEB
+    /** BIP32 path from the wallet master key to the default MWEB account; the scan and spend keys are its 0' and 1' children. */
+    const std::vector<uint32_t>& MWEBAccountPath() const { return m_mweb_account_path; } // MWEB
     const std::vector<uint8_t>& FixedSeeds() const { return vFixedSeeds; }
     const HeadersSyncParams& HeadersSync() const { return m_headers_sync_params; }
 
@@ -190,6 +197,9 @@ protected:
     std::vector<std::string> vSeeds;
     std::vector<unsigned char> base58Prefixes[MAX_BASE58_TYPES];
     std::string bech32_hrp;
+    std::string mweb_hrp; // MWEB
+    //! Fixed once a network has wallets: seed recovery and the wallet's checks derive along it, not along the stored descriptor.
+    std::vector<uint32_t> m_mweb_account_path; // MWEB
     ChainType m_chain_type;
     CBlock genesis;
     std::vector<uint8_t> vFixedSeeds;

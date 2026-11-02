@@ -11,8 +11,11 @@
 #include <tinyformat.h>
 
 #include <ostream>
+#include <functional>
+#include <util/fs.h>
 
 class CCoinsViewCache;
+class CCoinsViewDB;
 class FastRandomContext;
 
 /**
@@ -34,5 +37,12 @@ inline std::ostream& operator<<(std::ostream& os, const Coin& coin)
     return os << strprintf("Coin(spent=%d, coinbase=%d, height=%d, value=%d, scriptPubKey=%s)",
                            coin.IsSpent(), coin.fCoinBase, coin.nHeight, coin.out.nValue, HexStr(coin.out.scriptPubKey));
 }
+
+namespace test {
+using CoinsViewInitializer = std::function<void(CCoinsViewDB&, const fs::path&)>;
+using CoinsCacheCheck = std::function<void(CCoinsViewCache&)>;
+void RunCoinsCacheSimulation(const CoinsViewInitializer& initialize);
+void RunCoinsCacheFlush(const CoinsViewInitializer& initialize, const CoinsCacheCheck& check);
+} // namespace test
 
 #endif // BITCOIN_TEST_UTIL_COINS_H

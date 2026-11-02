@@ -26,7 +26,7 @@ std::unique_ptr<ExternalSignerScriptPubKeyMan> ExternalSignerScriptPubKeyMan::Lo
     return std::unique_ptr<ExternalSignerScriptPubKeyMan>(new ExternalSignerScriptPubKeyMan(storage, id, descriptor, keypool_size, keys, ckeys));
 }
 
-std::unique_ptr<ExternalSignerScriptPubKeyMan> ExternalSignerScriptPubKeyMan::CreateNew(WalletStorage& storage, WalletBatch& batch, int64_t keypool_size, std::unique_ptr<Descriptor> desc)
+std::unique_ptr<ExternalSignerScriptPubKeyMan> ExternalSignerScriptPubKeyMan::CreateNew(WalletStorage& storage, WalletBatch& batch, int64_t keypool_size, std::unique_ptr<Descriptor> desc, const FlatSigningProvider& provider)
 {
     int64_t creation_time = GetTime();
 
@@ -42,6 +42,18 @@ std::unique_ptr<ExternalSignerScriptPubKeyMan> ExternalSignerScriptPubKeyMan::Cr
     // Store the descriptor
     if (!batch.WriteDescriptor(spkm->GetID(), spkm->m_wallet_descriptor)) {
         throw std::runtime_error(std::string(__func__) + ": writing descriptor failed");
+    }
+
+    if (spkm->IsMWEBAccountDescriptor()) {
+        // The wallet has private keys disabled: the scan secret is kept only in its MWEBSCANK record.
+        if (!spkm->TryExtractMWEBScanSecretFromProvider(batch, provider)) {
+            throw std::runtime_error(std::string(__func__) + ": the external signer's MWEB descriptor has no scan private key, or writing it failed");
+        }
+        spkm->InitMWEBReservedIndices(batch);
+        spkm->m_wallet_descriptor.SetMWEBIndices(/*start=*/0, /*next=*/2, /*end=*/0);
+        if (!batch.WriteDescriptor(spkm->GetID(), spkm->m_wallet_descriptor)) {
+            throw std::runtime_error(std::string(__func__) + ": writing descriptor failed");
+        }
     }
 
     // TopUp
@@ -62,15 +74,8 @@ std::unique_ptr<ExternalSignerScriptPubKeyMan> ExternalSignerScriptPubKeyMan::Cr
     return signers[0];
 }
 
-util::Result<void> ExternalSignerScriptPubKeyMan::DisplayAddress(const CTxDestination& dest, const ExternalSigner &signer) const
+static util::Result<void> CheckDisplayedAddress(const UniValue& result, const CTxDestination& dest)
 {
-    // TODO: avoid the need to infer a descriptor from inside a descriptor wallet
-    const CScript& scriptPubKey = GetScriptForDestination(dest);
-    auto provider = GetSolvingProvider(scriptPubKey);
-    auto descriptor = InferDescriptor(scriptPubKey, *provider);
-
-    const UniValue& result = signer.DisplayAddress(descriptor->ToString());
-
     const UniValue& error = result.find_value("error");
     if (error.isStr()) return util::Error{strprintf(_("Signer returned error: %s"), error.getValStr())};
 
@@ -82,6 +87,45 @@ util::Result<void> ExternalSignerScriptPubKeyMan::DisplayAddress(const CTxDestin
     }
 
     return util::Result<void>();
+}
+
+util::Result<void> ExternalSignerScriptPubKeyMan::DisplayAddress(const CTxDestination& dest, const ExternalSigner &signer) const
+{
+    // TODO: avoid the need to infer a descriptor from inside a descriptor wallet
+    const CScript& scriptPubKey = GetScriptForDestination(dest);
+    auto provider = GetSolvingProvider(scriptPubKey);
+    auto descriptor = InferDescriptor(scriptPubKey, *provider);
+
+    const UniValue& result = signer.DisplayAddress(descriptor->ToString());
+    return CheckDisplayedAddress(result, dest);
+}
+
+util::Result<void> ExternalSignerScriptPubKeyMan::DisplayMWEBAddress(const DescriptorScriptPubKeyMan& spkm, const StealthAddress& address, const ExternalSigner& signer)
+{
+    const std::optional<std::string> descriptor = spkm.GetMWEBAddressInfoDescriptor(address);
+    if (!descriptor) return util::Error{_("The wallet cannot describe this MWEB address")};
+    // The descriptor carries the account's scan secret; only the signer that holds the account may see it.
+    if (!signer.MatchesMWEBAddressDescriptor(*descriptor)) return util::Error{_("The external signer does not hold the keys of this MWEB address")};
+    return CheckDisplayedAddress(signer.DisplayMWEBAddress(*descriptor), address);
+}
+
+std::optional<PSBTError> ExternalSignerScriptPubKeyMan::SignMWEBPSBT(ExternalSigner& signer, PartiallySignedTransaction& psbt)
+{
+    PartiallySignedTransaction signed_psbt{psbt};
+    // Address descriptors carry their account's scan secret; other accounts' secrets stay in the wallet.
+    for (PSBTInput& input : signed_psbt.inputs) {
+        if (input.mweb_address_descriptor && !signer.MatchesMWEBInput(input)) input.mweb_address_descriptor.reset();
+    }
+    std::string failure_reason;
+    if (!signer.SignTransaction(signed_psbt, failure_reason)) {
+        LogWarning("Failed to sign: %s\n", failure_reason);
+        return PSBTError::EXTERNAL_SIGNER_FAILED;
+    }
+    if (!psbt.Merge(signed_psbt)) {
+        LogWarning("Failed to sign: the signer returned a PSBT that does not match the transaction\n");
+        return PSBTError::EXTERNAL_SIGNER_FAILED;
+    }
+    return {};
 }
 
 // If sign is true, transaction must previously have been filled
@@ -104,10 +148,14 @@ std::optional<PSBTError> ExternalSignerScriptPubKeyMan::FillPSBT(PartiallySigned
         return PSBTError::EXTERNAL_SIGNER_NOT_FOUND;
     }
 
-    std::string failure_reason;
-    if(!signer->SignTransaction(psbt, failure_reason)) {
-        LogWarning("Failed to sign: %s\n", failure_reason);
-        return PSBTError::EXTERNAL_SIGNER_FAILED;
+    if (psbt.ContainsMWEBComponents()) {
+        if (const auto error{SignMWEBPSBT(*signer, psbt)}) return error;
+    } else {
+        std::string failure_reason;
+        if(!signer->SignTransaction(psbt, failure_reason)) {
+            LogWarning("Failed to sign: %s\n", failure_reason);
+            return PSBTError::EXTERNAL_SIGNER_FAILED;
+        }
     }
     if (options.finalize) FinalizePSBT(psbt); // This won't work in a multisig setup
     return {};

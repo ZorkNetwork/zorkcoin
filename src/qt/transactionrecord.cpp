@@ -4,6 +4,8 @@
 
 #include <qt/transactionrecord.h>
 
+#include <qt/mweb_transactionrecord.h>
+
 #include <chain.h>
 #include <interfaces/wallet.h>
 #include <key_io.h>
@@ -31,7 +33,7 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(const interface
     CAmount nCredit = wtx.credit;
     CAmount nDebit = wtx.debit;
     CAmount nNet = nCredit - nDebit;
-    Txid hash = wtx.tx->GetHash();
+    Txid hash = wtx.GetHash();
 
     bool all_from_me = true;
     bool any_from_me = false;
@@ -43,10 +45,13 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(const interface
             all_from_me = all_from_me && mine;
             if (mine) any_from_me = true;
         }
+        // MWEB
+        mweb_gui::IncludeMWEBInputsInFromMe(wtx, all_from_me, any_from_me);
     }
 
     if (all_from_me || !any_from_me) {
-        CAmount nTxFee = nDebit - wtx.tx->GetValueOut();
+        // MWEB: wallet residual fee (L1-correct via CachedTxGetFee when no extension)
+        CAmount nTxFee = mweb_gui::DisplayFee(wtx);
 
         for(unsigned int i = 0; i < wtx.tx->vout.size(); i++)
         {
@@ -121,6 +126,20 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(const interface
 
                 parts.append(sub);
             }
+        }
+        // MWEB: extension outputs + pegouts (see mweb_gui::ExtensionRecords)
+        for (const mweb_gui::ExtensionRecord& rec : mweb_gui::ExtensionRecords(wtx, all_from_me, nTxFee)) {
+            using Kind = mweb_gui::ExtensionRecord::Kind;
+            TransactionRecord sub(hash, nTime);
+            sub.idx = rec.idx;
+            sub.type = rec.kind == Kind::SendToAddress   ? TransactionRecord::SendToAddress :
+                       rec.kind == Kind::SendToOther     ? TransactionRecord::SendToOther :
+                       rec.kind == Kind::RecvWithAddress ? TransactionRecord::RecvWithAddress :
+                                                           TransactionRecord::RecvFromOther;
+            sub.address = rec.address;
+            sub.debit = rec.debit;
+            sub.credit = rec.credit;
+            parts.append(sub);
         }
     } else {
         //

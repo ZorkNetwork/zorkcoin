@@ -48,6 +48,13 @@ public:
     CFeeRate(const CAmount& nFeePaid, int32_t virtual_bytes);
 
     /**
+     * MWEB: Construct the L1 fee rate of a transaction whose fee also pays the
+     * MWEB fee for mweb_weight. The MWEB fee is subtracted first; a fee below
+     * the MWEB fee results in a 0 fee rate.
+     */
+    CFeeRate(const CAmount& nFeePaid, int32_t virtual_bytes, uint64_t mweb_weight);
+
+    /**
      * Construct from a fee rate expressed as FeePerVSize.
      *
      * Lossless: CFeeRate is internally a FeePerVSize, so the exact
@@ -55,6 +62,16 @@ public:
      * or equal to 0 results in 0 fee rate per 0 size.
      */
     explicit CFeeRate(const FeePerVSize& feerate) : m_feerate{feerate.size > 0 ? feerate : FeePerVSize{}} {}
+
+    /**
+     * Return the fee in satoshis for the given MWEB weight.
+     */
+    static CAmount GetMWEBFee(uint64_t mweb_weight);
+
+    /**
+     * Return the fee in satoshis for the given vsize and MWEB weight.
+     */
+    CAmount GetTotalFee(int32_t virtual_bytes, uint64_t mweb_weight) const;
 
     /**
      * Return the fee in satoshis for the given vsize in vbytes.
@@ -68,7 +85,8 @@ public:
     /**
      * Return the fee in satoshis for a vsize of 1000 vbytes
      */
-    CAmount GetFeePerK() const { return CAmount(m_feerate.EvaluateFeeDown(1000)); }
+    // MWEB: MWEB-only transactions have no L1 vsize, so an empty fee rate must report 0.
+    CAmount GetFeePerK() const { return m_feerate.IsEmpty() ? CAmount{0} : CAmount(m_feerate.EvaluateFeeDown(1000)); }
     friend std::strong_ordering operator<=>(const CFeeRate& a, const CFeeRate& b) noexcept
     {
         return ByRatio{a.m_feerate} <=> ByRatio{b.m_feerate};

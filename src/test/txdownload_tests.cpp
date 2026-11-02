@@ -8,10 +8,12 @@
 #include <node/txdownloadman_impl.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
+#include <script/standard.h>
 #include <test/util/common.h>
 #include <test/util/random.h>
 #include <test/util/setup_common.h>
 #include <validation.h>
+
 
 #include <array>
 
@@ -336,5 +338,9 @@ BOOST_FIXTURE_TEST_CASE(handle_missing_inputs, TestChain100Setup)
         }
     }
 }
+
+
+
+
 
 BOOST_AUTO_TEST_SUITE_END()

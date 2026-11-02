@@ -6,6 +6,7 @@
 
 #include <chain.h>
 #include <crypto/common.h>
+#include <mweb/mweb_rpc_serialization.h>
 #include <netaddress.h>
 #include <netbase.h>
 #include <primitives/transaction.h>
@@ -238,6 +239,7 @@ bool CZMQPublishRawBlockNotifier::NotifyBlock(const CBlockIndex *pindex)
         zmqError("Can't read block from disk");
         return false;
     }
+    block = MWEB::RPCRawBlock(std::move(block));
 
     return SendZmqMessage(MSG_RAWBLOCK, block.data(), block.size());
 }
@@ -247,7 +249,11 @@ bool CZMQPublishRawTransactionNotifier::NotifyTransaction(const CTransaction &tr
     uint256 hash = transaction.GetHash().ToUint256();
     LogDebug(BCLog::ZMQ, "Publish rawtx %s to %s\n", hash.GetHex(), this->address);
     DataStream ss;
-    ss << TX_WITH_WITNESS(transaction);
+    if (MWEB::RPCSerializeWithMWEB()) {
+        ss << TX_WITH_WITNESS(transaction);
+    } else {
+        ss << TX_NO_MWEB(transaction);
+    }
     return SendZmqMessage(MSG_RAWTX, &(*ss.begin()), ss.size());
 }
 

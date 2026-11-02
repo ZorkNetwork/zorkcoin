@@ -10,6 +10,7 @@ import time
 
 from test_framework.messages import (
     CAddress,
+    ser_compact_size,
     msg_addrv2,
     msg_sendaddrv2,
 )
@@ -62,7 +63,7 @@ def calc_addrv2_msg_size(addrs):
     size = 1  # vector length byte
     for addr in addrs:
         size += 4  # time
-        size += 1  # services, COMPACTSIZE(P2P_SERVICES)
+        size += len(ser_compact_size(P2P_SERVICES))  # services
         size += 1  # network id
         size += 1  # address length byte
         size += addr.ADDRV2_ADDRESS_LENGTH[addr.net]  # address

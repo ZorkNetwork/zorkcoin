@@ -140,7 +140,30 @@ add_executable(test_bitcoin
   validation_tests.cpp
   validationinterface_tests.cpp
   versionbits_tests.cpp
+  mweb_validation_tests.cpp
+  mweb_external_signer_tests.cpp
+  mweb_key_io_tests.cpp
+  mweb_mempool_market_tests.cpp
+  mweb_mempool_order_tests.cpp
+  mweb_package_tests.cpp
+  mweb_policy_tests.cpp
+  mweb_block_packing_tests.cpp
+  mweb_blockencodings_tests.cpp
+  mweb_psbt_analysis_tests.cpp
+  mweb_psbt_finalize_tests.cpp
+  mweb_psbt_format_tests.cpp
+  mweb_psbt_merge_tests.cpp
+  mweb_psbt_signing_tests.cpp
+  mweb_psbt_tests.cpp
+  mweb_reorg_mempool_tests.cpp
+  mweb_rpc_tests.cpp
+  mweb_serve_tests.cpp
+  mweb_leafdb_sync_tests.cpp
+  mweb_snapshot_tests.cpp
 )
+
+include(../../cmake/libmw.cmake)
+add_libmw_tests(test_bitcoin)
 
 include(TargetDataSources)
 target_json_data_sources(test_bitcoin
@@ -149,6 +172,7 @@ target_json_data_sources(test_bitcoin
   data/blockfilters.json
   data/key_io_invalid.json
   data/key_io_valid.json
+  data/rpc_psbt.json
   data/script_tests.json
   data/sighash.json
   data/siphash.json
@@ -167,6 +191,7 @@ target_link_libraries(test_bitcoin
   bitcoin_cli
   bitcoin_node
   bitcoin_consensus
+  libmw
   minisketch
   secp256k1
   Boost::headers

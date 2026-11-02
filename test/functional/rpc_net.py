@@ -13,10 +13,8 @@ import platform
 import time
 
 import test_framework.messages
-from test_framework.p2p import (
-    P2PInterface,
-    P2P_SERVICES,
-)
+from test_framework.p2p import P2PInterface
+from test_framework.messages import NODE_NETWORK, NODE_WITNESS
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_approx,
@@ -26,6 +24,9 @@ from test_framework.util import (
     p2p_port,
 )
 from test_framework.wallet import MiniWallet
+
+# Default services stored by the hidden addpeeraddress RPC (matches src/rpc/net.cpp).
+ADDPEERADDRESS_SERVICES = NODE_NETWORK | NODE_WITNESS
 
 
 def assert_net_servicesnames(servicesflag, servicenames):
@@ -321,7 +322,7 @@ class NetTest(BitcoinTestFramework):
         assert_greater_than(10000, len(node_addresses))
         for a in node_addresses:
             assert_greater_than(a["time"], 1527811200)  # 1st June 2018
-            assert_equal(a["services"], P2P_SERVICES)
+            assert_equal(a["services"], ADDPEERADDRESS_SERVICES)
             assert a["address"] in imported_addrs
             assert_equal(a["port"], 8333)
             assert_equal(a["network"], "ipv4")
@@ -332,7 +333,7 @@ class NetTest(BitcoinTestFramework):
         assert_equal(res[0]["address"], ipv6_addr)
         assert_equal(res[0]["network"], "ipv6")
         assert_equal(res[0]["port"], 8333)
-        assert_equal(res[0]["services"], P2P_SERVICES)
+        assert_equal(res[0]["services"], ADDPEERADDRESS_SERVICES)
 
         # Test for the absence of onion, I2P and CJDNS addresses.
         for network in ["onion", "i2p", "cjdns"]:
@@ -446,10 +447,14 @@ class NetTest(BitcoinTestFramework):
         self.log.debug("Test that empty msg is allowed")
         node.sendmsgtopeer(peer_id=0, msg_type="addr", msg="FF")
 
-        self.log.debug("Test that oversized messages are allowed, but get us disconnected")
-        zero_byte_string = b'\x00' * 4000001
-        node.sendmsgtopeer(peer_id=0, msg_type="addr", msg=zero_byte_string.hex())
-        self.wait_until(lambda: len(self.nodes[0].getpeerinfo()) == 0, timeout=10)
+        # Oversized disconnect (payload > MAX_PROTOCOL_MESSAGE_LENGTH) is covered by
+        # p2p_invalid_messages.py. Sending 32MB+ via RPC hex (~64MB JSON) is impractical
+        # here; instead confirm a large but still-legal payload does not disconnect.
+        self.log.debug("Test that a large under-limit message does not disconnect")
+        under_limit = b'\x00' * (4 * 1000 * 1000)  # 4 MB << 32 MB v1 limit
+        node.sendmsgtopeer(peer_id=0, msg_type="addr", msg=under_limit.hex())
+        node.ping()
+        assert_equal(len(self.nodes[0].getpeerinfo()), 1)
 
     def test_getaddrmaninfo(self):
         self.log.info("Test getaddrmaninfo")

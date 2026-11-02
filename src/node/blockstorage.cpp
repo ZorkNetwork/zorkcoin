@@ -144,6 +144,10 @@ bool BlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, s
                 pindexNew->nNonce         = diskindex.nNonce;
                 pindexNew->nStatus        = diskindex.nStatus;
                 pindexNew->nTx            = diskindex.nTx;
+                // MWEB: restore extension block index fields
+                pindexNew->mweb_header    = diskindex.mweb_header;
+                pindexNew->hogex_hash     = diskindex.hogex_hash;
+                pindexNew->mweb_amount    = diskindex.mweb_amount;
 
                 if (!CheckProofOfWork(pindexNew->GetBlockHash(), pindexNew->nBits, consensusParams)) {
                     LogError("%s: CheckProofOfWork failed: %s\n", __func__, pindexNew->ToString());
@@ -494,6 +498,12 @@ bool BlockManager::LoadBlockIndex(const std::optional<uint256>& snapshot_blockha
                         pindex->GetBlockHash() == *snapshot_blockhash) {
                     // Should have been set above; don't disturb it with code below.
                     Assert(pindex->m_chain_tx_count > 0);
+                    // MWEB: loading a snapshot with MWEB active stores the base
+                    // block before its parents, so it stays unlinked until the
+                    // data of all its parents has been received.
+                    if ((pindex->nStatus & BLOCK_HAVE_DATA) && pindex->pprev->m_chain_tx_count == 0) {
+                        AddUnlinkedBlock(pindex);
+                    }
                 } else if (pindex->pprev->m_chain_tx_count > 0) {
                     pindex->m_chain_tx_count = pindex->pprev->m_chain_tx_count + pindex->nTx;
                 } else {
@@ -716,8 +726,13 @@ bool BlockManager::ReadBlockUndo(CBlockUndo& blockundo, const CBlockIndex& index
 {
     const FlatFilePos pos{WITH_LOCK(::cs_main, return index.GetUndoPos())};
 
+    if (pos.nPos < STORAGE_HEADER_BYTES) {
+        LogError("Failed for %s while reading block undo storage header", pos.ToString());
+        return false;
+    }
+
     // Open history file to read
-    AutoFile file{OpenUndoFile(pos, true)};
+    AutoFile file{OpenUndoFile({pos.nFile, pos.nPos - STORAGE_HEADER_BYTES}, true)};
     if (file.IsNull()) {
         LogError("OpenUndoFile failed for %s while reading block undo", pos.ToString());
         return false;
@@ -725,11 +740,20 @@ bool BlockManager::ReadBlockUndo(CBlockUndo& blockundo, const CBlockIndex& index
     BufferedReader filein{std::move(file)};
 
     try {
+        MessageStartChars pchMsgStart;
+        unsigned int undo_size = 0;
+        filein >> pchMsgStart >> undo_size;
+
+        if (pchMsgStart != GetParams().MessageStart()) {
+            LogError("Block undo magic mismatch for %s while reading block undo", pos.ToString());
+            return false;
+        }
+
         // Read block
         HashVerifier verifier{filein}; // Use HashVerifier, as reserializing may lose data, c.f. commit d3424243
 
         verifier << index.pprev->GetBlockHash();
-        verifier >> blockundo;
+        UnserializeBlockUndo(blockundo, verifier, undo_size); // MWEB
 
         uint256 hashChecksum;
         filein >> hashChecksum;
@@ -797,7 +821,10 @@ BlockfileType BlockManager::BlockfileTypeForHeight(int height)
 bool BlockManager::FlushChainstateBlockFile(int tip_height)
 {
     AssertLockHeld(::cs_main);
-    auto& cursor = m_blockfile_cursors[BlockfileTypeForHeight(tip_height)];
+    const BlockfileType type{BlockfileTypeForHeight(tip_height)};
+    // MWEB: NORMAL fallback, as in WriteBlockUndo. The undo data of an MWEB
+    // snapshot base block stored before activation is in a NORMAL file.
+    auto& cursor = m_blockfile_cursors[type] ? m_blockfile_cursors[type] : m_blockfile_cursors[BlockfileType::NORMAL];
     // If the cursor does not exist, it means an assumeutxo snapshot is loaded,
     // but no blocks past the snapshot height have been written yet, so there
     // is no data associated with the chainstate, and it is safe not to flush.
@@ -982,7 +1009,10 @@ bool BlockManager::WriteBlockUndo(const CBlockUndo& blockundo, BlockValidationSt
 {
     AssertLockHeld(::cs_main);
     const BlockfileType type = BlockfileTypeForHeight(block.nHeight);
-    auto& cursor = *Assert(m_blockfile_cursors[type]);
+    // MWEB: NORMAL fallback. A snapshot with MWEB active needs its base block
+    // on disk to load, so the base block can be in a NORMAL file before any
+    // ASSUMED block has been written.
+    auto& cursor = *Assert(m_blockfile_cursors[type] ? m_blockfile_cursors[type] : m_blockfile_cursors[BlockfileType::NORMAL]);
 
     // Write undo information to disk
     if (block.GetUndoPos().IsNull()) {

@@ -32,6 +32,9 @@ from test_framework.util import (
 )
 
 VALID_DATA_LIMIT = MAX_PROTOCOL_MESSAGE_LENGTH - 5  # Account for the 5-byte length prefix
+# Keep this stress case near its original total traffic as MAX_PROTOCOL_MESSAGE_LENGTH changes.
+RESOURCE_EXHAUSTION_BYTES = 80 * 4 * 1000 * 1000
+RESOURCE_EXHAUSTION_MESSAGES = max(1, RESOURCE_EXHAUSTION_BYTES // MAX_PROTOCOL_MESSAGE_LENGTH)
 
 
 class msg_unrecognized:
@@ -141,10 +144,19 @@ class InvalidMessagesTest(BitcoinTestFramework):
 
     def test_size(self):
         self.log.info("Test message with oversized payload disconnects peer")
+        # Mirrors V2Transport MAX_CONTENTS_LEN in net.cpp: BIP324 length is 3 bytes
+        # (max 2^24-1), so when 1+12+MAX_PROTOCOL_MESSAGE_LENGTH already saturates that
+        # cap, no legal length field can exceed it and the v2 "packet too large" path is
+        # unreachable. V1 still covers oversize-vs-MAX_PROTOCOL_MESSAGE_LENGTH.
+        bip324_max_contents = (1 << 24) - 1
+        v2_max_contents_len = min(1 + 12 + MAX_PROTOCOL_MESSAGE_LENGTH, bip324_max_contents)
+        if self.options.v2transport and v2_max_contents_len == bip324_max_contents:
+            self.log.info("Skipping v2 oversize check: protocol max saturates BIP324 contents length")
+            return
         conn = self.nodes[0].add_p2p_connection(P2PDataStore())
         error_msg = (
-            ['V2 transport error: packet too large (4000014 bytes)'] if self.options.v2transport
-            else ['Header error: Size too large (badmsg, 4000001 bytes)']
+            [f'V2 transport error: packet too large ({MAX_PROTOCOL_MESSAGE_LENGTH + 14} bytes)'] if self.options.v2transport
+            else [f'Header error: Size too large (badmsg, {MAX_PROTOCOL_MESSAGE_LENGTH + 1} bytes)']
         )
         with self.nodes[0].assert_debug_log(error_msg):
             msg = msg_unrecognized(str_data="d" * (VALID_DATA_LIMIT + 1))
@@ -333,8 +345,10 @@ class InvalidMessagesTest(BitcoinTestFramework):
         msg_at_size = msg_unrecognized(str_data="b" * VALID_DATA_LIMIT)
         assert_equal(len(msg_at_size.serialize()), MAX_PROTOCOL_MESSAGE_LENGTH)
 
-        self.log.info("(a) Send 80 messages, each of maximum valid data size (4MB)")
-        for _ in range(80):
+        self.log.info("(a) Send {} messages, each of maximum valid data size ({}MB)".format(
+            RESOURCE_EXHAUSTION_MESSAGES,
+            MAX_PROTOCOL_MESSAGE_LENGTH // 1000 // 1000))
+        for _ in range(RESOURCE_EXHAUSTION_MESSAGES):
             conn.send_without_ping(msg_at_size)
 
         # Check that, even though the node is being hammered by nonsense from one

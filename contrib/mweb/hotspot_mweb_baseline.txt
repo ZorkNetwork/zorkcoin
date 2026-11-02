@@ -1,0 +1,9 @@
+src/validation.cpp 193 6922
+src/net_processing.cpp 170 6670
+src/txmempool.cpp 54 1263
+src/txmempool.h 26 819
+src/node/miner.cpp 67 825
+src/wallet/spend.cpp 87 1716
+src/wallet/scriptpubkeyman.cpp 245 2580
+src/wallet/wallet.cpp 207 5371
+src/script/descriptor.cpp 60 3328

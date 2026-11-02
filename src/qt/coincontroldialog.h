@@ -51,6 +51,8 @@ public:
     static void updateLabels(wallet::CCoinControl& m_coin_control, WalletModel*, QDialog*);
 
     static QList<CAmount> payAmounts;
+    /** Parallel to payAmounts: destination strings from the send dialog (may be empty). */
+    static QList<QString> payAddresses;
     static bool fSubtractFeeFromAmount;
 
 protected:
@@ -87,8 +89,11 @@ private:
     enum
     {
         TxHashRole = Qt::UserRole,
-        VOutRole
+        VOutRole,
+        MWEBOutRole, // MWEB: output ID hex for MWEB UTXOs
     };
+
+    static bool IsMWEB(QTreeWidgetItem* item);
 
     friend class CCoinControlWidgetItem;
 

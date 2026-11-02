@@ -12,6 +12,7 @@
 #include <sync.h>
 #include <util/time.h>
 
+#include <limits>
 #include <map>
 #include <set>
 
@@ -143,6 +144,21 @@ public:
     /** Get the maximum global usage allowed */
     virtual Usage MaxGlobalUsage() const = 0;
 };
+
+/**
+ * Non-consensus orphanage memory proxy (orphanage MWEB size accounting).
+ * L1 `GetTransactionWeight` intentionally excludes MWEB extension bytes for fee accounting;
+ * orphan DoS limits must still charge the serialized MWEB payload.
+ */
+inline TxOrphanage::Usage OrphanageTxUsage(const CTransaction& tx)
+{
+    const int64_t l1_weight{GetTransactionWeight(tx)};
+    const int64_t mweb_bytes{tx.HasMWEBTx() ? static_cast<int64_t>(::GetSerializeSize(tx.mweb_tx)) : 0};
+    if (l1_weight > std::numeric_limits<int64_t>::max() - mweb_bytes) {
+        return std::numeric_limits<int64_t>::max();
+    }
+    return l1_weight + mweb_bytes;
+}
 
 /** Create a new TxOrphanage instance */
 std::unique_ptr<TxOrphanage> MakeTxOrphanage() noexcept;

@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <string>
 
 namespace node {
 
@@ -29,6 +30,37 @@ void ApplyArgsManOptions(const ArgsManager& argsman, PeerManager::Options& optio
     }
 
     if (auto value{argsman.GetBoolArg("-privatebroadcast")}) options.private_broadcast = *value;
+
+    if (const auto value{argsman.GetArg("-mwebserve")}) {
+        const std::string& mode{*value};
+        if (mode == "0" || mode == "off") {
+            options.mweb_serve = MwebServeMode::OFF;
+        } else if (mode == "1" || mode == "force") {
+            options.mweb_serve = MwebServeMode::FORCE;
+        } else {
+            options.mweb_serve = MwebServeMode::AUTO;
+        }
+    }
+
+    if (auto value{argsman.GetBoolArg("-mwebserveinblocksonly")}) {
+        options.mweb_serve_in_blocksonly = *value;
+    }
+
+    if (auto value{argsman.GetIntArg("-mwebserveburst")}) {
+        options.mweb_serve_burst = static_cast<double>(std::max<int64_t>(1, *value));
+    }
+
+    if (auto value{argsman.GetIntArg("-mwebservematerialbudget")}) {
+        options.mweb_serve_material_budget = static_cast<size_t>(std::max<int64_t>(1024, *value));
+    }
+
+    if (auto value{argsman.GetIntArg("-mwebservematerialleafops")}) {
+        options.mweb_serve_material_leaf_ops = static_cast<size_t>(std::max<int64_t>(1, *value));
+    }
+
+    if (auto value{argsman.GetIntArg("-mwebservecreditdenydisconnect")}) {
+        options.mweb_serve_credit_deny_disconnect = static_cast<int>(std::max<int64_t>(1, *value));
+    }
 }
 
 } // namespace node

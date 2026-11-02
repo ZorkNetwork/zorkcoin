@@ -222,6 +222,11 @@ CTxDestination ConsumeTxDestination(FuzzedDataProvider& fuzzed_data_provider) no
                 program = {0, 0};
             }
             tx_destination = WitnessUnknown{fuzzed_data_provider.ConsumeIntegralInRange<unsigned int>(2, 16), program};
+        },
+        [&] { // MWEB
+            const std::vector<uint8_t> scan{ConsumeFixedLengthByteVector(fuzzed_data_provider, 33)};
+            const std::vector<uint8_t> spend{ConsumeFixedLengthByteVector(fuzzed_data_provider, 33)};
+            tx_destination = StealthAddress{PublicKey{scan.data()}, PublicKey{spend.data()}};
         })};
     Assert(call_size == std::variant_size_v<CTxDestination>);
     return tx_destination;

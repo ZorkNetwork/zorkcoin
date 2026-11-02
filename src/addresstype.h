@@ -6,6 +6,7 @@
 #define BITCOIN_ADDRESSTYPE_H
 
 #include <attributes.h>
+#include <mw/models/wallet/stealth_address.h> // MWEB
 #include <pubkey.h>
 #include <script/script.h>
 #include <uint256.h>
@@ -138,9 +139,10 @@ struct PayToAnchor : public WitnessUnknown
  *  * WitnessV1Taproot: TxoutType::WITNESS_V1_TAPROOT destination (P2TR address)
  *  * PayToAnchor: TxoutType::ANCHOR destination (P2A address)
  *  * WitnessUnknown: TxoutType::WITNESS_UNKNOWN destination (P2W??? address)
+ *  * StealthAddress: MWEB destination
  *  A CTxDestination is the internal data type encoded in a bitcoin address
  */
-using CTxDestination = std::variant<CNoDestination, PubKeyDestination, PKHash, ScriptHash, WitnessV0ScriptHash, WitnessV0KeyHash, WitnessV1Taproot, PayToAnchor, WitnessUnknown>;
+using CTxDestination = std::variant<CNoDestination, PubKeyDestination, PKHash, ScriptHash, WitnessV0ScriptHash, WitnessV0KeyHash, WitnessV1Taproot, PayToAnchor, WitnessUnknown, StealthAddress>;
 
 /** Check whether a CTxDestination corresponds to one with an address. */
 bool IsValidDestination(const CTxDestination& dest);

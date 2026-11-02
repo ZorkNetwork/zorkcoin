@@ -11,6 +11,10 @@
 
 class WalletModel;
 class PlatformStyle;
+QT_BEGIN_NAMESPACE
+class QComboBox;
+class QToolButton;
+QT_END_NAMESPACE
 
 namespace interfaces {
 class Node;
@@ -42,6 +46,13 @@ public:
     void setAddress(const QString &address);
     void setAmount(const CAmount &amount);
 
+    // MWEB: manual Peg-In / Peg-Out mode (set by icon buttons beside address book)
+    void setPaymentKind(SendCoinsRecipient::PaymentKind kind);
+    SendCoinsRecipient::PaymentKind paymentKind() const { return recipient.payment_kind; }
+    void updateMWEBButtons();
+    // MWEB: show the address a peg-out entry will pay, the wallet's next address of the chosen type
+    void updatePegOutAddress();
+
     /** Set up the tab chain manually, as Qt messes up the tab chain by default in some cases
      *  (issue https://bugreports.qt-project.org/browse/QTBUG-10907).
      */
@@ -58,6 +69,7 @@ Q_SIGNALS:
     void useAvailableBalance(SendCoinsEntry* entry);
     void payAmountChanged();
     void subtractFeeFromAmountChanged();
+    void manualPaymentKindChanged(SendCoinsEntry* entry, SendCoinsRecipient::PaymentKind kind);
 
 private Q_SLOTS:
     void deleteClicked();
@@ -66,6 +78,8 @@ private Q_SLOTS:
     void on_addressBookButton_clicked();
     void on_pasteButton_clicked();
     void updateDisplayUnit();
+    void handleMwebPegInClicked(bool checked);
+    void handleMwebPegOutClicked(bool checked);
 
 protected:
     void changeEvent(QEvent* e) override;
@@ -75,8 +89,14 @@ private:
     Ui::SendCoinsEntry *ui;
     WalletModel* model{nullptr};
     const PlatformStyle *platformStyle;
+    QToolButton* m_mweb_pegin_button{nullptr};
+    QToolButton* m_mweb_pegout_button{nullptr};
+    QComboBox* m_pegout_address_type{nullptr};
+    QString m_address_placeholder;
 
     bool updateLabel(const QString &address);
+    void applyPaymentKindUi();
+    void syncMWEBButtonState();
 };
 
 #endif // BITCOIN_QT_SENDCOINSENTRY_H

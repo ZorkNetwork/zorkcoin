@@ -27,6 +27,11 @@ SaltedOutpointHasher::SaltedOutpointHasher() : m_hasher{
     FastRandomContext().rand64()}
 {}
 
+SaltedMWHashHasher::SaltedMWHashHasher() : m_hasher{
+    FastRandomContext().rand64(),
+    FastRandomContext().rand64()}
+{}
+
 SaltedSipHasher::SaltedSipHasher() :
     m_k0{FastRandomContext().rand64()},
     m_k1{FastRandomContext().rand64()}

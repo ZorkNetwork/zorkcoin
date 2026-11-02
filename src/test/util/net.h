@@ -50,6 +50,7 @@ struct ConnmanTestMsg : public CConnman {
 
     void ResetAddrCache();
     void ResetMaxOutboundCycle();
+    void SetOutboundTargetForTest(uint64_t limit, uint64_t bytes_sent_in_cycle);
     /// Reset the internal state.
     void Reset();
 

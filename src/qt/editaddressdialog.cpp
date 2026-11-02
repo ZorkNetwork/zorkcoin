@@ -8,6 +8,8 @@
 #include <qt/addresstablemodel.h>
 #include <qt/guiutil.h>
 
+#include <addresstype.h>
+#include <key_io.h>
 #include <wallet/types.h>
 
 #include <QDataWidgetMapper>
@@ -66,6 +68,14 @@ void EditAddressDialog::setModel(AddressTableModel *_model)
 void EditAddressDialog::loadRow(int row)
 {
     mapper->setCurrentIndex(row);
+    if (mode == EditReceivingAddress) {
+        const QString address = ui->addressEdit->text();
+        const CTxDestination dest = DecodeDestination(address.toStdString());
+        if (std::holds_alternative<StealthAddress>(dest)) {
+            ui->addressEdit->setFont(GUIUtil::fixedPitchFont());
+            ui->addressEdit->setToolTip(address);
+        }
+    }
 }
 
 bool EditAddressDialog::saveCurrentRow()
