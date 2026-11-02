@@ -68,6 +68,7 @@ add_executable(test_bitcoin
   auxpow_check_tests.cpp
   auxpow_chain_tests.cpp
   auxpow_reject_tests.cpp
+  btc_launch_lock_tests.cpp
   logging_tests.cpp
   mempool_tests.cpp
   mempool_fee_estimator_tests.cpp

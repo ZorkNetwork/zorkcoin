@@ -242,6 +242,12 @@ public:
         assert(genesis.hashMerkleRoot == uint256{MAINNET_GENESIS_MERKLE});
         consensus.BIP34Hash = consensus.hashGenesisBlock;
 
+        if (opts.btc_launch_lock) {
+            consensus.btc_launch_lock.enabled = true;
+            consensus.btc_launch_lock.min_unix_time = BTC_LAUNCH_MIN_UNIX;
+            consensus.btc_launch_lock.nbits_floor = BTC_LAUNCH_NBITS_FLOOR;
+        }
+
         // Note that of those which support the service bits prefix, most only support a subset of
         // possible options.
         // This is fine at runtime as we'll fall back to using them as an addrfetch if they don't support the

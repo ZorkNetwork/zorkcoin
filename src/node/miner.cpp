@@ -10,6 +10,7 @@
 #include <coins.h>
 #include <common/args.h>
 #include <consensus/amount.h>
+#include <consensus/btc_launch_lock.h>
 #include <consensus/consensus.h>
 #include <consensus/merkle.h>
 #include <consensus/params.h>
@@ -43,6 +44,7 @@
 #include <util/log.h>
 #include <util/result.h>
 #include <util/signalinterrupt.h>
+#include <util/strencodings.h>
 #include <util/time.h>
 #include <util/translation.h>
 #include <validation.h>
@@ -229,6 +231,19 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
     coinbaseTx.vout[0].nValue = block_reward;
     coinbase_tx.block_reward_remaining = block_reward;
 
+    if (nHeight == 1 && chainparams.GetConsensus().btc_launch_lock.enabled) {
+        const std::string header_hex{gArgs.GetArg("-btclaunchheader", "")};
+        const auto header = TryParseHex<unsigned char>(header_hex);
+        if (!header || header->size() != BTC_LAUNCH_HEADER_SIZE) {
+            throw std::runtime_error(
+                "mainnet block 1 requires -btclaunchheader=<160-char hex of an 80-byte Bitcoin header>");
+        }
+        CTxOut lock_out;
+        lock_out.nValue = 0;
+        lock_out.scriptPubKey = BuildBtcLaunchLockScript(*header);
+        coinbaseTx.vout.push_back(lock_out);
+    }
+
     // Start the coinbase scriptSig with the block height as required by BIP34.
     // Mining clients are expected to append extra data to this prefix, so
     // increasing its length would reduce the space they can use and may break
@@ -275,6 +290,9 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
     if (const int witness_index = GetWitnessCommitmentIndex(*pblock); witness_index != NO_WITNESS_COMMITMENT) {
         Assert(witness_index >= 0 && static_cast<size_t>(witness_index) < final_coinbase->vout.size());
         coinbase_tx.required_outputs.push_back(final_coinbase->vout[witness_index]);
+    }
+    if (const auto lock_index = GetBtcLaunchLockOutputIndex(*final_coinbase)) {
+        coinbase_tx.required_outputs.push_back(final_coinbase->vout[*lock_index]);
     }
 
     LogDebug(BCLog::MINING, "CreateNewBlock(): block weight: %u txs: %u fees: %ld sigops %d MWEB weight: %u serialized: %u\n",

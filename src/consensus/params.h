@@ -84,6 +84,20 @@ struct BIP9Deployment {
 };
 
 /**
+ * Mainnet height-1 Bitcoin SHA256d launch lock. When enabled, the block
+ * whose prev hash is genesis must carry exactly one 0-value coinbase
+ * OP_RETURN (tag "btc"/42) embedding an 80-byte Bitcoin header whose
+ * decoded nBits target is at least as hard as nbits_floor, whose unix
+ * timestamp is >= min_unix_time, and whose SHA256d meets that target.
+ * See doc/btc-launch-lock.md.
+ */
+struct BtcLaunchLock {
+    bool enabled{false};
+    uint32_t min_unix_time{0};
+    uint32_t nbits_floor{0};
+};
+
+/**
  * Parameters that influence chain consensus.
  */
 struct Params {
@@ -162,6 +176,8 @@ struct Params {
 
     /** MWEB: Frozen MWEB output IDs that may not be spent. */
     std::vector<uint256> frozen_mweb_output_ids;
+
+    BtcLaunchLock btc_launch_lock;
 
     /**
      * Kaspa AuxPoW consensus parameters (grouped for merge-safety).

@@ -31,4 +31,8 @@ static constexpr uint64_t MAINNET_GENESIS_NONCE = 1634777ULL;
 inline constexpr const char MAINNET_GENESIS_HASH[] = "34c6a520b5d21dbbc1a135b0373c2e2aa00992e24db00488ab88d26f8a95c52c";
 inline constexpr const char MAINNET_GENESIS_MERKLE[] = "b72f0b81e63bb83b40816ac4e3cf92bdfed7d51c80dbc04d3e66043fc62ea6c1";
 
+/** Mainnet block-1 launch lock pins (see doc/btc-launch-lock.md). */
+static constexpr uint32_t BTC_LAUNCH_NBITS_FLOOR = 0x1702353d;
+static constexpr uint32_t BTC_LAUNCH_MIN_UNIX = 1789390750; // 2026-09-14 12:59:10 UTC
+
 #endif // BITCOIN_KERNEL_GENESIS_MAINNET_H

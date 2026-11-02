@@ -125,6 +125,12 @@ void ReadRegTestArgs(const ArgsManager& args, CChainParams::RegTestOptions& opti
 }
 
 static std::unique_ptr<const CChainParams> globalChainParams;
+static bool g_disable_btc_launch_lock_for_tests = false;
+
+void DisableBtcLaunchLockForUnitTests()
+{
+    g_disable_btc_launch_lock_for_tests = true;
+}
 
 const CChainParams &Params() {
     assert(globalChainParams);
@@ -137,6 +143,7 @@ std::unique_ptr<const CChainParams> CreateChainParams(const ArgsManager& args, c
     case ChainType::MAIN: {
         auto opts = CChainParams::MainNetOptions{};
         ReadMainNetArgs(args, opts);
+        if (g_disable_btc_launch_lock_for_tests) opts.btc_launch_lock = false;
         return CChainParams::Main(opts);
     }
     case ChainType::TESTNET: {

@@ -28,4 +28,11 @@ const CChainParams &Params();
  */
 void SelectParams(ChainType chain);
 
+/**
+ * Unit tests that mine on MAIN skip the height-1 Bitcoin launch lock
+ * (that rule requires a SHA256d header at current Bitcoin difficulty).
+ * Production SelectParams never calls this.
+ */
+void DisableBtcLaunchLockForUnitTests();
+
 #endif // BITCOIN_CHAINPARAMS_H

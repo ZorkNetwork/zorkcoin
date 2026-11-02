@@ -233,6 +233,12 @@ BasicTestingSetup::BasicTestingSetup(const ChainType chainType, TestOpts opts)
     gArgs.ForceSetArg("-dnsseed", "0"); // DNS queries are usually forwarded to upstream DNS servers.
     gArgs.ForceSetArg("-natpmp", "0"); // NATPMP sends packets to the router.
 
+    // Height-1 Bitcoin launch lock cannot be satisfied in unit tests (needs
+    // ~one current Bitcoin block of SHA256d). Production MAIN still enables it.
+    if (chainType == ChainType::MAIN) {
+        DisableBtcLaunchLockForUnitTests();
+    }
+
     SelectParams(chainType);
     InitLogging(*m_node.args);
     AppInitParameterInteraction(*m_node.args);

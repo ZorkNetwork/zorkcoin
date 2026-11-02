@@ -171,6 +171,8 @@ public:
 
     struct MainNetOptions {
         DeploymentOptions dep_opts{};
+        /** When false, mainnet height-1 Bitcoin launch lock is omitted (unit tests). */
+        bool btc_launch_lock{true};
     };
 
     struct TestNetOptions {

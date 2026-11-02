@@ -15,6 +15,7 @@
 #include <checkqueue.h>
 #include <clientversion.h>
 #include <consensus/amount.h>
+#include <consensus/btc_launch_lock.h>
 #include <consensus/consensus.h>
 #include <consensus/merkle.h>
 #include <consensus/tx_check.h>
@@ -4400,6 +4401,15 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
     for (unsigned int i = 1; i < block.vtx.size(); i++)
         if (block.vtx[i]->IsCoinBase())
             return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-cb-multiple", "more than one coinbase");
+
+    // Height 1 on mainnet: Bitcoin SHA256d launch lock. Enforced here (not only
+    // in ContextualCheckBlock) so -reindex-chainstate cannot skip it.
+    if (consensusParams.btc_launch_lock.enabled &&
+        block.hashPrevBlock == consensusParams.hashGenesisBlock) {
+        if (!CheckBtcLaunchLock(*block.vtx[0], consensusParams.btc_launch_lock, state)) {
+            return false;
+        }
+    }
 
     // Check transactions
     // Must check for duplicate inputs (see CVE-2018-17144)
