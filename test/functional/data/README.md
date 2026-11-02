@@ -2,8 +2,11 @@
 
 ## mainnet_alt.json
 
-For easier testing the difficulty is maximally increased in the first (and only)
-retarget period, by producing blocks approximately 2 minutes apart.
+**Obsolete for Zorkcoin.** Bitcoin Core used this SMA-retarget fixture with
+`mining_mainnet.py`. Zorkcoin uses ASERT (`GravityAsert`) from genesis; the
+functional test now mines a short fast-block run on mainnet params instead of
+replaying this file. Kept only as a historical artifact until removed.
+
 
 The alternate mainnet chain was generated as follows:
 - use faketime to set node clock to 2 minutes after genesis block

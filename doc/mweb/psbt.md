@@ -33,15 +33,15 @@ peg-ins, and receive addresses start at 2, as in ADGL's own wallet.
    mweb([<fingerprint>/1000'/1000'/0'/0']<scan secret WIF>,[<fingerprint>/1000'/1000'/0'/1']<spend pubkey hex>,*)#<checksum>
    ```
 
-   The scan secret uses ADGL's WIF version for the device's network (128 on main, 239 on test and
+   The scan secret uses Zorkcoin's WIF version for the device's network (167 on main, 239 on test and
    regtest). The spend key is a plain public key with its origin, so the node can derive every
    subaddress without the spend secret.
 
 2. **Import it into a watch-only wallet.**
 
    ```
-   bitcoin-cli createwallet coordinator true true
-   bitcoin-cli -rpcwallet=coordinator importdescriptors '[{"desc": "<export>", "timestamp": "now", "active": true}]'
+   zorkcoin-cli createwallet coordinator true true
+   zorkcoin-cli -rpcwallet=coordinator importdescriptors '[{"desc": "<export>", "timestamp": "now", "active": true}]'
    ```
 
    The two `true` arguments are `disable_private_keys` and `blank`. Use the creation time of the device

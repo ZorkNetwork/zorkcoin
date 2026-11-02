@@ -117,9 +117,9 @@ K<sub>o</sub> = HASH32('O'||e)⋅B<sub>i</sub>
   * Master scan key <code>(a, A)</code>: <code>m/0'/100'/0'</code>
   * Master spend key <code>(b, B)</code>: <code>m/0'/100'/1'</code>
 
-### Address encoding (Bitcoin)
+### Address encoding (Zorkcoin)
 
-Stealth addresses are encoded with Bech32 (not Bech32m) under the MWEB HRP: `bc1m` on mainnet, `tb1m` on test/signet and `bcrt1m` on regtest. This is distinct from native segwit addresses (`bc1…`, `tb1…`, `bcrt1…`).
+Stealth addresses are encoded with Bech32 (not Bech32m) under the MWEB HRP: `mweb` on mainnet and `tmweb` on test/signet/regtest. This is distinct from native segwit addresses (`zork1…`, `zorktest1…`, `zorksim1…`).
 
 The data part is a version symbol `0` followed by the 5-bit conversion of the 66 bytes <code>A<sub>i</sub>||B<sub>i</sub></code> (each a 33-byte compressed key).
 
@@ -133,4 +133,4 @@ Bech32 is sufficient for MWEB because the payload has a single fixed length (the
 
 How MWEB keys and stealth indices are stored, exported, imported, and scanned in descriptor wallets is specified in [descriptors.md](descriptors.md). That document references this file for DKSAP cryptography; it does not change the protocol math above.
 
-The bech32 `bc1m` / `tb1m` pay-to encoding includes the scan and spend public keys `(A_i, B_i)` required for a sender to construct a valid output. There is no descriptor form of a payment address; see [descriptors.md](descriptors.md).
+The bech32 `mweb1…` / `tmweb1…` pay-to encoding includes the scan and spend public keys `(A_i, B_i)` required for a sender to construct a valid output. There is no descriptor form of a payment address; see [descriptors.md](descriptors.md).

@@ -30,7 +30,7 @@ Layer-1 descriptors such as `wpkh(xpub/84h/0h/0/0/*)` describe a BIP32 path wher
 
 MWEB stealth addresses do **not** work that way. Per-index material `(A_i, B_i)` requires the **private** master scan scalar `a` and the **public** master spend key `B`: `B_i = B + HASH32('A' || LE32(i) || a)·G` and `A_i = a·B_i` (see [Address Generation](stealth-addresses.md#address-generation)). The master spend secret `b` is not needed to derive addresses, only to spend. Without `a` no subaddress can be computed, so there is no public-only (xpub-style) derivation.
 
-A MWEB payment target, the bech32 `bc1m…` / `tb1m…` address, **always requires both** the scan public key `A_i` and the spend public key `B_i`. Either key alone is insufficient for a sender to construct a valid output.
+A MWEB payment target, the bech32 `mweb1…` / `tmweb1…` address, **always requires both** the scan public key `A_i` and the spend public key `B_i`. Either key alone is insufficient for a sender to construct a valid output.
 
 ## Notation
 
@@ -65,9 +65,9 @@ Address material for index `i` is the pair `(A_i, B_i)`.
 
 ### Bech32 address
 
-The bech32 `bc1m…` / `tb1m…` address encodes `(A_i, B_i)` and is the only form used to send to or publish a receive address. It carries no scan or spend secrets. A string such as `mweb(<hex>,<hex>)` is not an address: it is the [two-parameter form](#3-two-parameter) with a public scan key. Address arguments reject it: `validateaddress`, `sendtoaddress`, `sendmany`, `send`, `createrawtransaction`, `createpsbt`, `walletcreatefundedpsbt`, `bitcoin-tx` outputs, `addr(...)` descriptors, and the GUI's send and address-book fields.
+The bech32 `mweb1…` / `tmweb1…` address encodes `(A_i, B_i)` and is the only form used to send to or publish a receive address. It carries no scan or spend secrets. A string such as `mweb(<hex>,<hex>)` is not an address: it is the [two-parameter form](#3-two-parameter) with a public scan key. Address arguments reject it: `validateaddress`, `sendtoaddress`, `sendmany`, `send`, `createrawtransaction`, `createpsbt`, `walletcreatefundedpsbt`, `zorkcoin-tx` outputs, `addr(...)` descriptors, and the GUI's send and address-book fields.
 
-Bech32 rules: Bech32 (not Bech32m); HRP `bc1m` (mainnet) / `tb1m` (test/signet) / `bcrt1m` (regtest); data is witness version symbol `0` then 5-bit conversion of 66 bytes `A_i || B_i` (each key 33-byte compressed).
+Bech32 rules: Bech32 (not Bech32m); HRP `mweb` (mainnet) / `tmweb` (test/signet/regtest); data is witness version symbol `0` then 5-bit conversion of 66 bytes `A_i || B_i` (each key 33-byte compressed).
 
 ## Priv vs pub
 
@@ -406,7 +406,7 @@ A wallet loaded while locked scans and issues MWEB addresses; see [Wallet storag
 2. Choose next stealth index `i` (≥ 2 for user receive) on that account.
 3. Derive `(A_i, B_i)` via DKSAP from scan/spend masters.
 4. Persist `mweb(A_i,B_i,i,acct_cksum)`.
-5. Return encoded `bc1m…` / `tb1m…` for use with `sendtoaddress`.
+5. Return encoded `mweb1…` / `tmweb1…` for use with `sendtoaddress`.
 
 ### Export (`listdescriptors`)
 
@@ -551,7 +551,7 @@ Descriptors in LIP-0007 PSBT flows (the full workflow and RPCs are in [psbt.md](
 
 | RPC | MWEB behavior |
 |-----|---------------|
-| `getnewaddress("mweb")` | Allocate index on account; persist internal descriptor; return `bc1m`/`tb1m` |
+| `getnewaddress("mweb")` | Allocate index on account; persist internal descriptor; return `mweb1…` / `tmweb1…` |
 | `listdescriptors` | Public: watch-only account form `mweb([origin]<scan WIF>,[origin]<spend pubkey>,*)` + internals. Private: may include private KEYs |
 | `importdescriptors` | Account / indexed / single-subaddr / internal forms; a public scan key only when the wallet holds its scan secret |
 | `getaddressinfo` | Litecoin 24.x fields for an MWEB address: no `scriptPubKey`; `ismweb`, `scan_pubkey`, `spend_pubkey`; `solvable` and `desc` when the wallet holds the address's scan secret, `desc` being `mweb([origin]<scan WIF>,[origin]<spend pubkey>,i)` for an account address and `mweb([origin]<scan WIF>,<address spend pubkey>)` for a separate single-address entry or an account without its spend pubkey; `parent_desc` is the account's `listdescriptors` form (the stored public form when the account has no spend pubkey) or the separate entry's `desc`; `hdkeypath` is `x/<index>` with the scan key's `hdmasterfingerprint` |
@@ -568,14 +568,14 @@ Descriptors in LIP-0007 PSBT flows (the full workflow and RPCs are in [psbt.md](
 | `(A_i, B_i)` derivation from masters | [stealth-addresses.md](stealth-addresses.md) |
 | Master key paths `m/0'/100'/0'`, `m/0'/100'/1'` | [stealth-addresses.md](stealth-addresses.md) |
 | Output construction and identification | [stealth-addresses.md](stealth-addresses.md) |
-| Bech32 `bc1m` / `tb1m` encoding (includes both pubkeys) | [stealth-addresses.md](stealth-addresses.md) |
+| Bech32 `mweb` / `tmweb` encoding (includes both pubkeys) | [stealth-addresses.md](stealth-addresses.md) |
 | Descriptor storage, export, scan policy | This document |
 
 The bech32 address carries the public pay-to material `(A_i, B_i)`. DKSAP mathematics are unchanged.
 
 ### Why bech32 (not bech32m)
 
-MWEB stealth addresses use **bech32** encoding under the `bc1m` / `tb1m` HRP, not bech32m. See [stealth-addresses.md](stealth-addresses.md#address-encoding-bitcoin): the payload has a single fixed length (66 bytes), so Bech32's insertion/deletion weakness, which motivated bech32m for variable-length witness programs, does not apply.
+MWEB stealth addresses use **bech32** encoding under the `mweb` / `tmweb` HRP, not bech32m. See [stealth-addresses.md](stealth-addresses.md#address-encoding-zorkcoin): the payload has a single fixed length (66 bytes), so Bech32's insertion/deletion weakness, which motivated bech32m for variable-length witness programs, does not apply.
 
 ## Explicit non-goals
 
@@ -629,8 +629,10 @@ Single subaddress with a public scan key `A = a·G` (imports only into a wallet 
 mweb(02ef01…,03abcd…)#n4r8t1x5
 ```
 
-Encoded pay-to address for `sendtoaddress`:
+Encoded pay-to address for `sendtoaddress` (testnet/signet/regtest HRP `tmweb`):
 
 ```
-tb1m1qqfj00qqzxhsqmy83ukuh4hkqkghkfm05lccrmzqczthwnx2qnv9mqqaypwaxzn76kv9kc8d37rgr9kt5vkxp5vllaeksjhl03ug3m3gm8vamanhm
+tmweb1qqfj00qqzxhsqmy83ukuh4hkqkghkfm05lccrmzqczthwnx2qnv9mqqaypwaxzn76kv9kc8d37rgr9kt5vkxp5vllaeksjhl03ug3m3gm8vf4epvr
 ```
+
+Mainnet addresses use HRP `mweb` and look like `mweb1…`.

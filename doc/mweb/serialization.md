@@ -143,12 +143,11 @@ Use `SERIALIZE_NO_MWEB` / `TX_NO_MWEB` when computing txid or witness hash so MW
 
 ### Stealth address HRP
 
-MWEB stealth addresses use a dedicated Bech32 human-readable part, separate from native segwit (`bc`/`tb`/`bcrt`):
+MWEB stealth addresses use a dedicated Bech32 human-readable part, separate from native segwit (`zork`/`zorktest`/`zorksim`):
 
 | Network | HRP |
 |---|---|
-| Mainnet | `bc1m` |
-| Testnet / Testnet4 / Signet | `tb1m` |
-| Regtest | `bcrt1m` |
+| Mainnet | `mweb` |
+| Testnet / Testnet4 / Signet / Regtest | `tmweb` |
 
-Access via `CChainParams::MWEB_HRP()`. Address encoding and decoding: [stealth-addresses.md](stealth-addresses.md#address-encoding-bitcoin).
+Access via `CChainParams::MWEB_HRP()`. Address encoding and decoding: [stealth-addresses.md](stealth-addresses.md#address-encoding-zorkcoin).
