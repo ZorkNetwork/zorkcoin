@@ -59,6 +59,11 @@ add_executable(test_bitcoin
   key_io_tests.cpp
   kheavyhash_tests.cpp
   key_tests.cpp
+  kaspa_hash_tests.cpp
+  kaspa_header_tests.cpp
+  kaspa_tx_tests.cpp
+  kaspa_merkle_tests.cpp
+  kaspa_pow_tests.cpp
   logging_tests.cpp
   mempool_tests.cpp
   mempool_fee_estimator_tests.cpp

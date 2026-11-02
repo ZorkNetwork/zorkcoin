@@ -18,11 +18,15 @@ add_library(bitcoin_crypto STATIC EXCLUDE_FROM_ALL
   sha256_sse4.cpp
   sha3.cpp
   kheavyhash.cpp
+  blake2b/blake2b-ref.c
   sha512.cpp
   siphash.cpp
   ../support/cleanse.cpp
   $<$<NOT:$<STREQUAL:${CMAKE_SYSTEM_NAME},Generic>>:../support/lockedpool.cpp>
 )
+
+set_source_files_properties(blake2b/blake2b-ref.c PROPERTIES LANGUAGE C)
+target_include_directories(bitcoin_crypto PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/blake2b)
 
 target_link_libraries(bitcoin_crypto
   PRIVATE

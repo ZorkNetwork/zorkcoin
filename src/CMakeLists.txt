@@ -81,6 +81,10 @@ add_library(bitcoin_consensus STATIC EXCLUDE_FROM_ALL
   script/script.cpp
   script/script_error.cpp
   uint256.cpp
+  auxpow/kaspa_header.cpp
+  auxpow/kaspa_tx.cpp
+  auxpow/kaspa_merkle.cpp
+  auxpow/kaspa_pow.cpp
 )
 target_link_libraries(bitcoin_consensus
   PRIVATE
