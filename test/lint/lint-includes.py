@@ -35,6 +35,13 @@ EXPECTED_BOOST_INCLUDES = [
                            "boost/tuple/tuple.hpp",
                           ]
 
+# MWEB START
+EXPECTED_BOOST_INCLUDES += [
+                           "boost/dynamic_bitset.hpp",       # libmw MMR / prune bitsets
+                           "boost/functional/hash.hpp",      # libmw std::hash adapters (ContainerHash)
+                          ]
+# MWEB END
+
 
 def get_toplevel():
     return check_output(["git", "rev-parse", "--show-toplevel"], text=True).rstrip("\n")
