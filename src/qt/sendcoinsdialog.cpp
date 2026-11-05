@@ -17,6 +17,7 @@
 #include <qt/sendcoinsentry.h>
 
 #include <chainparams.h>
+#include <util/time.h>
 #include <addresstype.h>
 #include <interfaces/node.h>
 #include <key_io.h>
@@ -174,7 +175,7 @@ void SendCoinsDialog::setModel(WalletModel *_model)
 
         // fee section
         for (const int n : confTargets) {
-            ui->confTargetSelector->addItem(tr("%1 (%2 blocks)").arg(GUIUtil::formatNiceTimeOffset(n * Params().GetConsensus().nPowTargetSpacing / 1000)).arg(n));
+            ui->confTargetSelector->addItem(tr("%1 (%2 blocks)").arg(GUIUtil::formatNiceTimeOffset(Ticks<std::chrono::seconds>(n * Params().GetConsensus().PowTargetSpacing()))).arg(n));
         }
         connect(ui->confTargetSelector, qOverload<int>(&QComboBox::currentIndexChanged), this, &SendCoinsDialog::updateSmartFeeLabel);
         connect(ui->confTargetSelector, qOverload<int>(&QComboBox::currentIndexChanged), this, &SendCoinsDialog::coinControlUpdateLabels);

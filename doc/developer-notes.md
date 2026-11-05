@@ -1418,8 +1418,9 @@ A few guidelines for introducing and reviewing new RPC interfaces:
   - *Rationale*: Prevent accidental transactions by users and encourage the use
     of bech32 addresses by default.
 
-- Use the `UNIX_EPOCH_TIME` constant when describing UNIX epoch time or
-  timestamps in the documentation.
+- Use the `UNIX_EPOCH_TIME` constant when describing UNIX epoch time in
+  seconds, and `UNIX_EPOCH_TIME_MS` when the value is milliseconds since
+  the epoch.
 
   - *Rationale*: User-facing consistency.
 

@@ -1158,8 +1158,9 @@ CFeeRate CTxMemPool::GetMWEBMinFee(size_t mweb_cap) const
 
     // Own clock so a preceding GetMinFee() cannot skip MWEB decay.
     int64_t time = GetTime();
-    if (time > mweb_last_rolling_fee_update + 10) {
-        double halflife = ROLLING_FEE_HALFLIFE;
+    if (time > mweb_last_rolling_fee_update + 10'000) {
+        // ROLLING_FEE_HALFLIFE is in seconds; GetTime() returns milliseconds.
+        double halflife = ROLLING_FEE_HALFLIFE * 1000.0;
         const size_t mweb_usage{m_mweb_markets->GetUsage(MempoolMarket::MWEB)};
         if (mweb_cap > 0) {
             if (mweb_usage < mweb_cap / 4)

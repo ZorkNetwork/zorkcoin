@@ -644,7 +644,7 @@ void RPCConsole::setClientModel(ClientModel *model, int bestblock_height, int64_
         setNumConnections(model->getNumConnections());
         connect(model, &ClientModel::numConnectionsChanged, this, &RPCConsole::setNumConnections);
 
-        setNumBlocks(bestblock_height, QDateTime::fromSecsSinceEpoch(bestblock_date), verification_progress, SyncType::BLOCK_SYNC);
+        setNumBlocks(bestblock_height, GUIUtil::dateTimeFromNodeTime(bestblock_date), verification_progress, SyncType::BLOCK_SYNC);
         connect(model, &ClientModel::numBlocksChanged, this, &RPCConsole::setNumBlocks);
 
         updateNetworkState();

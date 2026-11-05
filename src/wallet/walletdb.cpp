@@ -738,8 +738,7 @@ static DBErrors LoadMWEBInternalDescriptorRecords(CWallet* pwallet, DatabaseBatc
             uint32_t index;
             key >> account_id;
             key >> index;
-            WalletDescriptor desc;
-            value >> desc;
+            WalletDescriptor desc{WalletDescriptor::FromStream(deserialize, value)};
             auto* spk_man = dynamic_cast<DescriptorScriptPubKeyMan*>(pwallet->GetScriptPubKeyMan(account_id));
             if (!spk_man) {
                 err = strprintf("MWEB internal descriptor for unknown account %s", account_id.ToString());

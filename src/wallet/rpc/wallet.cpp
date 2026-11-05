@@ -55,7 +55,7 @@ static RPCMethod getwalletinfo()
                         {RPCResult::Type::NUM, "txcount", "the total number of transactions in the wallet"},
                         {RPCResult::Type::NUM, "keypoolsize", "how many new keys are pre-generated (only counts external keys)"},
                         {RPCResult::Type::NUM, "keypoolsize_hd_internal", "how many new keys are pre-generated for internal use (used for change outputs; 0 if external keys are used for change)"},
-                        {RPCResult::Type::NUM_TIME, "unlocked_until", /*optional=*/true, "the " + UNIX_EPOCH_TIME + " until which the wallet is unlocked for transfers, or 0 if the wallet is locked (only present for passphrase-encrypted wallets)"},
+                        {RPCResult::Type::NUM_TIME, "unlocked_until", /*optional=*/true, "the " + UNIX_EPOCH_TIME_MS + " until which the wallet is unlocked for transfers, or 0 if the wallet is locked (only present for passphrase-encrypted wallets)"},
                         {RPCResult::Type::BOOL, "private_keys_enabled", "false if privatekeys are disabled for this wallet (enforced watch-only wallet)"},
                         {RPCResult::Type::BOOL, "avoid_reuse", "whether this wallet tracks clean/dirty coins in terms of reuse"},
                         {RPCResult::Type::OBJ, "scanning", "current scanning details, or false if no scan is in progress",
@@ -66,7 +66,7 @@ static RPCMethod getwalletinfo()
                         {RPCResult::Type::BOOL, "descriptors", "whether this wallet uses descriptors for output script management"},
                         {RPCResult::Type::BOOL, "external_signer", "whether this wallet is configured to use an external signer such as a hardware wallet"},
                         {RPCResult::Type::BOOL, "blank", "Whether this wallet intentionally does not contain any keys, scripts, or descriptors"},
-                        {RPCResult::Type::NUM_TIME, "birthtime", /*optional=*/true, "The start time for blocks scanning. It could be modified by (re)importing any descriptor with an earlier timestamp."},
+                        {RPCResult::Type::NUM_TIME, "birthtime", /*optional=*/true, "The start time for blocks scanning, expressed in " + UNIX_EPOCH_TIME_MS + ". It could be modified by (re)importing any descriptor with an earlier timestamp."},
                         {RPCResult::Type::ARR, "flags", "The flags currently set on the wallet",
                         {
                             {RPCResult::Type::STR, "flag", "The name of the flag"},

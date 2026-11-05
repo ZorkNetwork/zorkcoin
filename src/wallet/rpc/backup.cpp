@@ -720,7 +720,7 @@ RPCMethod importdescriptors()
                                     {"active", RPCArg::Type::BOOL, RPCArg::Default{false}, "Set this descriptor to be the active descriptor for the corresponding output type/externality"},
                                     {"range", RPCArg::Type::RANGE, RPCArg::Optional::OMITTED, "If a ranged descriptor is used, this specifies the end or the range (in the form [begin,end]) to import. For MWEB account descriptors, this raises the stealth-index import scan ceiling above the default keypool size."},
                                     {"next_index", RPCArg::Type::NUM, RPCArg::Optional::OMITTED, "If a ranged descriptor is set to active, this specifies the next index to generate addresses from"},
-                                    {"timestamp", RPCArg::Type::NUM, RPCArg::Optional::NO, "Time from which to start rescanning the blockchain for this descriptor, in " + UNIX_EPOCH_TIME + "\n"
+                                    {"timestamp", RPCArg::Type::NUM, RPCArg::Optional::NO, "Time from which to start rescanning the blockchain for this descriptor, in " + UNIX_EPOCH_TIME_MS + "\n"
                                         "Use the string \"now\" to substitute the current synced blockchain time.\n"
                                         "\"now\" can be specified to bypass scanning, for outputs which are known to never have been used, and\n"
                                         "0 can be specified to scan the entire blockchain. Blocks up to 2 hours before the earliest timestamp\n"

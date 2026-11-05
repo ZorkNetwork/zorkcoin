@@ -242,7 +242,7 @@ void ClientModel::TipChanged(SynchronizationState sync_state, interfaces::BlockT
         return;
     }
 
-    Q_EMIT numBlocksChanged(tip.block_height, QDateTime::fromSecsSinceEpoch(tip.block_time), verification_progress, synctype, sync_state);
+    Q_EMIT numBlocksChanged(tip.block_height, GUIUtil::dateTimeFromNodeTime(tip.block_time), verification_progress, synctype, sync_state);
     nLastUpdateNotification = now;
 }
 

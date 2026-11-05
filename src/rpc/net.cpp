@@ -805,7 +805,7 @@ static RPCMethod setban()
                     {"subnet", RPCArg::Type::STR, RPCArg::Optional::NO, "The IP/Subnet (see getpeerinfo for nodes IP) with an optional netmask (default is /32 = single IP)"},
                     {"command", RPCArg::Type::STR, RPCArg::Optional::NO, "'add' to add an IP/Subnet to the list, 'remove' to remove an IP/Subnet from the list"},
                     {"bantime", RPCArg::Type::NUM, RPCArg::Default{0}, "time in seconds how long (or until when if [absolute] is set) the IP is banned (0 or empty means using the default time of 24h which can also be overwritten by the -bantime startup argument)"},
-                    {"absolute", RPCArg::Type::BOOL, RPCArg::Default{false}, "If set, the bantime must be an absolute timestamp expressed in " + UNIX_EPOCH_TIME},
+                    {"absolute", RPCArg::Type::BOOL, RPCArg::Default{false}, "If set, the bantime must be an absolute timestamp expressed in " + UNIX_EPOCH_TIME_MS},
                 },
                 RPCResult{RPCResult::Type::NONE, "", ""},
                 RPCExamples{
@@ -887,8 +887,8 @@ static RPCMethod listbanned()
                 {RPCResult::Type::OBJ, "", "",
                     {
                         {RPCResult::Type::STR, "address", "The IP/Subnet of the banned node"},
-                        {RPCResult::Type::NUM_TIME, "ban_created", "The " + UNIX_EPOCH_TIME + " the ban was created"},
-                        {RPCResult::Type::NUM_TIME, "banned_until", "The " + UNIX_EPOCH_TIME + " the ban expires"},
+                        {RPCResult::Type::NUM_TIME, "ban_created", "The " + UNIX_EPOCH_TIME_MS + " the ban was created"},
+                        {RPCResult::Type::NUM_TIME, "banned_until", "The " + UNIX_EPOCH_TIME_MS + " the ban expires"},
                         {RPCResult::Type::NUM_TIME, "ban_duration", "The ban duration, in seconds"},
                         {RPCResult::Type::NUM_TIME, "time_remaining", "The time remaining until the ban expires, in seconds"},
                     }},

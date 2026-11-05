@@ -120,8 +120,7 @@ QVariant BanTableModel::data(const QModelIndex &index, int role) const
         case Address:
             return QString::fromStdString(rec->subnet.ToString());
         case Bantime:
-            QDateTime date = QDateTime::fromMSecsSinceEpoch(0);
-            date = date.addSecs(rec->banEntry.nBanUntil);
+            const QDateTime date = QDateTime::fromMSecsSinceEpoch(rec->banEntry.nBanUntil);
             return QLocale::system().toString(date, QLocale::LongFormat);
         } // no default case, so the compiler can warn about missing cases
         assert(false);

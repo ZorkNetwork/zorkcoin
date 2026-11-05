@@ -2193,7 +2193,9 @@ bool DescriptorScriptPubKeyMan::PersistMWEBInternalIndex(WalletBatch& batch, uin
     }
 
     WalletDescriptor w_desc(std::move(parsed.at(0)), GetTime(), 0, 0, 0);
-    m_mweb_internal_descriptors[index] = w_desc;
+    // WalletDescriptor is not assignable (const descriptor member).
+    m_mweb_internal_descriptors.erase(index);
+    m_mweb_internal_descriptors.emplace(index, std::move(w_desc));
 
     CKeyMetadata metadata(GetTime());
     metadata.mweb_index = index;
@@ -2322,7 +2324,9 @@ util::Result<void> DescriptorScriptPubKeyMan::LoadMWEBInternalDescriptorRecord(c
         }
     }
 
-    m_mweb_internal_descriptors[*index] = descriptor;
+    // WalletDescriptor is not assignable (const descriptor member).
+    m_mweb_internal_descriptors.erase(*index);
+    m_mweb_internal_descriptors.emplace(*index, descriptor);
     m_mweb_internal_last_active[*index] = descriptor.creation_time;
 
     const CPubKey spend(addr->GetSpendPubKey().vec());

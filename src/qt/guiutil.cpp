@@ -92,9 +92,14 @@ QString dateTimeStr(const QDateTime &date)
     return QLocale::system().toString(date.date(), QLocale::ShortFormat) + QString(" ") + date.toString("hh:mm");
 }
 
+QDateTime dateTimeFromNodeTime(qint64 node_time_ms)
+{
+    return QDateTime::fromMSecsSinceEpoch(node_time_ms);
+}
+
 QString dateTimeStr(qint64 nTime)
 {
-    return dateTimeStr(QDateTime::fromSecsSinceEpoch(nTime));
+    return dateTimeStr(dateTimeFromNodeTime(nTime));
 }
 
 QFont fixedPitchFont(bool use_embedded_font)

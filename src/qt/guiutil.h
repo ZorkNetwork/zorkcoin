@@ -61,6 +61,8 @@ namespace GUIUtil
 
     // Create human-readable string from date
     QString dateTimeStr(const QDateTime &datetime);
+    /** Node/wallet time is milliseconds since the Unix epoch. */
+    QDateTime dateTimeFromNodeTime(qint64 node_time_ms);
     QString dateTimeStr(qint64 nTime);
 
     // Return a monospace font

@@ -82,6 +82,8 @@
 #include <variant>
 #include <vector>
 
+using namespace std::chrono_literals;
+
 class StealthAddress;
 
 using interfaces::BlockRef;
@@ -931,7 +933,7 @@ static RPCMethod getblocktemplate()
     static std::unique_ptr<BlockTemplate> block_template;
     const bool mempool_changed{mempool.GetTransactionsUpdated() != nTransactionsUpdatedLast};
     if (!pindexPrev || pindexPrev->GetBlockHash() != tip ||
-        (mempool_changed && (GetTime() - time_start > 5 ||
+        (mempool_changed && (GetTime() - time_start > Ticks<std::chrono::milliseconds>(5s) ||
          DeploymentActiveAfter(chainman.ActiveTip(), chainman, Consensus::DEPLOYMENT_MWEB)))) {
         // Clear pindexPrev so future calls make a new block, despite any failures from here on
         pindexPrev = nullptr;

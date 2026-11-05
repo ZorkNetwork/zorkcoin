@@ -9,6 +9,7 @@
 
 #include <chainparams.h>
 #include <qt/guiutil.h>
+#include <util/time.h>
 
 #include <QEasingCurve>
 #include <QPropertyAnimation>
@@ -149,7 +150,7 @@ void ModalOverlay::tipUpdate(int count, const QDateTime& blockDate, double nVeri
 
     // estimate the number of headers left based on nPowTargetSpacing
     // and check if the gui is not aware of the best header (happens rarely)
-    int estimateNumHeadersLeft = bestHeaderDate.secsTo(currentDate) / (Params().GetConsensus().nPowTargetSpacing / 1000);
+    int estimateNumHeadersLeft = bestHeaderDate.secsTo(currentDate) / Ticks<std::chrono::seconds>(Params().GetConsensus().PowTargetSpacing());
     bool hasBestHeader = bestHeaderHeight >= count;
 
     // show remaining number of blocks
@@ -162,12 +163,12 @@ void ModalOverlay::tipUpdate(int count, const QDateTime& blockDate, double nVeri
 }
 
 void ModalOverlay::UpdateHeaderSyncLabel() {
-    int est_headers_left = bestHeaderDate.secsTo(QDateTime::currentDateTime()) / (Params().GetConsensus().nPowTargetSpacing / 1000);
+    int est_headers_left = bestHeaderDate.secsTo(QDateTime::currentDateTime()) / Ticks<std::chrono::seconds>(Params().GetConsensus().PowTargetSpacing());
     ui->numberOfBlocksLeft->setText(tr("Unknown. Syncing Headers (%1, %2%)…").arg(bestHeaderHeight).arg(QString::number(100.0 / (bestHeaderHeight + est_headers_left) * bestHeaderHeight, 'f', 1)));
 }
 
 void ModalOverlay::UpdateHeaderPresyncLabel(int height, const QDateTime& blockDate) {
-    int est_headers_left = blockDate.secsTo(QDateTime::currentDateTime()) / (Params().GetConsensus().nPowTargetSpacing / 1000);
+    int est_headers_left = blockDate.secsTo(QDateTime::currentDateTime()) / Ticks<std::chrono::seconds>(Params().GetConsensus().PowTargetSpacing());
     ui->numberOfBlocksLeft->setText(tr("Unknown. Pre-syncing Headers (%1, %2%)…").arg(height).arg(QString::number(100.0 / (height + est_headers_left) * height, 'f', 1)));
 }
 
